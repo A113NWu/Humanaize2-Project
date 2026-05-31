@@ -202,6 +202,7 @@ class HumanaizeUI:
         self.settings = settings
         
         old_language = self.language
+        old_theme = self.theme
         self.language = settings.get("language", self.language)
         self.theme = settings.get("theme", self.theme)
         self.model_name = settings.get("model_name", self.model_name)
@@ -217,12 +218,45 @@ class HumanaizeUI:
         if old_language != self.language:
             self._update_language()
         
-        self._update_theme()
+        if old_theme != self.theme:
+            self._update_theme()
 
     def _update_theme(self):
         mode = "Dark" if self.theme.lower() == "dark" else "Light"
         ctk.set_appearance_mode(mode)
-        self.root.configure(bg="#101010" if mode == "Dark" else "#f0f0f0")
+        
+        # Update root background
+        bg_color = "#101010" if mode == "Dark" else "#f0f0f0"
+        self.root.configure(bg=bg_color)
+        
+        # Update main frame if exists
+        if hasattr(self, 'main_frame'):
+            frame_bg = "#141414" if mode == "Dark" else "#e0e0e0"
+            self.main_frame.configure(fg_color=frame_bg)
+        
+        # Update all tabs
+        tab_bg = "#1a1a1a" if mode == "Dark" else "#d0d0d0"
+        active_tab_bg = "#2a2a2a" if mode == "Dark" else "#c0c0c0"
+        
+        if hasattr(self, 'notebook'):
+            for tab_name in ['chat_tab', 'thoughts_tab', 'system_tab', 'command_output_tab']:
+                if hasattr(self, tab_name):
+                    tab = getattr(self, tab_name)
+                    tab.configure(fg_color=tab_bg, selected_color=active_tab_bg)
+        
+        # Update textboxes
+        textbox_bg = "#0d0d0d" if mode == "Dark" else "#ffffff"
+        textbox_text_color = "#ffffff" if mode == "Dark" else "#000000"
+        
+        if hasattr(self, 'chat_textbox'):
+            self.chat_textbox.configure(fg_color=textbox_bg, text_color=textbox_text_color)
+        if hasattr(self, 'thoughts_textbox'):
+            self.thoughts_textbox.configure(fg_color=textbox_bg, text_color=textbox_text_color)
+        if hasattr(self, 'system_textbox'):
+            self.system_textbox.configure(fg_color=textbox_bg, text_color=textbox_text_color)
+        if hasattr(self, 'command_output_textbox'):
+            self.command_output_textbox.configure(fg_color=textbox_bg, text_color=textbox_text_color)
+        
         self.root.update()
     
     def _update_language(self):
@@ -294,6 +328,12 @@ class HumanaizeUI:
         self.settings_window.grab_set()
         self.settings_window.grid_columnconfigure(0, weight=1)
 
+        # Create scrollable frame
+        scroll_frame = ctk.CTkScrollableFrame(self.settings_window, width=720)
+        scroll_frame.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
+        scroll_frame.grid_columnconfigure(0, weight=1)
+        self.settings_window.grid_rowconfigure(0, weight=1)
+
         language_var = tk.StringVar(value=self.language)
         theme_var = tk.StringVar(value=self.theme)
         model_name_var = tk.StringVar(value=self.model_name)
@@ -302,38 +342,80 @@ class HumanaizeUI:
         gan_enabled_var = tk.BooleanVar(value=self.gan_enabled)
 
         row = 0
-        title_label = ctk.CTkLabel(self.settings_window, text=self._t("settings"), font=("Segoe UI", 16, "bold"))
-        title_label.grid(row=row, column=0, sticky="w", padx=20, pady=(20, 10))
+        title_label = ctk.CTkLabel(scroll_frame, text=self._t("settings"), font=("Segoe UI", 16, "bold"))
+        title_label.grid(row=row, column=0, sticky="w", padx=0, pady=(0, 15))
         row += 1
 
-        ctk.CTkLabel(self.settings_window, text=self._t("language"), anchor="w").grid(row=row, column=0, sticky="w", padx=20, pady=(10, 4))
+        ctk.CTkLabel(scroll_frame, text=self._t("language"), anchor="w").grid(row=row, column=0, sticky="w", padx=0, pady=(10, 4))
         row += 1
-        ctk.CTkOptionMenu(self.settings_window, values=["English", "中文"], variable=language_var).grid(row=row, column=0, sticky="ew", padx=20)
-        row += 1
-
-        ctk.CTkLabel(self.settings_window, text=self._t("theme"), anchor="w").grid(row=row, column=0, sticky="w", padx=20, pady=(10, 4))
-        row += 1
-        ctk.CTkOptionMenu(self.settings_window, values=["Dark", "Light"], variable=theme_var).grid(row=row, column=0, sticky="ew", padx=20)
+        ctk.CTkOptionMenu(scroll_frame, values=["English", "中文"], variable=language_var).grid(row=row, column=0, sticky="ew", padx=0)
         row += 1
 
-        ctk.CTkLabel(self.settings_window, text=self._t("model"), anchor="w").grid(row=row, column=0, sticky="w", padx=20, pady=(10, 4))
+        ctk.CTkLabel(scroll_frame, text=self._t("theme"), anchor="w").grid(row=row, column=0, sticky="w", padx=0, pady=(10, 4))
         row += 1
-        ctk.CTkEntry(self.settings_window, textvariable=model_name_var, placeholder_text=config.MODEL_NAME).grid(row=row, column=0, sticky="ew", padx=20)
+        ctk.CTkOptionMenu(scroll_frame, values=["Dark", "Light"], variable=theme_var).grid(row=row, column=0, sticky="ew", padx=0)
         row += 1
 
-        ctk.CTkLabel(self.settings_window, text=self._t("custom_model"), anchor="w").grid(row=row, column=0, sticky="w", padx=20, pady=(10, 4))
+        ctk.CTkLabel(scroll_frame, text=self._t("model"), anchor="w").grid(row=row, column=0, sticky="w", padx=0, pady=(10, 4))
         row += 1
-        model_path_frame = ctk.CTkFrame(self.settings_window, fg_color="transparent")
-        model_path_frame.grid(row=row, column=0, sticky="ew", padx=20)
+        ctk.CTkEntry(scroll_frame, textvariable=model_name_var, placeholder_text=config.MODEL_NAME).grid(row=row, column=0, sticky="ew", padx=0)
+        row += 1
+
+        ctk.CTkLabel(scroll_frame, text=self._t("custom_model"), anchor="w").grid(row=row, column=0, sticky="w", padx=0, pady=(10, 4))
+        row += 1
+        model_path_frame = ctk.CTkFrame(scroll_frame, fg_color="transparent")
+        model_path_frame.grid(row=row, column=0, sticky="ew", padx=0)
         model_path_frame.grid_columnconfigure(0, weight=1)
         ctk.CTkEntry(model_path_frame, textvariable=model_path_var, placeholder_text="models/tinyllama.gguf").grid(row=0, column=0, sticky="ew", padx=(0, 6))
         ctk.CTkButton(model_path_frame, text="Browse", width=96, command=lambda: self._browse_model_path(model_path_var)).grid(row=0, column=1)
         row += 1
-
-        ctk.CTkLabel(self.settings_window, text=self._t("skills"), anchor="w").grid(row=row, column=0, sticky="w", padx=20, pady=(10, 4))
+        
+        from model_downloader import ModelDownloader
+        downloader = ModelDownloader()
+        is_installed = downloader.is_model_installed()
+        
+        download_frame = ctk.CTkFrame(scroll_frame, fg_color="#2a2a2a")
+        download_frame.grid(row=row, column=0, sticky="ew", padx=0, pady=(5, 0))
+        download_frame.grid_columnconfigure(0, weight=1)
+        
+        download_status_label = ctk.CTkLabel(download_frame, text="", anchor="w", text_color="#888888")
+        
+        def download_tinyllama():
+            if downloader.downloading:
+                return
+            
+            download_status_label.configure(text="Initializing...")
+            scroll_frame.update()
+            
+            def progress_callback(message):
+                download_status_label.configure(text=message)
+                scroll_frame.update()
+                return False
+            
+            result = downloader.download_model(callback=progress_callback)
+            
+            if result.get("success"):
+                download_status_label.configure(text=result["message"], text_color="#66ff66")
+                model_path_var.set("models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf")
+            else:
+                download_status_label.configure(text=f"Error: {result.get('error', 'Unknown error')}", text_color="#ff6666")
+        
+        download_btn = ctk.CTkButton(
+            download_frame, 
+            text="Download TinyLlama Model (173MB)" if not is_installed else "Model Already Installed", 
+            command=download_tinyllama,
+            fg_color="#2563eb" if not is_installed else "#3d3d3d",
+            state="normal" if not is_installed else "disabled"
+        )
+        download_btn.grid(row=0, column=0, sticky="ew", padx=15, pady=10)
+        download_status_label.grid(row=1, column=0, sticky="w", padx=15, pady=(0, 10))
+        
         row += 1
-        skills_frame = ctk.CTkFrame(self.settings_window)
-        skills_frame.grid(row=row, column=0, sticky="nsew", padx=20)
+
+        ctk.CTkLabel(scroll_frame, text=self._t("skills"), anchor="w").grid(row=row, column=0, sticky="w", padx=0, pady=(10, 4))
+        row += 1
+        skills_frame = ctk.CTkFrame(scroll_frame)
+        skills_frame.grid(row=row, column=0, sticky="nsew", padx=0)
         skills_frame.grid_columnconfigure(0, weight=1)
         row += 1
         
@@ -350,24 +432,20 @@ class HumanaizeUI:
                 cb = ctk.CTkCheckBox(skills_frame, text=f"{skill.name}", variable=skill_vars[skill.name])
                 cb.grid(row=idx, column=0, sticky="w", padx=10, pady=2)
         
-        self.settings_window.grid_rowconfigure(row, weight=0)
-        skills_prompt_label = ctk.CTkLabel(self.settings_window, text="Skills Prompt", anchor="w").grid(row=row, column=0, sticky="w", padx=20, pady=(10, 4))
+        skills_prompt_label = ctk.CTkLabel(scroll_frame, text="Skills Prompt", anchor="w").grid(row=row, column=0, sticky="w", padx=0, pady=(15, 4))
         row += 1
-        self.settings_window.grid_rowconfigure(row, weight=1)
-        skills_box = ctk.CTkTextbox(self.settings_window, width=500, height=120, wrap=tk.WORD)
-        skills_box.grid(row=row, column=0, sticky="nsew", padx=20)
+        skills_box = ctk.CTkTextbox(scroll_frame, width=500, height=120, wrap=tk.WORD)
+        skills_box.grid(row=row, column=0, sticky="nsew", padx=0)
         skills_box.insert(tk.END, self.skills_prompt)
         row += 1
-        
-        self.settings_window.grid_rowconfigure(row, weight=0)
 
-        ctk.CTkCheckBox(self.settings_window, text=self._t("auto_break_silence"), variable=auto_break_var).grid(row=row, column=0, sticky="w", padx=20, pady=(10, 4))
+        ctk.CTkCheckBox(scroll_frame, text=self._t("auto_break_silence"), variable=auto_break_var).grid(row=row, column=0, sticky="w", padx=0, pady=(15, 4))
         row += 1
-        ctk.CTkCheckBox(self.settings_window, text=self._t("enable_gan"), variable=gan_enabled_var).grid(row=row, column=0, sticky="w", padx=20, pady=(4, 10))
+        ctk.CTkCheckBox(scroll_frame, text=self._t("enable_gan"), variable=gan_enabled_var).grid(row=row, column=0, sticky="w", padx=0, pady=(4, 15))
         row += 1
         
-        update_frame = ctk.CTkFrame(self.settings_window, fg_color=("#2a2a2a", "#1a1a1a"))
-        update_frame.grid(row=row, column=0, sticky="ew", padx=20, pady=(10, 10))
+        update_frame = ctk.CTkFrame(scroll_frame, fg_color=("#2a2a2a", "#1a1a1a"))
+        update_frame.grid(row=row, column=0, sticky="ew", padx=0, pady=(0, 15))
         update_frame.grid_columnconfigure(0, weight=1)
         row += 1
         
@@ -428,8 +506,13 @@ class HumanaizeUI:
         
         check_for_updates()
         
+        # Add some bottom padding
+        padding_label = ctk.CTkLabel(scroll_frame, text="", height=20)
+        padding_label.grid(row=row, column=0)
+        
+        # Button frame outside scrollable area
         button_frame = ctk.CTkFrame(self.settings_window, fg_color="transparent")
-        button_frame.grid(row=row, column=0, sticky="ew", padx=20, pady=20)
+        button_frame.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 20))
         button_frame.grid_columnconfigure(0, weight=1)
         button_frame.grid_columnconfigure(1, weight=1)
 

@@ -1,11 +1,24 @@
+"""
+Humanaize Auto Updater
+Handles software updates from GitHub
+"""
+
 import os
 import json
 import subprocess
-import urllib.request
 import zipfile
 import shutil
 from datetime import datetime
-from typing import Optional, Dict
+from typing import Optional, Dict, Callable
+
+# Try to use requests for better error handling
+try:
+    import requests
+    USE_REQUESTS = True
+except ImportError:
+    import urllib.request
+    USE_REQUESTS = False
+
 
 class AutoUpdater:
     def __init__(self, repo_url: str, current_version: str = "2.1.0"):
@@ -13,7 +26,22 @@ class AutoUpdater:
         self.current_version = current_version
         self.update_info = None
         self.last_check_file = os.path.join(os.path.dirname(__file__), "data", "last_update_check.json")
-        
+        self._session = None
+        if USE_REQUESTS:
+            self._session = requests.Session()
+            self._session.headers.update({
+                "User-Agent": "Humanaize2-Update-Checker/2.1.0"
+            })
+    
+    def _get_session(self):
+        """Get or create a requests session"""
+        if USE_REQUESTS and not self._session:
+            self._session = requests.Session()
+            self._session.headers.update({
+                "User-Agent": "Humanaize2-Update-Checker/2.1.0"
+            })
+        return self._session
+    
     def get_local_version(self) -> str:
         version_file = os.path.join(os.path.dirname(__file__), "version.json")
         if os.path.exists(version_file):
@@ -38,6 +66,26 @@ class AutoUpdater:
         with open(version_file, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     
+    def _fetch_with_retry(self, url: str, max_retries: int = 3, timeout: int = 10) -> Optional[Dict]:
+        """Fetch URL with retry logic"""
+        for attempt in range(max_retries):
+            try:
+                if USE_REQUESTS:
+                    session = self._get_session()
+                    response = session.get(url, timeout=timeout)
+                    response.raise_for_status()
+                    return response.json()
+                else:
+                    req = urllib.request.Request(url, headers={"User-Agent": "Humanaize2-Update-Checker/2.1.0"})
+                    with urllib.request.urlopen(req, timeout=timeout) as response:
+                        return json.loads(response.read().decode("utf-8"))
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    import time
+                    time.sleep(2 ** attempt)  # Exponential backoff
+                    continue
+                return None
+    
     def check_for_updates(self) -> Dict:
         result = {
             "has_update": False,
@@ -49,36 +97,57 @@ class AutoUpdater:
         }
         
         try:
-            api_url = self.repo_url.replace("github.com", "api.github.com/repos")
-            if not api_url.endswith("/repos"):
-                api_url = api_url.replace("https://api.github.com/repos", "")
+            # Build the GitHub API URL for latest release
+            releases_url = "https://api.github.com/repos/A113NWu/Humanaize2-Project/releases/latest"
             
-            releases_url = f"https://api.github.com/repos/A113NWu/Humanaize2-Project/releases/latest"
+            # Try multiple endpoints
+            data = self._fetch_with_retry(releases_url)
             
-            req = urllib.request.Request(
-                releases_url,
-                headers={"User-Agent": "Humanaize2-Update-Checker"}
-            )
+            if data is None:
+                # Try alternative method using tags
+                tags_url = "https://api.github.com/repos/A113NWu/Humanaize2-Project/tags"
+                data = self._fetch_with_retry(tags_url)
+                if isinstance(data, list) and data:
+                    # Get the first tag (usually the latest)
+                    latest_tag = data[0].get("name", "")
+                    result["latest_version"] = latest_tag.lstrip("v")
+                    result["download_url"] = f"https://github.com/A113NWu/Humanaize2-Project/archive/refs/tags/{latest_tag}.zip"
             
-            with urllib.request.urlopen(req, timeout=10) as response:
-                data = json.loads(response.read().decode("utf-8"))
-                
+            if data and isinstance(data, dict):
                 latest_version = data.get("tag_name", "").lstrip("v")
-                
                 result["latest_version"] = latest_version
-                result["current_version"] = self.get_local_version()
                 result["release_notes"] = data.get("body", "No release notes available.")
                 result["download_url"] = data.get("zipball_url", "")
-                
-                if latest_version > result["current_version"]:
-                    result["has_update"] = True
-                
-                self._save_last_check(latest_version)
-                
+            
+            result["current_version"] = self.get_local_version()
+            
+            # Compare versions
+            if self._version_compare(result["latest_version"], result["current_version"]) > 0:
+                result["has_update"] = True
+            
+            self._save_last_check(result["latest_version"])
+            
         except Exception as e:
             result["error"] = str(e)
         
         return result
+    
+    def _version_compare(self, v1: str, v2: str) -> int:
+        """Compare two version strings"""
+        parts1 = [int(p) for p in v1.split(".") if p.isdigit()]
+        parts2 = [int(p) for p in v2.split(".") if p.isdigit()]
+        
+        # Pad with zeros to make lengths equal
+        max_len = max(len(parts1), len(parts2))
+        parts1 += [0] * (max_len - len(parts1))
+        parts2 += [0] * (max_len - len(parts2))
+        
+        for p1, p2 in zip(parts1, parts2):
+            if p1 > p2:
+                return 1
+            elif p1 < p2:
+                return -1
+        return 0
     
     def _save_last_check(self, version: str):
         os.makedirs(os.path.dirname(self.last_check_file), exist_ok=True)
@@ -128,26 +197,40 @@ class AutoUpdater:
             
             zip_path = os.path.join(temp_dir, "update.zip")
             
-            req = urllib.request.Request(
-                download_url,
-                headers={"User-Agent": "Humanaize2-Update-Downloader"}
-            )
-            
-            with urllib.request.urlopen(req, timeout=60) as response:
+            # Download the update
+            if USE_REQUESTS:
+                session = self._get_session()
+                response = session.get(download_url, stream=True, timeout=60)
+                response.raise_for_status()
+                
                 total_size = int(response.headers.get("Content-Length", 0))
                 downloaded = 0
-                chunk_size = 8192
                 
                 with open(zip_path, "wb") as f:
-                    while True:
-                        chunk = response.read(chunk_size)
-                        if not chunk:
-                            break
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        if progress_callback and total_size > 0:
-                            progress = int((downloaded / total_size) * 100)
-                            progress_callback(f"Downloading... {progress}%")
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            if progress_callback and total_size > 0:
+                                progress = int((downloaded / total_size) * 100)
+                                progress_callback(f"Downloading... {progress}%")
+            else:
+                req = urllib.request.Request(download_url, headers={"User-Agent": "Humanaize2-Update-Downloader/2.1.0"})
+                with urllib.request.urlopen(req, timeout=60) as response:
+                    total_size = int(response.headers.get("Content-Length", 0))
+                    downloaded = 0
+                    chunk_size = 8192
+                    
+                    with open(zip_path, "wb") as f:
+                        while True:
+                            chunk = response.read(chunk_size)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            if progress_callback and total_size > 0:
+                                progress = int((downloaded / total_size) * 100)
+                                progress_callback(f"Downloading... {progress}%")
             
             if progress_callback:
                 progress_callback("Extracting files...")
@@ -257,9 +340,10 @@ class AutoUpdater:
         latest = info.get("latest_version", "Unknown")
         current = self.get_local_version()
         
-        if latest > current:
+        cmp_result = self._version_compare(latest, current)
+        if cmp_result > 0:
             return f"Update available: v{latest} (you have v{current})"
-        elif latest < current:
+        elif cmp_result < 0:
             return f"You are on a newer version ({current}) than the latest release ({latest})"
         else:
             return f"You are up to date (v{current})"
@@ -288,6 +372,6 @@ if __name__ == "__main__":
     print(f"Has update: {info['has_update']}")
     print(f"Current: {info['current_version']}, Latest: {info['latest_version']}")
     if info.get("release_notes"):
-        print(f"Release notes: {info['release_notes']}")
+        print(f"Release notes: {info['release_notes'][:100]}...")
     if info.get("error"):
         print(f"Error: {info['error']}")

@@ -62,6 +62,36 @@ class HumanaizeCLI:
         self._detect_size()
         
         self._initial_lines = []
+        self._use_color = self._check_color_support()
+
+    def _check_color_support(self):
+        """Check if terminal supports ANSI color codes"""
+        if sys.platform == "win32":
+            # Check if Windows terminal supports VT100 escape sequences
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ["reg", "query", "HKCU\\Console", "/v", "VirtualTerminalLevel"],
+                    capture_output=True,
+                    text=True
+                )
+                if result.returncode == 0 and "0x1" in result.stdout:
+                    return True
+                # Try enabling VT100 mode
+                try:
+                    import ctypes
+                    kernel32 = ctypes.windll.kernel32
+                    hStdOut = kernel32.GetStdHandle(-11)
+                    mode = ctypes.c_ulong()
+                    kernel32.GetConsoleMode(hStdOut, ctypes.byref(mode))
+                    mode.value |= 4  # ENABLE_VIRTUAL_TERMINAL_PROCESSING
+                    kernel32.SetConsoleMode(hStdOut, mode)
+                    return True
+                except:
+                    return False
+            except:
+                return False
+        return True
 
     def _detect_size(self):
         w, h = 80, 24
@@ -96,8 +126,11 @@ class HumanaizeCLI:
         return re.sub(r'\x1b\[[0-9;]*m', '', text)
 
     def _clear_screen(self):
-        sys.stdout.write('\033[2J\033[H')
-        sys.stdout.flush()
+        if sys.platform == "win32":
+            os.system('cls')
+        else:
+            sys.stdout.write('\033[2J\033[H')
+            sys.stdout.flush()
 
     def _wrap_text(self, text, max_width):
         lines = text.split('\n')
@@ -139,18 +172,28 @@ class HumanaizeCLI:
         self._initial_lines.append(self._build_divider())
 
     def _build_divider(self):
-        return f"{Colors.DIM}{'─' * self.width}{Colors.RESET}"
+        if self._use_color:
+            return f"{Colors.DIM}{'─' * self.width}{Colors.RESET}"
+        else:
+            return '─' * self.width
 
     def _build_status_line(self):
         msgs = len(self.memory.get('messages', []))
         thoughts = len(self.memory.get('thoughts', []))
-        gan_status = f"{Colors.GREEN}●{Colors.RESET}" if self.gan_enabled else f"{Colors.RED}○{Colors.RESET}"
+        gan_status = "●" if self.gan_enabled else "○"
         
-        status = f"  {Colors.BOLD}{Colors.ORANGE}Humanaize{Colors.RESET}  {Colors.DIM}v2.0{Colors.RESET}"
-        status += f"  {gan_status} GAN"
-        status += f"  {Colors.DIM}│{Colors.RESET}"
-        status += f"  {Colors.BLUE}{msgs} msgs{Colors.RESET}"
-        status += f"  {Colors.MAGENTA}{thoughts} thoughts{Colors.RESET}"
+        if self._use_color:
+            gan_color = Colors.GREEN if self.gan_enabled else Colors.RED
+            status = f"  {Colors.BOLD}{Colors.ORANGE}Humanaize{Colors.RESET}  {Colors.DIM}v2.1{Colors.RESET}"
+            status += f"  {gan_color}{gan_status}{Colors.RESET} GAN"
+            status += f"  {Colors.DIM}│{Colors.RESET}"
+            status += f"  {Colors.BLUE}{msgs} msgs{Colors.RESET}"
+            status += f"  {Colors.MAGENTA}{thoughts} thoughts{Colors.RESET}"
+        else:
+            status = f"  Humanaize v2.1  {gan_status} GAN"
+            status += f"  │"
+            status += f"  {msgs} msgs"
+            status += f"  {thoughts} thoughts"
         
         status_stripped = self._strip(status)
         if len(status_stripped) < self.width:
@@ -159,8 +202,12 @@ class HumanaizeCLI:
         return status
 
     def _build_header_line(self, chat_width, thought_width):
-        chat_label = f"{Colors.BOLD}{Colors.BLUE}Chat{Colors.RESET}"
-        thought_label = f"{Colors.BOLD}{Colors.MAGENTA}Thoughts{Colors.RESET}"
+        if self._use_color:
+            chat_label = f"{Colors.BOLD}{Colors.BLUE}Chat{Colors.RESET}"
+            thought_label = f"{Colors.BOLD}{Colors.MAGENTA}Thoughts{Colors.RESET}"
+        else:
+            chat_label = "Chat"
+            thought_label = "Thoughts"
         
         chat_label_stripped = self._strip(chat_label)
         thought_label_stripped = self._strip(thought_label)
@@ -175,10 +222,19 @@ class HumanaizeCLI:
         
         header = f"  {chat_label}"
         if chat_div_len > 0:
-            header += f" {Colors.DIM}{'─' * chat_div_len}{Colors.RESET}"
-        header += f"  {Colors.DIM}│{Colors.RESET}  {thought_label}"
+            if self._use_color:
+                header += f" {Colors.DIM}{'─' * chat_div_len}{Colors.RESET}"
+            else:
+                header += f" {'─' * chat_div_len}"
+        if self._use_color:
+            header += f"  {Colors.DIM}│{Colors.RESET}  {thought_label}"
+        else:
+            header += f"  │  {thought_label}"
         if thought_div_len > 0:
-            header += f" {Colors.DIM}{'─' * thought_div_len}{Colors.RESET}"
+            if self._use_color:
+                header += f" {Colors.DIM}{'─' * thought_div_len}{Colors.RESET}"
+            else:
+                header += f" {'─' * thought_div_len}"
         
         return header
 
@@ -226,16 +282,26 @@ class HumanaizeCLI:
                 chat_padded = chat_clean.ljust(chat_w)
                 thought_padded = thought_clean.ljust(thought_w)
                 
-                line_parts = [
-                    "  ",
-                    chat_padded,
-                    "  ",
-                    Colors.DIM,
-                    "│",
-                    Colors.RESET,
-                    "  ",
-                    thought_padded
-                ]
+                if self._use_color:
+                    line_parts = [
+                        "  ",
+                        chat_padded,
+                        "  ",
+                        Colors.DIM,
+                        "│",
+                        Colors.RESET,
+                        "  ",
+                        thought_padded
+                    ]
+                else:
+                    line_parts = [
+                        "  ",
+                        chat_padded,
+                        "  ",
+                        "│",
+                        "  ",
+                        thought_padded
+                    ]
                 
                 full_line = "".join(line_parts)
                 lines_to_render.append(full_line)
@@ -248,7 +314,10 @@ class HumanaizeCLI:
                     line += " " * (w - len(line_stripped))
                 print(line)
             
-            sys.stdout.write(f"  {Colors.BOLD}{Colors.BLUE}You:{Colors.RESET} ")
+            if self._use_color:
+                sys.stdout.write(f"  {Colors.BOLD}{Colors.BLUE}You:{Colors.RESET} ")
+            else:
+                sys.stdout.write("  You: ")
             sys.stdout.flush()
 
     def _add_chat(self, msg):
@@ -267,26 +336,41 @@ class HumanaizeCLI:
             r = response.get("response", "")
             r = " ".join(r.split())
             if r:
-                self._add_chat(f"{Colors.GREEN}AI:{Colors.RESET} {r}")
+                if self._use_color:
+                    self._add_chat(f"{Colors.GREEN}AI:{Colors.RESET} {r}")
+                else:
+                    self._add_chat(f"AI: {r}")
             self._resume()
         elif rtype == "error":
             err = response.get("error", "")
             if err:
-                self._add_chat(f"{Colors.RED}Error:{Colors.RESET} {err}")
+                if self._use_color:
+                    self._add_chat(f"{Colors.RED}Error:{Colors.RESET} {err}")
+                else:
+                    self._add_chat(f"Error: {err}")
             self._resume()
         elif rtype == "internal_thought":
             t = response.get("thought", "")
             if t:
-                self._add_thought(f"{Colors.YELLOW}{t}{Colors.RESET}")
+                if self._use_color:
+                    self._add_thought(f"{Colors.YELLOW}{t}{Colors.RESET}")
+                else:
+                    self._add_thought(f"[THOUGHT] {t}")
         elif rtype == "autonomous_message":
             msg = response.get("message", "")
             if msg:
-                self._add_chat(f"{Colors.CYAN}AI:{Colors.RESET} {msg}")
+                if self._use_color:
+                    self._add_chat(f"{Colors.CYAN}AI:{Colors.RESET} {msg}")
+                else:
+                    self._add_chat(f"AI: {msg}")
         elif rtype == "gan_complete":
             gan_result = response.get("gan_result", {})
             should, msg = self.thinking_engine.should_proactively_speak(self.memory, gan_result)
             if should and msg:
-                self._add_chat(f"{Colors.CYAN}AI:{Colors.RESET} {msg}")
+                if self._use_color:
+                    self._add_chat(f"{Colors.CYAN}AI:{Colors.RESET} {msg}")
+                else:
+                    self._add_chat(f"AI: {msg}")
         self._render()
 
     def _on_idle_callback(self, response):
@@ -294,28 +378,46 @@ class HumanaizeCLI:
         if rtype == "internal_thought":
             t = response.get("thought", "")
             if t:
-                self._add_thought(f"{Colors.YELLOW}{t}{Colors.RESET}")
+                if self._use_color:
+                    self._add_thought(f"{Colors.YELLOW}{t}{Colors.RESET}")
+                else:
+                    self._add_thought(f"[THOUGHT] {t}")
         elif rtype == "gan_topic":
             topic = response.get("topic", "")
             if topic:
-                self._add_thought(f"{Colors.CYAN}[T]{Colors.RESET} {topic}")
+                if self._use_color:
+                    self._add_thought(f"{Colors.CYAN}[T]{Colors.RESET} {topic}")
+                else:
+                    self._add_thought(f"[T] {topic}")
         elif rtype == "gan_argument":
             arg = response.get("argument", "")
             if arg:
-                self._add_thought(f"{Colors.GREEN}[A]{Colors.RESET} {arg}")
+                if self._use_color:
+                    self._add_thought(f"{Colors.GREEN}[A]{Colors.RESET} {arg}")
+                else:
+                    self._add_thought(f"[A] {arg}")
         elif rtype == "gan_counter":
             counter = response.get("counter", "")
             if counter:
-                self._add_thought(f"{Colors.RED}[C]{Colors.RESET} {counter}")
+                if self._use_color:
+                    self._add_thought(f"{Colors.RED}[C]{Colors.RESET} {counter}")
+                else:
+                    self._add_thought(f"[C] {counter}")
         elif rtype == "gan_rebuttal":
             rebuttal = response.get("rebuttal", "")
             if rebuttal:
-                self._add_thought(f"{Colors.MAGENTA}[R]{Colors.RESET} {rebuttal}")
+                if self._use_color:
+                    self._add_thought(f"{Colors.MAGENTA}[R]{Colors.RESET} {rebuttal}")
+                else:
+                    self._add_thought(f"[R] {rebuttal}")
         elif rtype == "gan_complete":
             gan_result = response.get("gan_result", {})
             should, msg = self.thinking_engine.should_proactively_speak(self.memory, gan_result)
             if should and msg:
-                self._add_chat(f"{Colors.CYAN}AI:{Colors.RESET} {msg}")
+                if self._use_color:
+                    self._add_chat(f"{Colors.CYAN}AI:{Colors.RESET} {msg}")
+                else:
+                    self._add_chat(f"AI: {msg}")
         self._render()
 
     def _pause(self):
@@ -332,7 +434,10 @@ class HumanaizeCLI:
         if not text.strip():
             return
 
-        self._add_chat(f"{Colors.BLUE}You:{Colors.RESET} {text}")
+        if self._use_color:
+            self._add_chat(f"{Colors.BLUE}You:{Colors.RESET} {text}")
+        else:
+            self._add_chat(f"You: {text}")
         add(self.memory, "user", text)
         save_memory(self.memory)
         self._render()
@@ -380,20 +485,36 @@ class HumanaizeCLI:
         cmd = cmd.lower().strip()
         
         if cmd == "/help":
-            self._add_chat(f"{Colors.ORANGE}Commands:{Colors.RESET} /help /mem /status /quit")
+            if self._use_color:
+                self._add_chat(f"{Colors.ORANGE}Commands:{Colors.RESET} /help /mem /status /quit")
+            else:
+                self._add_chat(f"Commands: /help /mem /status /quit")
         elif cmd == "/mem":
             msgs = self.memory.get("messages", [])[-3:]
             if msgs:
                 for m in msgs:
-                    self._add_chat(f"{Colors.GRAY}{m.get('role')}: {m.get('content', '')[:50]}{Colors.RESET}")
+                    role = m.get('role', 'unknown')
+                    content = m.get('content', '')[:50]
+                    if self._use_color:
+                        self._add_chat(f"{Colors.GRAY}{role}: {content}{Colors.RESET}")
+                    else:
+                        self._add_chat(f"{role}: {content}")
             else:
-                self._add_chat(f"{Colors.GRAY}No memory{Colors.RESET}")
+                if self._use_color:
+                    self._add_chat(f"{Colors.GRAY}No memory{Colors.RESET}")
+                else:
+                    self._add_chat("No memory")
         elif cmd == "/status":
-            self._add_chat(f"GAN: {'ON' if self.gan_enabled else 'OFF'} | Msgs: {len(self.memory.get('messages', []))}")
+            gan_status = "ON" if self.gan_enabled else "OFF"
+            msg_count = len(self.memory.get('messages', []))
+            self._add_chat(f"GAN: {gan_status} | Msgs: {msg_count}")
         elif cmd == "/quit":
             self.running = False
         else:
-            self._add_chat(f"{Colors.RED}Unknown: {cmd}{Colors.RESET}")
+            if self._use_color:
+                self._add_chat(f"{Colors.RED}Unknown: {cmd}{Colors.RESET}")
+            else:
+                self._add_chat(f"Unknown: {cmd}")
 
     def _shutdown(self):
         save_memory(self.memory)
@@ -402,7 +523,10 @@ class HumanaizeCLI:
         for line in self._initial_lines:
             print(line)
         print()
-        print(f"  {Colors.ORANGE}Goodbye!{Colors.RESET}")
+        if self._use_color:
+            print(f"  {Colors.ORANGE}Goodbye!{Colors.RESET}")
+        else:
+            print("  Goodbye!")
         print()
 
 
