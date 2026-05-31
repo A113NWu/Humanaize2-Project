@@ -276,8 +276,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📊 Stats
 
-![GitHub stars](https://img.shields.io/github/stars/yourusername/humanaize?style=social)
-![GitHub forks](https://img.shields.io/github/forks/yourusername/humanaize?style=social)
+![GitHub stars](https://img.shields.io/github/stars/A113NWu/Humanaize2-Project?style=social)
+![GitHub forks](https://img.shields.io/github/forks/A113NWu/Humanaize2-Project?style=social)
 
 ---
 
