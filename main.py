@@ -19,51 +19,78 @@ import warnings
 warnings.filterwarnings("ignore", message=".*iCCP.*known incorrect sRGB profile.*")
 
 
+def _get_llama_server_path():
+    """Get the correct llama-server path for the current platform"""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    llama_dir = os.path.join(base_dir, "llama")
+
+    if sys.platform == "win32" or os.name == "nt":
+        return os.path.join(llama_dir, "llama-server.exe")
+    elif sys.platform == "darwin":
+        return os.path.join(llama_dir, "llama-server")
+    else:
+        return os.path.join(llama_dir, "llama-server")
+
+
+def _get_model_path():
+    """Get the model path for the current platform"""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_dir, "models", "tinyllama.gguf")
+
+
 def _check_and_start_server():
     """检查LLM服务器是否运行，若未运行则自动启动"""
     from tools import check_llm_server
-    
+
     print("[INFO] Checking LLM server...")
     if check_llm_server():
         print("[INFO] LLM server is already running.")
         return True
-    
+
     print("[INFO] LLM server not detected. Starting server...")
-    
-    llama_dir = os.path.join(os.path.dirname(__file__), "llama")
-    server_exe = os.path.join(llama_dir, "llama-server.exe")
-    model_path = os.path.join(os.path.dirname(__file__), "models", "tinyllama.gguf")
-    
-    if not os.path.exists(server_exe):
-        print("[ERROR] llama-server.exe not found at:", server_exe)
+
+    server_path = _get_llama_server_path()
+    model_path = _get_model_path()
+
+    if not os.path.exists(server_path):
+        print("[ERROR] llama-server not found at:", server_path)
         return False
-    
+
     if not os.path.exists(model_path):
         print("[ERROR] Model file not found at:", model_path)
         return False
-    
+
     try:
-        subprocess.Popen(
-            [server_exe, "-m", model_path, "-c", "4096", "-ngl", "999", "--host", "127.0.0.1", "--port", "8080", "-n", "256"],
-            cwd=llama_dir,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-        )
-        
-        def _wait_for_server():
+        if sys.platform == "win32" or os.name == "nt":
+            subprocess.Popen(
+                [server_path, "-m", model_path, "-c", "4096", "-ngl", "999", "--host", "127.0.0.1", "--port", "8080", "-n", "256"],
+                cwd=os.path.dirname(server_path),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+            )
+        else:
             import time
-            from tools import check_llm_server
-            for _ in range(30):
-                time.sleep(1)
-                if check_llm_server():
-                    print("[INFO] LLM server started successfully!")
-                    return
-            print("[WARN] Server process started but not responding yet.")
-        
-        threading.Thread(target=_wait_for_server, daemon=True).start()
+
+            subprocess.Popen(
+                [server_path, "-m", model_path, "-c", "4096", "-ngl", "999", "--host", "127.0.0.1", "--port", "8080", "-n", "256"],
+                cwd=os.path.dirname(server_path),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+
+            def _wait_for_server():
+                from tools import check_llm_server
+                for _ in range(30):
+                    time.sleep(1)
+                    if check_llm_server():
+                        print("[INFO] LLM server started successfully!")
+                        return
+                print("[WARN] Server process started but not responding yet.")
+
+            threading.Thread(target=_wait_for_server, daemon=True).start()
         return True
-        
+
     except Exception as e:
         print("[ERROR] Failed to start server:", str(e))
         return False
