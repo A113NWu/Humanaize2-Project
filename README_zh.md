@@ -277,8 +277,8 @@ metadata:
 
 ## 📊 統計
 
-![GitHub stars](https://img.shields.io/github/stars/yourusername/humanaize?style=social)
-![GitHub forks](https://img.shields.io/github/forks/yourusername/humanaize?style=social)
+![GitHub stars](https://img.shields.io/github/stars/A113NWu/Humanaize2-Project?style=social)
+![GitHub forks](https://img.shields.io/github/forks/A113NWu/Humanaize2-Project?style=social)
 
 ---
 
