@@ -318,6 +318,14 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [DeepFace](https://github.com/serengil/deepface) - Facial analysis
 - [OpenClaw](https://github.com/secondself/openclaw) - Skill framework inspiration
 
+<<<<<<< HEAD
+=======
+## 📊 Stats
+
+![GitHub stars](https://img.shields.io/github/stars/A113NWu/Humanaize2-Project?style=social)
+![GitHub forks](https://img.shields.io/github/forks/A113NWu/Humanaize2-Project?style=social)
+
+>>>>>>> 3a9f383f5c14069dfb4125a2c7b86c6dc8054580
 ---
 
 **Note**: This software requires a local LLM server. Humanaize provides the framework but does not include LLM model files due to their size. Download a compatible GGUF model separately.

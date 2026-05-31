@@ -318,6 +318,14 @@ metadata:
 - [DeepFace](https://github.com/serengil/deepface) - 面部分析
 - [OpenClaw](https://github.com/secondself/openclaw) - 技能框架靈感
 
+<<<<<<< HEAD
+=======
+## 📊 統計
+
+![GitHub stars](https://img.shields.io/github/stars/A113NWu/Humanaize2-Project?style=social)
+![GitHub forks](https://img.shields.io/github/forks/A113NWu/Humanaize2-Project?style=social)
+
+>>>>>>> 3a9f383f5c14069dfb4125a2c7b86c6dc8054580
 ---
 
 **注意**：此軟件需要本地 LLM 服務器。Humanaize 提供框架但不包括 LLM 模型文件（因為體積較大）。請單獨下載兼容的 GGUF 模型。
