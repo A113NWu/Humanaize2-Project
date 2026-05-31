@@ -1,0 +1,21 @@
+# Humanaize v2.0 Dependencies
+
+# UI Framework
+customtkinter>=5.2.0
+
+# HTTP Requests
+requests>=2.28.0
+
+# YAML parsing for skill files
+PyYAML>=6.0
+
+# Computer Vision (for emotion detection skill)
+opencv-python>=4.8.0
+deepface>=0.0.8
+
+# Standard library modules (included with Python):
+# - tkinter (built-in)
+# - json (built-in)
+# - re (built-in)
+# - os, sys, threading, queue, time, datetime (built-in)
+# - pathlib (built-in)
