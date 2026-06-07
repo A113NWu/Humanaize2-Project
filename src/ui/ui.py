@@ -327,16 +327,11 @@ class HumanaizeUI:
         self.settings_window.transient(self.root)
         self.settings_window.grab_set()
         self.settings_window.grid_columnconfigure(0, weight=1)
-        
-        # Set background color
-        bg_color = "#1a1a1a" if self.theme == "dark" else "#f0f0f0"
-        self.settings_window.configure(fg_color=bg_color)
 
-        # Create scrollable frame with correct background color
+        # Create scrollable frame (let customtkinter handle theme colors)
         scroll_frame = ctk.CTkScrollableFrame(
             self.settings_window, 
-            width=720,
-            fg_color=bg_color
+            width=720
         )
         scroll_frame.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
         scroll_frame.grid_columnconfigure(0, weight=1)
@@ -382,11 +377,11 @@ class HumanaizeUI:
         downloader = ModelDownloader()
         is_installed = downloader.is_model_installed()
         
-        download_frame = ctk.CTkFrame(scroll_frame, fg_color="#2a2a2a")
+        download_frame = ctk.CTkFrame(scroll_frame)
         download_frame.grid(row=row, column=0, sticky="ew", padx=0, pady=(5, 0))
         download_frame.grid_columnconfigure(0, weight=1)
         
-        download_status_label = ctk.CTkLabel(download_frame, text="", anchor="w", text_color="#888888")
+        download_status_label = ctk.CTkLabel(download_frame, text="", anchor="w")
         
         def download_tinyllama():
             if downloader.downloading:
@@ -403,16 +398,15 @@ class HumanaizeUI:
             result = downloader.download_model(callback=progress_callback)
             
             if result.get("success"):
-                download_status_label.configure(text=result["message"], text_color="#66ff66")
+                download_status_label.configure(text=result["message"], text_color="green")
                 model_path_var.set("models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf")
             else:
-                download_status_label.configure(text=f"Error: {result.get('error', 'Unknown error')}", text_color="#ff6666")
+                download_status_label.configure(text=f"Error: {result.get('error', 'Unknown error')}", text_color="red")
         
         download_btn = ctk.CTkButton(
             download_frame, 
             text="Download TinyLlama Model (173MB)" if not is_installed else "Model Already Installed", 
             command=download_tinyllama,
-            fg_color="#2563eb" if not is_installed else "#3d3d3d",
             state="normal" if not is_installed else "disabled"
         )
         download_btn.grid(row=0, column=0, sticky="ew", padx=15, pady=10)
@@ -452,7 +446,7 @@ class HumanaizeUI:
         ctk.CTkCheckBox(scroll_frame, text=self._t("enable_gan"), variable=gan_enabled_var).grid(row=row, column=0, sticky="w", padx=0, pady=(4, 15))
         row += 1
         
-        update_frame = ctk.CTkFrame(scroll_frame, fg_color=("#2a2a2a", "#1a1a1a"))
+        update_frame = ctk.CTkFrame(scroll_frame)
         update_frame.grid(row=row, column=0, sticky="ew", padx=0, pady=(0, 15))
         update_frame.grid_columnconfigure(0, weight=1)
         row += 1
@@ -465,10 +459,10 @@ class HumanaizeUI:
         version_label = ctk.CTkLabel(update_frame, text=f"Current version: {updater.get_local_version()}", anchor="w")
         version_label.grid(row=1, column=0, sticky="w", padx=15, pady=(0, 5))
         
-        status_label = ctk.CTkLabel(update_frame, text="", anchor="w", text_color="#888888")
+        status_label = ctk.CTkLabel(update_frame, text="", anchor="w")
         status_label.grid(row=2, column=0, sticky="w", padx=15, pady=(0, 5))
         
-        update_progress_label = ctk.CTkLabel(update_frame, text="", anchor="w", text_color="#888888")
+        update_progress_label = ctk.CTkLabel(update_frame, text="", anchor="w")
         update_progress_label.grid(row=3, column=0, sticky="w", padx=15, pady=(0, 5))
         
         def check_for_updates():
@@ -478,38 +472,38 @@ class HumanaizeUI:
             result = updater.check_for_updates()
             
             if result.get("error"):
-                status_label.configure(text=f"Error: {result['error']}", text_color="#ff6666")
+                status_label.configure(text=f"Error: {result['error']}", text_color="red")
             elif result.get("has_update"):
-                status_label.configure(text=f"Update available: v{result['latest_version']} (you have v{result['current_version']})", text_color="#66ff66")
+                status_label.configure(text=f"Update available: v{result['latest_version']} (you have v{result['current_version']})", text_color="green")
             else:
-                status_label.configure(text=f"You are up to date (v{result['current_version']})", text_color="#888888")
+                status_label.configure(text=f"You are up to date (v{result['current_version']})", text_color="gray")
         
         def download_update():
             def progress_callback(message):
                 update_progress_label.configure(text=message)
                 self.settings_window.update()
             
-            update_progress_label.configure(text="Starting update...", text_color="#fbbf24")
+            update_progress_label.configure(text="Starting update...", text_color="orange")
             self.settings_window.update()
             
             result = updater.download_and_install_update(progress_callback)
             
             if result.get("success"):
-                update_progress_label.configure(text="", text_color="#66ff66")
-                status_label.configure(text=result["message"], text_color="#66ff66")
+                update_progress_label.configure(text="", text_color="green")
+                status_label.configure(text=result["message"], text_color="green")
             else:
-                update_progress_label.configure(text="", text_color="#ff6666")
-                status_label.configure(text=result.get("message", "Update failed"), text_color="#ff6666")
+                update_progress_label.configure(text="", text_color="red")
+                status_label.configure(text=result.get("message", "Update failed"), text_color="red")
         
         button_frame_update = ctk.CTkFrame(update_frame, fg_color="transparent")
         button_frame_update.grid(row=4, column=0, sticky="ew", padx=10, pady=(5, 10))
         button_frame_update.grid_columnconfigure(0, weight=1)
         button_frame_update.grid_columnconfigure(1, weight=1)
         
-        check_btn = ctk.CTkButton(button_frame_update, text="Check for Updates", command=check_for_updates, fg_color="#3d3d3d", text_color="#ffffff")
+        check_btn = ctk.CTkButton(button_frame_update, text="Check for Updates", command=check_for_updates)
         check_btn.grid(row=0, column=0, sticky="ew", padx=(0, 5))
         
-        update_btn = ctk.CTkButton(button_frame_update, text="Download & Install Update", command=download_update, fg_color="#2563eb", text_color="#ffffff")
+        update_btn = ctk.CTkButton(button_frame_update, text="Download & Install Update", command=download_update)
         update_btn.grid(row=0, column=1, sticky="ew", padx=(5, 0))
         
         check_for_updates()
