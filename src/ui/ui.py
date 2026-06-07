@@ -327,9 +327,17 @@ class HumanaizeUI:
         self.settings_window.transient(self.root)
         self.settings_window.grab_set()
         self.settings_window.grid_columnconfigure(0, weight=1)
+        
+        # Set background color
+        bg_color = "#1a1a1a" if self.theme == "dark" else "#f0f0f0"
+        self.settings_window.configure(fg_color=bg_color)
 
-        # Create scrollable frame
-        scroll_frame = ctk.CTkScrollableFrame(self.settings_window, width=720)
+        # Create scrollable frame with correct background color
+        scroll_frame = ctk.CTkScrollableFrame(
+            self.settings_window, 
+            width=720,
+            fg_color=bg_color
+        )
         scroll_frame.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
         scroll_frame.grid_columnconfigure(0, weight=1)
         self.settings_window.grid_rowconfigure(0, weight=1)
