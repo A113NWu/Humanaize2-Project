@@ -1,5 +1,5 @@
 {
-  "version": "2.1.0-release",
-  "last_updated": "2026-06-07T21:05:00.000000",
-  "release_notes": "v2.1.0-release\n\n主要更新：\n0.优化了目录结构\n1.编译了Linux安装包(Windows安装包敬请期待)\n2.加入了通过命令自动下载Tinyllama的功能\n3.加入了Solve模式，可以调用GAN引擎解决实际问题"
+  "version": "2.1.1",
+  "last_updated": "2026-06-07T21:10:00.000000",
+  "release_notes": "v2.1.1\n\n主要更新：\n0.优化了目录结构\n1.编译了Linux安装包(Windows安装包敬请期待)\n2.加入了通过命令自动下载Tinyllama的功能\n3.加入了Solve模式，可以调用GAN引擎解决实际问题"
 }
