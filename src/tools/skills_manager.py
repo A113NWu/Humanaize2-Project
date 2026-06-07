@@ -635,7 +635,11 @@ class SkillsManager:
         """Execute emotion detection using camera"""
         try:
             import cv2
-            from deepface import DeepFace
+            try:
+                from deepface import DeepFace
+            except ImportError:
+                return {"error": "deepface not installed. Please install with: pip install deepface", 
+                       "dominant": "unknown", "confidence": 0.0}
 
             cap = cv2.VideoCapture(0)
             if not cap.isOpened():

@@ -1,5 +1,9 @@
 import cv2
-from deepface import DeepFace
+try:
+    from deepface import DeepFace
+    DEEPFACE_AVAILABLE = True
+except ImportError:
+    DEEPFACE_AVAILABLE = False
 from threading import Thread
 from time import sleep
 from config import SCREENSHOT_INTERVAL
@@ -11,6 +15,9 @@ class VisionThread(Thread):
         self.running = True
 
     def run(self):
+        if not DEEPFACE_AVAILABLE:
+            return
+
         while self.running:
             cap = cv2.VideoCapture(0)
             try:
