@@ -11,7 +11,7 @@ PyYAML>=6.0
 
 # Computer Vision (for emotion detection skill)
 opencv-python>=4.8.0
-deepface>=0.0.8
+deepface
 
 # Standard library modules (included with Python):
 # - tkinter (built-in)

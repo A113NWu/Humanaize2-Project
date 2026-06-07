@@ -1,5 +1,0 @@
-{
-  "version": "2.1.beta20250101",
-  "last_updated": "2025-05-31",
-  "release_notes": "-Fixed some bugs\n -Add support for linux\n -Add automatic downloading for Tinyllama"
-}

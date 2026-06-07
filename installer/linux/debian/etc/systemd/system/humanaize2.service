@@ -1,0 +1,16 @@
+[Unit]
+Description=Humanaize 2.0 Agent
+After=network.target
+
+[Service]
+Type=simple
+User=humanaize
+Group=humanaize
+WorkingDirectory=/usr/share/humanaize2
+ExecStart=/usr/bin/python3 src/core/main.py boot
+Restart=always
+RestartSec=5
+Environment="PYTHONPATH=/usr/share/humanaize2"
+
+[Install]
+WantedBy=multi-user.target

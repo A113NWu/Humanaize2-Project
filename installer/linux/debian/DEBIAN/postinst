@@ -1,0 +1,38 @@
+#!/bin/bash
+set -e
+
+# Post-installation script
+
+# Install Python dependencies
+if [ -f /usr/share/humanaize2/requirements.txt ]; then
+    pip3 install -r /usr/share/humanaize2/requirements.txt || true
+fi
+
+# Create symlink for CLI command
+if [ -f /usr/share/humanaize2/humanaize2.sh ]; then
+    chmod +x /usr/share/humanaize2/humanaize2.sh
+    ln -sf /usr/share/humanaize2/humanaize2.sh /usr/local/bin/humanaize2
+    chmod +x /usr/local/bin/humanaize2
+fi
+
+# Create data directory
+mkdir -p /var/lib/humanaize
+mkdir -p /var/log/humanaize2
+
+# Set permissions
+if id "humanaize" >/dev/null 2>&1; then
+    chown -R humanaize:humanaize /var/lib/humanaize
+    chown -R humanaize:humanaize /var/log/humanaize2
+fi
+
+# Enable and start service (if systemd is available)
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload 2>/dev/null || true
+    systemctl enable humanaize2.service 2>/dev/null || true
+    systemctl start humanaize2.service 2>/dev/null || true
+fi
+
+echo "Humanaize 2.0 Agent installed successfully!"
+echo "Run 'humanaize2' to start the agent."
+
+exit 0
