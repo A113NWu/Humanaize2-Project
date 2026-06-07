@@ -6,7 +6,7 @@ set -e
 
 # Default configuration
 PACKAGE_NAME="humanaize2"
-VERSION="2.1.0"
+VERSION="2.1.1"
 ARCH="all"  # Default to architecture-independent (Python)
 BUILD_DIR="build"
 

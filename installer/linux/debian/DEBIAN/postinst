@@ -5,7 +5,7 @@ set -e
 
 # Install Python dependencies
 if [ -f /usr/share/humanaize2/requirements.txt ]; then
-    pip3 install -r /usr/share/humanaize2/requirements.txt || true
+    pip3 install --break-system-packages -r /usr/share/humanaize2/requirements.txt || true
 fi
 
 # Create symlink for CLI command
@@ -23,6 +23,16 @@ mkdir -p /var/log/humanaize2
 if id "humanaize" >/dev/null 2>&1; then
     chown -R humanaize:humanaize /var/lib/humanaize
     chown -R humanaize:humanaize /var/log/humanaize2
+fi
+
+# Update icon cache
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache /usr/share/icons/hicolor/ 2>/dev/null || true
+fi
+
+# Update desktop database
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database /usr/share/applications/ 2>/dev/null || true
 fi
 
 # Enable and start service (if systemd is available)
