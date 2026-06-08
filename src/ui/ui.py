@@ -319,6 +319,7 @@ class HumanaizeUI:
             self.settings_window.lift()
             return
 
+        # Create settings window with proper theme support
         self.settings_window = ctk.CTkToplevel(self.root)
         self.settings_window.title(self._t("settings"))
         self.settings_window.geometry("760x680")
@@ -327,8 +328,14 @@ class HumanaizeUI:
         self.settings_window.transient(self.root)
         self.settings_window.grab_set()
         self.settings_window.grid_columnconfigure(0, weight=1)
+        
+        # Apply theme settings to the toplevel window
+        if self.theme == "Dark":
+            self.settings_window._apply_appearance_mode("dark")
+        else:
+            self.settings_window._apply_appearance_mode("light")
 
-        # Create scrollable frame (let customtkinter handle theme colors)
+        # Create scrollable frame
         scroll_frame = ctk.CTkScrollableFrame(
             self.settings_window, 
             width=720
