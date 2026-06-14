@@ -1,0 +1,9 @@
+Origin: Humanaize2
+Label: Humanaize2 Repository
+Suite: stable
+Version: 2.2.0
+Codename: stable
+Date: Sun, 14 Jun 2026 23:35:45 +0800
+Architectures: amd64 arm64 all
+Components: main
+Description: Humanaize 2.0 AI Assistant Repository
