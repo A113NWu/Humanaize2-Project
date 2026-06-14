@@ -3,167 +3,288 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Humanaize 2.0 APT Repository</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 40px 20px;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            color: #e0e0e0;
-            min-height: 100vh;
-        }
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-        }
-        .logo {
-            font-size: 48px;
-            margin-bottom: 10px;
-        }
-        .title {
-            font-size: 28px;
-            color: #4fc3f7;
-            margin: 0;
-        }
-        .subtitle {
-            color: #90caf9;
-            margin-top: 5px;
-        }
-        .card {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 12px;
-            padding: 24px;
-            margin-bottom: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-        .card-title {
-            color: #4fc3f7;
-            font-size: 18px;
-            margin-top: 0;
-            margin-bottom: 15px;
-        }
-        .code-block {
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 8px;
-            padding: 16px;
-            font-family: 'Fira Code', 'Monaco', monospace;
-            font-size: 14px;
-            overflow-x: auto;
-            color: #a5d6a7;
-        }
-        .instructions {
-            line-height: 1.8;
-        }
-        .info {
-            background: rgba(79, 195, 247, 0.1);
-            border-left: 4px solid #4fc3f7;
-            padding: 12px 16px;
-            border-radius: 0 8px 8px 0;
-            margin-bottom: 20px;
-        }
-        .footer {
-            text-align: center;
-            color: #757575;
-            margin-top: 40px;
-            font-size: 14px;
-        }
-        .badge {
-            display: inline-block;
-            background: #4caf50;
-            color: white;
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            margin-right: 8px;
-        }
-        .arch-list {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-            margin-top: 10px;
-        }
-        .arch-item {
-            background: rgba(255, 255, 255, 0.1);
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 14px;
-        }
-    </style>
+    <meta name="description" content="Humanaize 2.0 - AI-powered personal assistant with self-optimization capabilities">
+    <meta name="keywords" content="AI, assistant, chatbot, self-optimization, personal assistant">
+    <title>Humanaize 2.0 - AI Personal Assistant</title>
+    <link rel="stylesheet" href="assets/css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 </head>
 <body>
-    <div class="header">
-        <div class="logo">🧠</div>
-        <h1 class="title">Humanaize 2.0</h1>
-        <p class="subtitle">APT Repository</p>
-        <div class="arch-list">
-            <span class="arch-item">amd64</span>
-            <span class="arch-item">arm64</span>
-            <span class="arch-item">all</span>
-        </div>
-    </div>
-
-    <div class="info">
-        <strong>📦 Repository Status:</strong> Ready for use
-    </div>
-
-    <div class="card">
-        <h2 class="card-title">Quick Installation</h2>
-        <div class="instructions">
-            <p>Add this repository to your system and install Humanaize 2.0:</p>
-            <div class="code-block">
-                echo 'deb [trusted=yes] https://a113nwu.github.io/Humanaize2-Project/apt-repo stable main' | sudo tee /etc/apt/sources.list.d/humanaize2.list<br>
-                sudo apt update<br>
-                sudo apt install humanaize2
+    <!-- Navigation -->
+    <nav>
+        <div class="nav-container">
+            <a href="#" class="logo">
+                <span class="logo-icon">🧠</span>
+                <span>Humanaize</span>
+            </a>
+            
+            <ul class="nav-links">
+                <li><a href="#features">功能特色</a></li>
+                <li><a href="#download">下載安裝</a></li>
+                <li><a href="#bug-report">回報問題</a></li>
+                <li><a href="#community">社群</a></li>
+            </ul>
+            
+            <div class="nav-actions">
+                <a href="#download" class="btn btn-secondary">安裝</a>
+                <a href="https://github.com/A113NWu/Humanaize2-Project" target="_blank" class="btn btn-primary">GitHub</a>
             </div>
         </div>
-    </div>
+    </nav>
 
-    <div class="card">
-        <h2 class="card-title">Manual Download</h2>
-        <div class="instructions">
-            <p>Download and install the Debian package directly:</p>
-            <div class="code-block">
-                # For amd64<br>
-                wget https://a113nwu.github.io/Humanaize2-Project/apt-repo/dists/stable/main/binary-amd64/humanaize2_2.2.0_amd64.deb<br>
-                sudo dpkg -i humanaize2_2.2.0_amd64.deb<br>
-                sudo apt install -f
+    <!-- Hero Section -->
+    <section class="hero" id="home">
+        <div class="hero-content">
+            <span class="hero-subtitle">AI 驅動的個人助理</span>
+            <h1 class="hero-title">
+                讓 AI <span>自我演化</span>
+                <br>成為你的智慧助手
+            </h1>
+            <p class="hero-description">
+                Humanaize 2.0 是一款具備自我優化能力的 AI 個人助理，
+                能夠適應你的使用習慣，在閒置時間進行自我迭代，提供更智慧的服務。
+            </p>
+            <div class="hero-buttons">
+                <a href="#download" class="btn btn-primary btn-large">立即下載</a>
+                <a href="#features" class="btn btn-secondary btn-large">了解更多</a>
+            </div>
+            
+            <div class="hero-stats">
+                <div class="stat-item">
+                    <div class="stat-number" data-target="5000">0</div>
+                    <div class="stat-label">活躍使用者</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" data-target="50">0</div>
+                    <div class="stat-label">支援技能</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" data-target="99">0</div>
+                    <div class="stat-label">服務可用性</div>
+                </div>
             </div>
         </div>
-    </div>
+    </section>
 
-    <div class="card">
-        <h2 class="card-title">Repository Structure</h2>
-        <div class="code-block">
-apt-repo/<br>
-├── dists/<br>
-│   └── stable/<br>
-│       ├── Release<br>
-│       └── main/<br>
-│           ├── binary-amd64/<br>
-│           ├── binary-arm64/<br>
-│           └── binary-all/
-        </div>
-    </div>
-
-    <div class="card">
-        <h2 class="card-title">Getting Started</h2>
-        <div class="instructions">
-            <p>After installation, launch Humanaize 2.0:</p>
-            <div class="code-block">
-                # GUI mode<br>
-                humanaize2<br>
-                <br>
-                # CLI mode<br>
-                humanaize2-cli
+    <!-- Features Section -->
+    <section class="section features-section" id="features">
+        <h2 class="section-title">核心功能</h2>
+        <p class="section-subtitle">Humanaize 2.0 具備先進的 AI 能力，提供智慧化的個人助理體驗</p>
+        
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon">🧠</div>
+                <h3 class="feature-title">自我演化</h3>
+                <p class="feature-description">
+                    AI 能夠在閒置時間進行自我分析與優化，不斷提升回應速度與服務品質，適應你的使用習慣。
+                </p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">⚡</div>
+                <h3 class="feature-title">高效回應</h3>
+                <p class="feature-description">
+                    基於本地 LLM 模型，提供毫秒級回應速度，無需等待雲端延遲，保護你的隱私安全。
+                </p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">🔧</div>
+                <h3 class="feature-title">模組化架構</h3>
+                <p class="feature-description">
+                    清晰的 Core 與 AI Selfdevelop 模組分離，支援靈活的擴展與自定義，更新時保留個人化設定。
+                </p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">💬</div>
+                <h3 class="feature-title">自然語言介面</h3>
+                <p class="feature-description">
+                    直覺式聊天介面，支援 CLI 與 GUI 模式，輕鬆與 AI 進行自然對話，完成各種任務。
+                </p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">📚</div>
+                <h3 class="feature-title">技能擴展</h3>
+                <p class="feature-description">
+                    可擴展的技能系統，支援自定義技能開發，讓 AI 學會新的能力，滿足各種需求。
+                </p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">🔒</div>
+                <h3 class="feature-title">本機部署</h3>
+                <p class="feature-description">
+                    所有數據儲存在本地端，無需上傳伺服器，全面保護你的隱私與數據安全。
+                </p>
             </div>
         </div>
-    </div>
+    </section>
 
-    <div class="footer">
-        <p>Humanaize 2.0 v2.2.0 | AI-powered personal assistant</p>
-        <p><a href="https://github.com/A113NWu/Humanaize2-Project" style="color: #4fc3f7;">GitHub Repository</a></p>
-    </div>
+    <!-- Download Section -->
+    <section class="section download-section" id="download">
+        <h2 class="section-title">下載安裝</h2>
+        <p class="section-subtitle">選擇適合你系統的版本，輕鬆安裝 Humanaize 2.0</p>
+        
+        <div class="download-grid">
+            <div class="download-card">
+                <div class="download-icon">🐧</div>
+                <h3 class="download-title">Debian/Ubuntu</h3>
+                <div class="download-version">v2.2.0</div>
+                <div class="download-size">約 1.5 MB</div>
+                <a href="#" class="btn btn-primary download-btn" data-platform="debian">APT 安裝</a>
+                <div style="margin-top: 15px; text-align: left; font-size: 12px; color: var(--text-muted);">
+                    <code style="background: rgba(0,0,0,0.3); padding: 5px 8px; border-radius: 4px;">
+                        echo 'deb [trusted=yes] https://a113nwu.github.io/Humanaize2-Project/apt-repo stable main' | sudo tee /etc/apt/sources.list.d/humanaize2.list && sudo apt update && sudo apt install humanaize2
+                    </code>
+                </div>
+            </div>
+            
+            <div class="download-card">
+                <div class="download-icon">💻</div>
+                <h3 class="download-title">Linux (通用)</h3>
+                <div class="download-version">v2.2.0</div>
+                <div class="download-size">約 1.5 MB</div>
+                <a href="#" class="btn btn-secondary download-btn" data-platform="linux">下載 DEB</a>
+            </div>
+            
+            <div class="download-card">
+                <div class="download-icon">📦</div>
+                <h3 class="download-title">原始碼</h3>
+                <div class="download-version">v2.2.0</div>
+                <div class="download-size">GitHub</div>
+                <a href="https://github.com/A113NWu/Humanaize2-Project" target="_blank" class="btn btn-secondary download-btn" data-platform="source">GitHub</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Bug Report Section -->
+    <section class="section bug-report-section" id="bug-report">
+        <h2 class="section-title">回報問題</h2>
+        <p class="section-subtitle">遇到問題？請告訴我們，你的回饋對我們很重要</p>
+        
+        <form id="bug-form" class="bug-form">
+            <div class="form-group">
+                <label for="title">問題標題</label>
+                <input type="text" id="title" name="title" placeholder="請簡要描述問題" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="type">問題類型</label>
+                <select id="type" name="type" required>
+                    <option value="">請選擇</option>
+                    <option value="bug">程式錯誤 (Bug)</option>
+                    <option value="feature">功能請求</option>
+                    <option value="improvement">改進建議</option>
+                    <option value="other">其他</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="description">問題描述</label>
+                <textarea id="description" name="description" placeholder="請詳細描述問題，包括發生步驟、預期結果、實際結果等" required></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label for="version">版本號</label>
+                <input type="text" id="version" name="version" placeholder="例如: v2.2.0" required>
+            </div>
+            
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" name="logs" value="include">
+                    願意提供日誌檔案
+                </label>
+            </div>
+            
+            <button type="submit" class="btn btn-primary" style="width: 100%;">提交問題</button>
+        </form>
+    </section>
+
+    <!-- Community Section -->
+    <section class="section community-section" id="community">
+        <h2 class="section-title">加入社群</h2>
+        <p class="section-subtitle">與其他使用者交流，共同推動 Humanaize 的發展</p>
+        
+        <div class="community-grid">
+            <div class="community-card">
+                <div class="community-icon">🐙</div>
+                <h3 class="community-title">GitHub</h3>
+                <p class="community-description">查看原始碼、提交 PR、回報 Issues</p>
+                <a href="https://github.com/A113NWu/Humanaize2-Project" target="_blank" class="btn btn-secondary" style="margin-top: 15px;">前往</a>
+            </div>
+            
+            <div class="community-card">
+                <div class="community-icon">💬</div>
+                <h3 class="community-title">Discord</h3>
+                <p class="community-description">與開發團隊和使用者即時交流</p>
+                <a href="#" class="btn btn-secondary" style="margin-top: 15px;">加入</a>
+            </div>
+            
+            <div class="community-card">
+                <div class="community-icon">📖</div>
+                <h3 class="community-title">文件</h3>
+                <p class="community-description">閱讀完整的使用指南與開發文件</p>
+                <a href="#" class="btn btn-secondary" style="margin-top: 15px;">閱讀</a>
+            </div>
+            
+            <div class="community-card">
+                <div class="community-icon">💡</div>
+                <h3 class="community-title">Discussions</h3>
+                <p class="community-description">分享想法、提問、討論新功能</p>
+                <a href="#" class="btn btn-secondary" style="margin-top: 15px;">參與</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="footer-content">
+            <div class="footer-section">
+                <h3>Humanaize</h3>
+                <p style="color: var(--text-secondary); font-size: 14px; line-height: 1.6;">
+                    AI 驅動的個人助理，具備自我演化能力，提供智慧化服務。
+                </p>
+            </div>
+            
+            <div class="footer-section">
+                <h3>產品</h3>
+                <ul>
+                    <li><a href="#features">功能特色</a></li>
+                    <li><a href="#download">下載安裝</a></li>
+                    <li><a href="#">更新日誌</a></li>
+                    <li><a href="#">API 文件</a></li>
+                </ul>
+            </div>
+            
+            <div class="footer-section">
+                <h3>資源</h3>
+                <ul>
+                    <li><a href="#">使用指南</a></li>
+                    <li><a href="#">開發文件</a></li>
+                    <li><a href="#bug-report">回報問題</a></li>
+                    <li><a href="#">貢獻指南</a></li>
+                </ul>
+            </div>
+            
+            <div class="footer-section">
+                <h3>關於</h3>
+                <ul>
+                    <li><a href="#">關於我們</a></li>
+                    <li><a href="#">聯絡方式</a></li>
+                    <li><a href="#">隱私政策</a></li>
+                    <li><a href="#">服務條款</a></li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="footer-bottom">
+            <p>&copy; 2026 Humanaize. All rights reserved. Made with ❤️ by A113NWu</p>
+        </div>
+    </footer>
+
+    <script src="assets/js/main.js"></script>
 </body>
 </html>
