@@ -90,3 +90,8 @@ dmypy.json
 
 # Ruff
 .ruff_cache/
+
+# Debian packages
+*.deb
+installer_output/
+installer/linux/output/
