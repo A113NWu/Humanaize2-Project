@@ -9,11 +9,12 @@ while [ -L "$SCRIPT_PATH" ]; do
 done
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 
-# Set PYTHONPATH to the script directory
-export PYTHONPATH="$SCRIPT_DIR:$PYTHONPATH"
+# Set PYTHONPATH to include both the script directory and the install directory
+INSTALL_DIR="/usr/share/humanaize2"
+export PYTHONPATH="$INSTALL_DIR:$INSTALL_DIR/src:$PYTHONPATH"
 
 # Model configuration
-MODEL_DIR="$SCRIPT_DIR/models"
+MODEL_DIR="$INSTALL_DIR/models"
 MODEL_FILE="$MODEL_DIR/tinyllama.gguf"
 MODEL_URL="https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
 
@@ -100,4 +101,4 @@ if [ "$1" = "download-model" ]; then
 fi
 
 # Run the main script with all arguments
-exec python3 "$SCRIPT_DIR/src/core/main.py" "$@"
+exec python3 "$INSTALL_DIR/src/core/main.py" "$@"

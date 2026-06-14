@@ -43,14 +43,25 @@ class AutoUpdater:
         return self._session
     
     def get_local_version(self) -> str:
-        version_file = os.path.join(os.path.dirname(__file__), "version.json")
-        if os.path.exists(version_file):
-            try:
-                with open(version_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    return data.get("version", self.current_version)
-            except Exception:
-                pass
+        # 查找 version.json 的多个可能位置
+        possible_paths = [
+            # 安装目录
+            "/usr/share/humanaize2/version.json",
+            "/usr/local/share/humanaize2/version.json",
+            # 项目目录结构
+            os.path.join(os.path.dirname(__file__), "..", "..", "config", "version.json"),
+            os.path.join(os.path.dirname(__file__), "..", "..", "version.json"),
+            os.path.join(os.path.dirname(__file__), "version.json"),
+        ]
+        
+        for version_file in possible_paths:
+            if os.path.exists(version_file):
+                try:
+                    with open(version_file, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        return data.get("version", self.current_version)
+                except Exception:
+                    pass
         return self.current_version
     
     def save_local_version(self, version: str):
@@ -246,8 +257,18 @@ class AutoUpdater:
             if extracted_items:
                 source_dir = os.path.join(extract_dir, extracted_items[0])
                 
+                # Directories to skip during update (preserve user data and AI self-developed content)
+                skip_dirs = [
+                    ".git", 
+                    "models", 
+                    "llama", 
+                    "temp_update", 
+                    "data",
+                    "ai_selfdevelop"  # AI self-developed skills and customizations - NOT overwritten
+                ]
+                
                 for item in os.listdir(source_dir):
-                    if item in [".git", "models", "llama", "temp_update", "data"]:
+                    if item in skip_dirs:
                         continue
                     
                     src = os.path.join(source_dir, item)

@@ -17,7 +17,7 @@ import config
 
 
 class Colors:
-    """CLI 顏色定義"""
+    """CLI 颜色定义"""
     RESET = '\033[0m'
     BOLD = '\033[1m'
     DIM = '\033[2m'
@@ -498,7 +498,9 @@ class HumanaizeCLI:
                 
                 for line in display_lines:
                     line_clean = self._strip(line)[:chat_w]
-                    lines_to_render.append("  " + line_clean)
+                    # 填充到终端宽度
+                    line_padded = line_clean.ljust(chat_w)
+                    lines_to_render.append("  " + line_padded)
             else:
                 # 雙列模式
                 chat_w = int(w * 0.55)
@@ -561,7 +563,10 @@ class HumanaizeCLI:
             sys_log = self._build_system_log_line_small() if single_column else self._build_system_log_line()
             if sys_log:
                 sys_log_stripped = self._strip(sys_log)
-                if len(sys_log_stripped) > w:
+                # 填充到终端宽度
+                if len(sys_log_stripped) < w:
+                    sys_log = sys_log + " " * (w - len(sys_log_stripped))
+                elif len(sys_log_stripped) > w:
                     sys_log = sys_log_stripped[:w-3] + "..."
                 lines_to_render.append(sys_log)
             
@@ -575,9 +580,9 @@ class HumanaizeCLI:
                     line += " " * (w - len(line_stripped))
                 print(line)
             
-            # 輸入提示
+            # 輸入提示 - 使用现代化配色
             if self._use_color:
-                sys.stdout.write(f"\n  {Colors.BOLD}{Colors.BLUE}> {Colors.RESET}")
+                sys.stdout.write(f"\n  {Colors.BOLD}{Colors.PRIMARY}> {Colors.RESET}")
             else:
                 sys.stdout.write("\n  > ")
             sys.stdout.flush()

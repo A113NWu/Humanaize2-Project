@@ -4,6 +4,7 @@ from datetime import datetime
 from memory import add, add_thought, save_memory
 from llm.llm_enhanced import generate_with_emotion_feedback
 from core.Agent import Agent
+from tools.notify import notify_ai_decision, notify_ai_response
 
 class ThinkingEngine:
     def __init__(self, on_response_callback=None):
@@ -67,6 +68,9 @@ Should you respond to this user input? Answer YES or NO and briefly explain why.
         try:
             response = chat(decision_prompt).strip()
             should_answer = "YES" in response.upper()
+            # 发送AI决策通知
+            decision = "YES" if should_answer else "NO"
+            notify_ai_decision(decision, response)
             return (should_answer, response)
         except Exception as e:
             return (True, f"Error: {e}")
@@ -235,6 +239,8 @@ Should you perform GAN thinking before answering? Answer YES or NO and briefly e
                     save_memory(memory)
                 if self.on_response:
                     self.on_response({"type": "chat_response", "reply": final_reply})
+                # 发送AI回复通知
+                notify_ai_response(final_reply)
                 try:
                     followup_prompt = final_reply + "\n\nCommand output:\n" + (out or "") + "\n\nPlease use the above output to continue the next step."
                     freply, fadapt = generate_with_emotion_feedback(exec_instr + "\n\n" + followup_prompt, emotion_monitor)
@@ -248,6 +254,8 @@ Should you perform GAN thinking before answering? Answer YES or NO and briefly e
             else:
                 if self.on_response:
                     self.on_response({"type": "chat_response", "reply": actual_reply})
+                # 发送AI回复通知
+                notify_ai_response(actual_reply)
         except Exception as e:
             if self.on_response:
                 self.on_response({"type": "error", "error": str(e)})

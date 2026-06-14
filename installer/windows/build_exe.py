@@ -1,14 +1,23 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Build Humanaize 2.0 Agent as a single executable for Windows
-Supports x86_64 and ARM64 architectures
+Build Humanaize 2.0 Agent as a single executable
+Supports Windows (x86_64, ARM64) and Linux
+
+Usage:
+    python build_exe.py           # Build x86_64 (default)
+    python build_exe.py x86_64    # Build x86_64
+    python build_exe.py arm64     # Build ARM64
+    python build_exe.py all       # Build all architectures
 """
 
 import os
 import sys
 import subprocess
 import shutil
+
+# 使用平台特定的路径分隔符
+DATA_SEP = ";" if sys.platform == "win32" else ":"
 
 def build_exe(arch="x86_64"):
     """
@@ -19,7 +28,7 @@ def build_exe(arch="x86_64"):
     """
     # Configuration
     app_name = "Humanaize2"
-    version = "2.1.0"
+    version = "2.2.0"
     main_script = "src/core/main.py"
     
     # Output directory based on architecture
@@ -36,34 +45,44 @@ def build_exe(arch="x86_64"):
         "--onefile",
         "--windowed",
         "--icon=icon.ico",
-        "--add-data", "src/ui/ascii.txt;src/ui/",
-        "--add-data", "src/config/*.py;src/config/",
-        "--add-data", "src/core/*.py;src/core/",
-        "--add-data", "src/ui/*.py;src/ui/",
-        "--add-data", "src/llm/*.py;src/llm/",
-        "--add-data", "src/memory/*.py;src/memory/",
-        "--add-data", "src/tools/*.py;src/tools/",
-        "--add-data", "src/utils/*.py;src/utils/",
-        "--add-data", "skills/*;skills/",
-        "--add-data", "version.json;. ",
-        "--add-data", "requirements.txt;. ",
+        # Add data files
+        "--add-data", f"src/ui/ascii.txt{DATA_SEP}src/ui/",
+        "--add-data", f"src/config/*.py{DATA_SEP}src/config/",
+        "--add-data", f"src/core/*.py{DATA_SEP}src/core/",
+        "--add-data", f"src/ui/*.py{DATA_SEP}src/ui/",
+        "--add-data", f"src/llm/*.py{DATA_SEP}src/llm/",
+        "--add-data", f"src/memory/*.py{DATA_SEP}src/memory/",
+        "--add-data", f"src/tools/*.py{DATA_SEP}src/tools/",
+        "--add-data", f"src/utils/*.py{DATA_SEP}src/utils/",
+        "--add-data", f"src/ai_selfdevelop{DATA_SEP}src/ai_selfdevelop/",
+        "--add-data", f"skills/*{DATA_SEP}skills/",
+        "--add-data", f"config/version.json{DATA_SEP}config/",
+        "--add-data", f"requirements.txt{DATA_SEP}.",
+        # Hidden imports
         "--hidden-import", "customtkinter",
         "--hidden-import", "requests",
         "--hidden-import", "nltk",
         "--hidden-import", "transformers",
         "--hidden-import", "torch",
+        "--hidden-import", "PIL",
+        "--hidden-import", "ctypes",
+        "--hidden-import", "json",
+        "--hidden-import", "threading",
+        "--hidden-import", "queue",
+        # Output options
         "--distpath", output_dir,
         "--workpath", f"build/{arch}",
         main_script
     ]
     
-    print("Building executable with PyInstaller...")
-    print("Command:", " ".join(cmd))
+    print("=" * 50)
+    print(f"Building Humanaize 2.0 v{version} for {arch}")
+    print("=" * 50)
+    print("\nPyInstaller command:", " ".join(cmd[:8]) + " ...")
     
     try:
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        print("Build succeeded!")
-        print("Output:", result.stdout)
+        print("\n✓ Build succeeded!")
         
         # Create installer directory
         installer_dir = f"installer_output/{arch}"
@@ -75,13 +94,19 @@ def build_exe(arch="x86_64"):
         if os.path.exists(exe_path):
             dest_exe = f"{app_name}-{arch}.exe"
             shutil.copy(exe_path, os.path.join(installer_dir, dest_exe))
-            print(f"Executable copied to {installer_dir}/{dest_exe}")
+            print(f"✓ Executable copied to {installer_dir}/{dest_exe}")
+            print(f"  Size: {os.path.getsize(exe_path) / 1024 / 1024:.2f} MB")
         else:
-            print(f"Error: Executable not found at {exe_path}")
+            print(f"✗ Error: Executable not found at {exe_path}")
             
     except subprocess.CalledProcessError as e:
-        print("Build failed!")
-        print("Error:", e.stderr)
+        print("\n✗ Build failed!")
+        if e.stderr:
+            print("Error:", e.stderr[:500])
+        sys.exit(1)
+    except FileNotFoundError:
+        print("\n✗ Error: pyinstaller not found.")
+        print("  Please install pyinstaller: pip install pyinstaller")
         sys.exit(1)
 
 def build_all():

@@ -6,7 +6,7 @@ set -e
 
 # Default configuration
 PACKAGE_NAME="humanaize2"
-VERSION="2.1.1"
+VERSION=$(grep -o '"version": *"[^"]*"' ../../config/version.json | sed 's/"version": *"\([^"]*\)"/\1/')
 ARCH="all"  # Default to architecture-independent (Python)
 BUILD_DIR="build"
 
@@ -53,7 +53,8 @@ cp debian/DEBIAN/postinst "$PKG_DIR/DEBIAN/"
 cp debian/DEBIAN/prerm "$PKG_DIR/DEBIAN/"
 cp debian/DEBIAN/postrm "$PKG_DIR/DEBIAN/"
 
-# Update control file with architecture
+# Update control file with version and architecture
+sed -i "s/Version: .*/Version: $VERSION/" "$PKG_DIR/DEBIAN/control"
 sed -i "s/Architecture: all/Architecture: $ARCH/" "$PKG_DIR/DEBIAN/control"
 
 # Set permissions for control files
@@ -78,7 +79,23 @@ cp "$SCRIPT_DIR/debian/etc/systemd/system/humanaize2.service" "$PKG_DIR/etc/syst
 
 # Copy desktop shortcut and icon
 cp "$SCRIPT_DIR/debian/usr/share/applications/humanaize2.desktop" "$PKG_DIR/usr/share/applications/"
-cp "$SCRIPT_DIR/debian/usr/share/icons/hicolor/512x512/apps/humanaize2.png" "$PKG_DIR/usr/share/icons/hicolor/512x512/apps/"
+
+# Get project root directory (two levels up from installer/linux/)
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../" && pwd)"
+ICON_FILE="$PROJECT_ROOT/icon/humanaize2.png"
+
+# Create icon directories for multiple sizes
+mkdir -p "$PKG_DIR/usr/share/icons/hicolor/"{16x16,32x32,48x48,64x64,128x128,256x256,512x512,scalable}/apps
+
+# Copy icon to all icon directories
+for size in 16x16 32x32 48x48 64x64 128x128 256x256 512x512 scalable; do
+    cp "$ICON_FILE" "$PKG_DIR/usr/share/icons/hicolor/$size/apps/"
+    chmod 644 "$PKG_DIR/usr/share/icons/hicolor/$size/apps/humanaize2.png"
+done
+
+# Copy icon to app root directory as well
+mkdir -p "$PKG_DIR/usr/share/humanaize2/icon"
+cp "$ICON_FILE" "$PKG_DIR/usr/share/humanaize2/icon/humanaize2.png"
 
 # Create data directories
 touch "$PKG_DIR/var/lib/humanaize/.gitkeep"

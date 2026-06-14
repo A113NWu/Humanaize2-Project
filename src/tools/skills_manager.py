@@ -62,8 +62,43 @@ class SkillsManager:
     
     def __init__(self, skills_dir: str = None):
         self.skills: Dict[str, Skill] = {}
-        self.skills_dir = skills_dir or os.path.join(os.path.dirname(__file__), "skills")
+        
+        # Try multiple possible skills directories
+        if skills_dir:
+            self.skills_dir = skills_dir
+        else:
+            # Check for skills in common locations (priority: system -> user -> dev)
+            possible_dirs = [
+                "/usr/share/humanaize2/skills",
+                os.path.join(os.path.expanduser("~"), ".humanaize", "skills"),
+                os.path.join(os.path.dirname(os.path.dirname(__file__)), "skills"),
+                os.path.join(os.path.dirname(__file__), "skills")
+            ]
+            for dir_path in possible_dirs:
+                if os.path.isdir(dir_path) and len(os.listdir(dir_path)) > 0:
+                    self.skills_dir = dir_path
+                    break
+            else:
+                self.skills_dir = "/usr/share/humanaize2/skills"
+        
+        # AI Selfdevelop skills directory (NOT overwritten during updates)
+        self.selfdevelop_skills_dir = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "ai_selfdevelop",
+            "skills"
+        )
+        
+        # Try multiple possible config paths
         self.skills_config_path = os.path.join(os.path.dirname(__file__), "data", "skills_config.json")
+        if not os.path.exists(self.skills_config_path):
+            # Check system-wide config path
+            system_config = "/var/lib/humanaize/skills_config.json"
+            if os.path.exists(system_config):
+                self.skills_config_path = system_config
+            else:
+                # Create in user home directory
+                os.makedirs(os.path.join(os.path.expanduser("~"), ".humanaize"), exist_ok=True)
+                self.skills_config_path = os.path.join(os.path.expanduser("~"), ".humanaize", "skills_config.json")
         self.skills_config: Dict = {}
         self._skill_executors: Dict[str, Callable] = {}
         self._language_adapter = None
@@ -112,35 +147,70 @@ class SkillsManager:
         }
     
     def load_skills(self):
-        """Load all skills from skills directory"""
+        """Load all skills from skills directory and AI selfdevelop directory"""
         self.skills = {}
 
-        if not os.path.exists(self.skills_dir):
-            return
+        # Load skills from main skills directory (Core)
+        if os.path.exists(self.skills_dir):
+            for skill_name in os.listdir(self.skills_dir):
+                skill_path = os.path.join(self.skills_dir, skill_name)
+                if os.path.isdir(skill_path):
+                    skill_file = os.path.join(skill_path, "SKILL.md")
+                    if os.path.exists(skill_file):
+                        self._load_skill_from_path(skill_path, skill_file)
 
-        for skill_name in os.listdir(self.skills_dir):
-            skill_path = os.path.join(self.skills_dir, skill_name)
-            if os.path.isdir(skill_path):
-                skill_file = os.path.join(skill_path, "SKILL.md")
-                if os.path.exists(skill_file):
-                    skill = self._parse_skill_file(skill_file)
-                    if skill:
-                        skill.skill_dir = skill_path
+        # Load skills from AI selfdevelop directory (NOT overwritten during updates)
+        if os.path.exists(self.selfdevelop_skills_dir):
+            for skill_name in os.listdir(self.selfdevelop_skills_dir):
+                skill_path = os.path.join(self.selfdevelop_skills_dir, skill_name)
+                if os.path.isdir(skill_path):
+                    skill_file = os.path.join(skill_path, "SKILL.md")
+                    if os.path.exists(skill_file):
+                        skill = self._parse_skill_file(skill_file)
+                        if skill:
+                            skill.skill_dir = skill_path
+                            # AI selfdevelop skills are always enabled by default
+                            skill.enabled = True
+                            
+                            # Mark as self-developed skill
+                            if 'metadata' not in skill.metadata:
+                                skill.metadata = {}
+                            skill.metadata['self_developed'] = True
+                            
+                            self.skills[skill.name] = skill
+                            
+                            if not self._try_load_skill_module(skill):
+                                if skill.name in self._skill_executors:
+                                    skill.executor = self._skill_executors[skill.name]
+    
+    def _load_skill_from_path(self, skill_path: str, skill_file: str):
+        """Load a single skill from a directory path"""
+        skill = self._parse_skill_file(skill_file)
+        if skill:
+            skill.skill_dir = skill_path
 
-                        all_enabled = self.skills_config.get('all_enabled', False)
-                        skill.enabled = all_enabled
+            all_enabled = self.skills_config.get('all_enabled', True)
+            
+            # HSN skill should be disabled by default
+            hsn_skill_names = ["humanaizesocietynetwork", "hsn"]
+            is_hsn_skill = any(name in skill.name.lower() for name in hsn_skill_names)
+            
+            if is_hsn_skill:
+                skill.enabled = False
+            else:
+                skill.enabled = all_enabled
 
-                        skills_config = self.skills_config.get('skills', {})
-                        for config_name, config_data in skills_config.items():
-                            if config_name.lower() == skill.name.lower():
-                                skill.enabled = config_data.get('enabled', False) or all_enabled
-                                break
+            skills_config = self.skills_config.get('skills', {})
+            for config_name, config_data in skills_config.items():
+                if config_name.lower() == skill.name.lower():
+                    skill.enabled = config_data.get('enabled', False) or all_enabled
+                    break
 
-                        self.skills[skill.name] = skill
+            self.skills[skill.name] = skill
 
-                        if not self._try_load_skill_module(skill):
-                            if skill.name in self._skill_executors:
-                                skill.executor = self._skill_executors[skill.name]
+            if not self._try_load_skill_module(skill):
+                if skill.name in self._skill_executors:
+                    skill.executor = self._skill_executors[skill.name]
     
     def _parse_skill_file(self, filepath: str) -> Optional[Skill]:
         """Parse a SKILL.md file (OpenClaw format)"""

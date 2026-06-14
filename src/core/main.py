@@ -15,7 +15,9 @@ import random
 import subprocess
 import threading
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 添加 src 目录到 Python 路径
+src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, src_dir)
 
 import warnings
 warnings.filterwarnings("ignore", message=".*iCCP.*known incorrect sRGB profile.*")
@@ -23,6 +25,18 @@ warnings.filterwarnings("ignore", message=".*iCCP.*known incorrect sRGB profile.
 
 def _get_llama_server_path():
     """取得當前平台的正確 llama-server 路徑"""
+    # 首先檢查系統安裝的 llama-server (Linux)
+    if sys.platform != "win32" and os.name != "nt":
+        system_paths = [
+            "/usr/bin/llama-server",
+            "/usr/local/bin/llama-server",
+            "/opt/llama.cpp/llama-server"
+        ]
+        for path in system_paths:
+            if os.path.exists(path):
+                return path
+    
+    # 如果系統沒有，則檢查專案目錄
     # 取得專案根目錄 (src/core 的父目錄)
     # main.py 在 src/core 中，所以需要 2 次 dirname 呼叫:
     # src/core/main.py -> src/core -> src -> project_root
@@ -41,7 +55,21 @@ def _get_model_path():
     """取得當前平台的模型路徑"""
     # 取得專案根目錄 (src/core 的父目錄)
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    return os.path.join(base_dir, "models", "tinyllama.gguf")
+    models_dir = os.path.join(base_dir, "models")
+    
+    # 首先檢查精確匹配
+    exact_path = os.path.join(models_dir, "tinyllama.gguf")
+    if os.path.exists(exact_path):
+        return exact_path
+    
+    # 如果精確匹配不存在，查找任何 GGUF 文件
+    if os.path.exists(models_dir):
+        for f in os.listdir(models_dir):
+            if f.endswith('.gguf'):
+                return os.path.join(models_dir, f)
+    
+    # 如果都找不到，返回預設路徑（讓調用者處理錯誤）
+    return exact_path
 
 
 def _check_and_start_server():
@@ -118,8 +146,34 @@ def boot_cli():
     cli.run()
 
 
+def _check_updates_background():
+    """后台检查更新并发送通知"""
+    import threading
+    from tools.notify import notify_update
+    
+    def check():
+        try:
+            from utils.auto_updater import AutoUpdater
+            updater = AutoUpdater("https://github.com/A113NWu/Humanaize2-Project.git")
+            update_info = updater.check_for_updates()
+            
+            if update_info.get("has_update"):
+                current_version = update_info["current_version"]
+                latest_version = update_info["latest_version"]
+                notify_update(latest_version, current_version)
+        except Exception:
+            pass
+    
+    thread = threading.Thread(target=check, daemon=True)
+    thread.start()
+
+
 def boot_gui():
     _check_and_start_server()
+    
+    # 后台检查更新
+    _check_updates_background()
+    
     import warnings
     warnings.filterwarnings("ignore")
     
@@ -145,6 +199,13 @@ def boot_gui():
 def boot_solve(args):
     """啟動問題解決模式"""
     _check_and_start_server()
+    
+    # 等待服务器完全启动
+    import time
+    time.sleep(1)
+    
+    # 清屏并重新显示标题
+    print("\n" * 20)
     
     from tools.solve_mode import SolveMode
     
@@ -183,6 +244,7 @@ def handle_skills():
 def handle_update(args):
     """Handle update command"""
     from utils.auto_updater import AutoUpdater
+    from tools.notify import notify_update, notify_info
     
     force_update = "-f" in args or "--force" in args
     
@@ -208,6 +270,10 @@ def handle_update(args):
         print(f"\nRelease Notes:\n{update_info['release_notes']}")
     
     if update_info.get("has_update") or force_update:
+        # 发送更新通知
+        if update_info.get("has_update"):
+            notify_update(latest_version, current_version)
+        
         if not update_info.get("has_update"):
             print("\n[INFO] Already up to date, but forcing update...")
         
@@ -235,6 +301,7 @@ def handle_update(args):
         
         if result.get("success"):
             print(f"\n{result['message']}")
+            notify_info("Humanaize 更新完成", f"已更新到版本 {latest_version}")
         else:
             print(f"\n[ERROR] Update failed: {result.get('error', result.get('message'))}")
     else:

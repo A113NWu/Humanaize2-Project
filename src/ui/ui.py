@@ -26,7 +26,7 @@ import customtkinter as ctk
 
 from core.Agent import Agent
 from core.thinking_engine import ThinkingEngine
-from memory import load_memory, save_memory, add
+from memory.memory import load_memory, save_memory, add
 from core.personality import load_personality, save_personality
 from core.autonomous import check_silence_and_decide
 from ui.idle import IdleEngine
@@ -35,15 +35,19 @@ import config
 
 
 class HumanaizeUI:
-    """Humanaize 主 UI"""
+    """Humanaize 主 UI - 现代化设计"""
 
     def __init__(self, root):
         self.root = root
         title = getattr(config, "UI_TITLE", "Humanaize v2.0")
-        width = getattr(config, "UI_WIDTH", 1000)
-        height = getattr(config, "UI_HEIGHT", 700)
+        width = getattr(config, "UI_WIDTH", 1200)
+        height = getattr(config, "UI_HEIGHT", 800)
         self.root.title(title)
         self.root.geometry(f"{width}x{height}")
+        self.root.minsize(1000, 600)
+        
+        # Add close protocol handler to ensure proper shutdown
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
         self.memory = load_memory()
         self.personality = load_personality()
@@ -225,65 +229,53 @@ class HumanaizeUI:
         mode = "Dark" if self.theme.lower() == "dark" else "Light"
         ctk.set_appearance_mode(mode)
         
-        # Update root background
-        bg_color = "#101010" if mode == "Dark" else "#f0f0f0"
+        # Update root background with gradient-like effect
+        bg_color = "#0f0f1a" if mode == "Dark" else "#f8f9fc"
         self.root.configure(bg=bg_color)
         
         # Update main frame if exists
         if hasattr(self, 'main_frame'):
-            frame_bg = "#141414" if mode == "Dark" else "#e0e0e0"
+            frame_bg = "#1a1a2e" if mode == "Dark" else "#ffffff"
             self.main_frame.configure(fg_color=frame_bg)
         
-        # Update all tabs
-        tab_bg = "#1a1a1a" if mode == "Dark" else "#d0d0d0"
-        active_tab_bg = "#2a2a2a" if mode == "Dark" else "#c0c0c0"
+        # Update colors
+        textbox_bg = "#0a0a15" if mode == "Dark" else "#f0f0f5"
+        textbox_text_color = "#ffffff" if mode == "Dark" else "#1a1a2e"
+        accent_color = "#6366f1"  # Indigo accent color
         
-        if hasattr(self, 'notebook'):
-            for tab_name in ['chat_tab', 'thoughts_tab', 'system_tab', 'command_output_tab']:
-                if hasattr(self, tab_name):
-                    tab = getattr(self, tab_name)
-                    tab.configure(fg_color=tab_bg, selected_color=active_tab_bg)
-        
-        # Update textboxes
-        textbox_bg = "#0d0d0d" if mode == "Dark" else "#ffffff"
-        textbox_text_color = "#ffffff" if mode == "Dark" else "#000000"
-        
-        if hasattr(self, 'chat_textbox'):
-            self.chat_textbox.configure(fg_color=textbox_bg, text_color=textbox_text_color)
-        if hasattr(self, 'thoughts_textbox'):
-            self.thoughts_textbox.configure(fg_color=textbox_bg, text_color=textbox_text_color)
-        if hasattr(self, 'system_textbox'):
-            self.system_textbox.configure(fg_color=textbox_bg, text_color=textbox_text_color)
-        if hasattr(self, 'command_output_textbox'):
-            self.command_output_textbox.configure(fg_color=textbox_bg, text_color=textbox_text_color)
+        if hasattr(self, 'chat_box'):
+            self.chat_box.configure(fg_color=textbox_bg, text_color=textbox_text_color)
+        if hasattr(self, 'thought_text'):
+            self.thought_text.configure(fg_color=textbox_bg, text_color=textbox_text_color)
+        if hasattr(self, 'status_text'):
+            self.status_text.configure(fg_color=textbox_bg, text_color=textbox_text_color)
+        if hasattr(self, 'command_text'):
+            self.command_text.configure(fg_color=textbox_bg, text_color=textbox_text_color)
         
         self.root.update()
     
     def _update_language(self):
         """Update UI text when language changes"""
-        if hasattr(self, 'input_entry'):
-            self.input_entry.configure(placeholder_text=self._t("input_placeholder"))
+        if hasattr(self, 'entry'):
+            self.entry.configure(placeholder_text=self._t("input_placeholder"))
         
-        if hasattr(self, 'send_button'):
-            self.send_button.configure(text=self._t("send"))
+        if hasattr(self, 'send_btn'):
+            self.send_btn.configure(text=self._t("send"))
         
-        if hasattr(self, 'clear_button'):
-            self.clear_button.configure(text=self._t("clear"))
+        if hasattr(self, 'clear_btn'):
+            self.clear_btn.configure(text=self._t("clear"))
         
-        if hasattr(self, 'settings_button'):
-            self.settings_button.configure(text=self._t("settings"))
+        if hasattr(self, 'chat_label'):
+            self.chat_label.configure(text=f"💬 {self._t('chat')}")
         
-        if hasattr(self, 'chat_tab'):
-            self.chat_tab.configure(text=self._t("chat"))
+        if hasattr(self, 'thought_label'):
+            self.thought_label.configure(text=f"🤔 {self._t('thoughts')}")
         
-        if hasattr(self, 'thoughts_tab'):
-            self.thoughts_tab.configure(text=self._t("thoughts"))
+        if hasattr(self, 'cmd_label'):
+            self.cmd_label.configure(text=f"🔧 {self._t('command_output')}")
         
-        if hasattr(self, 'system_tab'):
-            self.system_tab.configure(text=self._t("system"))
-        
-        if hasattr(self, 'command_output_tab'):
-            self.command_output_tab.configure(text=self._t("command_output"))
+        if hasattr(self, 'status_label'):
+            self.status_label.configure(text=f"⚙️ {self._t('system')}")
         
         if hasattr(self, 'settings_window') and self.settings_window.winfo_exists():
             self.settings_window.title(self._t("settings"))
@@ -322,11 +314,10 @@ class HumanaizeUI:
         # Create settings window with proper theme support
         self.settings_window = ctk.CTkToplevel(self.root)
         self.settings_window.title(self._t("settings"))
-        self.settings_window.geometry("760x680")
+        self.settings_window.geometry("800x720")
         self.settings_window.minsize(640, 560)
         self.settings_window.resizable(True, True)
         self.settings_window.transient(self.root)
-        self.settings_window.grab_set()
         self.settings_window.grid_columnconfigure(0, weight=1)
         
         # Apply theme settings to the toplevel window
@@ -334,11 +325,17 @@ class HumanaizeUI:
             self.settings_window._apply_appearance_mode("dark")
         else:
             self.settings_window._apply_appearance_mode("light")
+        
+        # Update and make window visible before grab_set
+        self.settings_window.update_idletasks()
+        self.settings_window.grab_set()
 
         # Create scrollable frame
         scroll_frame = ctk.CTkScrollableFrame(
             self.settings_window, 
-            width=720
+            width=760,
+            corner_radius=16,
+            fg_color="#1a1a2e" if self.theme == "Dark" else "#f8f9fc"
         )
         scroll_frame.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
         scroll_frame.grid_columnconfigure(0, weight=1)
@@ -352,40 +349,50 @@ class HumanaizeUI:
         gan_enabled_var = tk.BooleanVar(value=self.gan_enabled)
 
         row = 0
-        title_label = ctk.CTkLabel(scroll_frame, text=self._t("settings"), font=("Segoe UI", 16, "bold"))
-        title_label.grid(row=row, column=0, sticky="w", padx=0, pady=(0, 15))
+        title_label = ctk.CTkLabel(scroll_frame, text=self._t("settings"), font=("Segoe UI", 20, "bold"), text_color="#6366f1")
+        title_label.grid(row=row, column=0, sticky="w", padx=0, pady=(0, 20))
         row += 1
 
-        ctk.CTkLabel(scroll_frame, text=self._t("language"), anchor="w").grid(row=row, column=0, sticky="w", padx=0, pady=(10, 4))
-        row += 1
-        ctk.CTkOptionMenu(scroll_frame, values=["English", "中文"], variable=language_var).grid(row=row, column=0, sticky="ew", padx=0)
-        row += 1
-
-        ctk.CTkLabel(scroll_frame, text=self._t("theme"), anchor="w").grid(row=row, column=0, sticky="w", padx=0, pady=(10, 4))
-        row += 1
-        ctk.CTkOptionMenu(scroll_frame, values=["Dark", "Light"], variable=theme_var).grid(row=row, column=0, sticky="ew", padx=0)
-        row += 1
-
-        ctk.CTkLabel(scroll_frame, text=self._t("model"), anchor="w").grid(row=row, column=0, sticky="w", padx=0, pady=(10, 4))
-        row += 1
-        ctk.CTkEntry(scroll_frame, textvariable=model_name_var, placeholder_text=config.MODEL_NAME).grid(row=row, column=0, sticky="ew", padx=0)
+        # Language Section
+        lang_frame = ctk.CTkFrame(scroll_frame, corner_radius=12, fg_color="#252540" if self.theme == "Dark" else "#e8e8f0")
+        lang_frame.grid(row=row, column=0, sticky="ew", padx=0, pady=(0, 15))
+        lang_frame.grid_columnconfigure(0, weight=1)
+        
+        ctk.CTkLabel(lang_frame, text=self._t("language"), anchor="w", font=("Segoe UI", 12, "bold")).grid(row=0, column=0, sticky="w", padx=15, pady=(12, 8))
+        ctk.CTkOptionMenu(lang_frame, values=["English", "中文"], variable=language_var, corner_radius=8).grid(row=1, column=0, sticky="ew", padx=15, pady=(0, 12))
         row += 1
 
-        ctk.CTkLabel(scroll_frame, text=self._t("custom_model"), anchor="w").grid(row=row, column=0, sticky="w", padx=0, pady=(10, 4))
+        # Theme Section
+        theme_frame = ctk.CTkFrame(scroll_frame, corner_radius=12, fg_color="#252540" if self.theme == "Dark" else "#e8e8f0")
+        theme_frame.grid(row=row, column=0, sticky="ew", padx=0, pady=(0, 15))
+        theme_frame.grid_columnconfigure(0, weight=1)
+        
+        ctk.CTkLabel(theme_frame, text=self._t("theme"), anchor="w", font=("Segoe UI", 12, "bold")).grid(row=0, column=0, sticky="w", padx=15, pady=(12, 8))
+        ctk.CTkOptionMenu(theme_frame, values=["Dark", "Light"], variable=theme_var, corner_radius=8).grid(row=1, column=0, sticky="ew", padx=15, pady=(0, 12))
         row += 1
-        model_path_frame = ctk.CTkFrame(scroll_frame, fg_color="transparent")
-        model_path_frame.grid(row=row, column=0, sticky="ew", padx=0)
+
+        # Model Section
+        model_frame = ctk.CTkFrame(scroll_frame, corner_radius=12, fg_color="#252540" if self.theme == "Dark" else "#e8e8f0")
+        model_frame.grid(row=row, column=0, sticky="ew", padx=0, pady=(0, 15))
+        model_frame.grid_columnconfigure(0, weight=1)
+        
+        ctk.CTkLabel(model_frame, text=self._t("model"), anchor="w", font=("Segoe UI", 12, "bold")).grid(row=0, column=0, sticky="w", padx=15, pady=(12, 8))
+        ctk.CTkEntry(model_frame, textvariable=model_name_var, placeholder_text=config.MODEL_NAME, corner_radius=8).grid(row=1, column=0, sticky="ew", padx=15, pady=(0, 8))
+        
+        ctk.CTkLabel(model_frame, text=self._t("custom_model"), anchor="w").grid(row=2, column=0, sticky="w", padx=15, pady=(8, 4))
+        model_path_frame = ctk.CTkFrame(model_frame, fg_color="transparent")
+        model_path_frame.grid(row=3, column=0, sticky="ew", padx=15, pady=(0, 12))
         model_path_frame.grid_columnconfigure(0, weight=1)
-        ctk.CTkEntry(model_path_frame, textvariable=model_path_var, placeholder_text="models/tinyllama.gguf").grid(row=0, column=0, sticky="ew", padx=(0, 6))
-        ctk.CTkButton(model_path_frame, text="Browse", width=96, command=lambda: self._browse_model_path(model_path_var)).grid(row=0, column=1)
+        ctk.CTkEntry(model_path_frame, textvariable=model_path_var, placeholder_text="models/tinyllama.gguf", corner_radius=8).grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        ctk.CTkButton(model_path_frame, text="Browse", width=96, corner_radius=8, fg_color="#6366f1", hover_color="#4f46e5").grid(row=0, column=1)
         row += 1
         
-        from model_downloader import ModelDownloader
+        from llm.model_downloader import ModelDownloader
         downloader = ModelDownloader()
         is_installed = downloader.is_model_installed()
         
-        download_frame = ctk.CTkFrame(scroll_frame)
-        download_frame.grid(row=row, column=0, sticky="ew", padx=0, pady=(5, 0))
+        download_frame = ctk.CTkFrame(scroll_frame, corner_radius=12, fg_color="#252540" if self.theme == "Dark" else "#e8e8f0")
+        download_frame.grid(row=row, column=0, sticky="ew", padx=0, pady=(0, 15))
         download_frame.grid_columnconfigure(0, weight=1)
         
         download_status_label = ctk.CTkLabel(download_frame, text="", anchor="w")
@@ -405,63 +412,73 @@ class HumanaizeUI:
             result = downloader.download_model(callback=progress_callback)
             
             if result.get("success"):
-                download_status_label.configure(text=result["message"], text_color="green")
-                model_path_var.set("models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf")
+                download_status_label.configure(text=result["message"], text_color="#10b981")
+                model_path_var.set("models/tinyllama.gguf")
             else:
-                download_status_label.configure(text=f"Error: {result.get('error', 'Unknown error')}", text_color="red")
+                download_status_label.configure(text=f"Error: {result.get('error', 'Unknown error')}", text_color="#ef4444")
         
         download_btn = ctk.CTkButton(
             download_frame, 
             text="Download TinyLlama Model (173MB)" if not is_installed else "Model Already Installed", 
             command=download_tinyllama,
-            state="normal" if not is_installed else "disabled"
+            state="normal" if not is_installed else "disabled",
+            corner_radius=8,
+            fg_color="#6366f1" if not is_installed else "#374151",
+            hover_color="#4f46e5" if not is_installed else "#4b5563"
         )
         download_btn.grid(row=0, column=0, sticky="ew", padx=15, pady=10)
         download_status_label.grid(row=1, column=0, sticky="w", padx=15, pady=(0, 10))
         
         row += 1
 
-        ctk.CTkLabel(scroll_frame, text=self._t("skills"), anchor="w").grid(row=row, column=0, sticky="w", padx=0, pady=(10, 4))
-        row += 1
-        skills_frame = ctk.CTkFrame(scroll_frame)
-        skills_frame.grid(row=row, column=0, sticky="nsew", padx=0)
-        skills_frame.grid_columnconfigure(0, weight=1)
-        row += 1
+        # Skills Section
+        skills_frame_main = ctk.CTkFrame(scroll_frame, corner_radius=12, fg_color="#252540" if self.theme == "Dark" else "#e8e8f0")
+        skills_frame_main.grid(row=row, column=0, sticky="nsew", padx=0, pady=(0, 15))
+        skills_frame_main.grid_columnconfigure(0, weight=1)
         
-        from skills_manager import SkillsManager
+        ctk.CTkLabel(skills_frame_main, text=self._t("skills"), anchor="w", font=("Segoe UI", 12, "bold")).grid(row=0, column=0, sticky="w", padx=15, pady=(12, 8))
+        
+        skills_frame = ctk.CTkFrame(skills_frame_main, fg_color="transparent")
+        skills_frame.grid(row=1, column=0, sticky="nsew", padx=15, pady=(0, 8))
+        skills_frame.grid_columnconfigure(0, weight=1)
+        
+        from tools.skills_manager import SkillsManager
         skills_manager = SkillsManager()
         installed_skills = skills_manager.get_all_skills()
         skill_vars = {}
         
         if not installed_skills:
-            ctk.CTkLabel(skills_frame, text="No skills installed", anchor="w").grid(row=0, column=0, sticky="w", padx=10, pady=5)
+            ctk.CTkLabel(skills_frame, text="No skills installed", anchor="w").grid(row=0, column=0, sticky="w", padx=0, pady=5)
         else:
             for idx, skill in enumerate(installed_skills):
                 skill_vars[skill.name] = tk.BooleanVar(value=skill.enabled)
-                cb = ctk.CTkCheckBox(skills_frame, text=f"{skill.name}", variable=skill_vars[skill.name])
-                cb.grid(row=idx, column=0, sticky="w", padx=10, pady=2)
+                cb = ctk.CTkCheckBox(skills_frame, text=f"{skill.name}", variable=skill_vars[skill.name], corner_radius=6)
+                cb.grid(row=idx, column=0, sticky="w", padx=0, pady=3)
         
-        skills_prompt_label = ctk.CTkLabel(scroll_frame, text="Skills Prompt", anchor="w").grid(row=row, column=0, sticky="w", padx=0, pady=(15, 4))
-        row += 1
-        skills_box = ctk.CTkTextbox(scroll_frame, width=500, height=120, wrap=tk.WORD)
-        skills_box.grid(row=row, column=0, sticky="nsew", padx=0)
+        skills_prompt_label = ctk.CTkLabel(skills_frame_main, text="Skills Prompt", anchor="w").grid(row=2, column=0, sticky="w", padx=15, pady=(8, 4))
+        skills_box = ctk.CTkTextbox(skills_frame_main, width=500, height=100, wrap=tk.WORD, corner_radius=8)
+        skills_box.grid(row=3, column=0, sticky="nsew", padx=15, pady=(0, 12))
         skills_box.insert(tk.END, self.skills_prompt)
         row += 1
 
-        ctk.CTkCheckBox(scroll_frame, text=self._t("auto_break_silence"), variable=auto_break_var).grid(row=row, column=0, sticky="w", padx=0, pady=(15, 4))
-        row += 1
-        ctk.CTkCheckBox(scroll_frame, text=self._t("enable_gan"), variable=gan_enabled_var).grid(row=row, column=0, sticky="w", padx=0, pady=(4, 15))
+        # Options Section
+        options_frame = ctk.CTkFrame(scroll_frame, corner_radius=12, fg_color="#252540" if self.theme == "Dark" else "#e8e8f0")
+        options_frame.grid(row=row, column=0, sticky="ew", padx=0, pady=(0, 15))
+        options_frame.grid_columnconfigure(0, weight=1)
+        
+        ctk.CTkCheckBox(options_frame, text=self._t("auto_break_silence"), variable=auto_break_var, corner_radius=6).grid(row=0, column=0, sticky="w", padx=15, pady=10)
+        ctk.CTkCheckBox(options_frame, text=self._t("enable_gan"), variable=gan_enabled_var, corner_radius=6).grid(row=1, column=0, sticky="w", padx=15, pady=(0, 10))
         row += 1
         
-        update_frame = ctk.CTkFrame(scroll_frame)
+        # Update Section
+        update_frame = ctk.CTkFrame(scroll_frame, corner_radius=12, fg_color="#252540" if self.theme == "Dark" else "#e8e8f0")
         update_frame.grid(row=row, column=0, sticky="ew", padx=0, pady=(0, 15))
         update_frame.grid_columnconfigure(0, weight=1)
-        row += 1
         
         update_title = ctk.CTkLabel(update_frame, text="Software Updates", font=("Segoe UI", 12, "bold"), anchor="w")
-        update_title.grid(row=0, column=0, sticky="w", padx=15, pady=(10, 5))
+        update_title.grid(row=0, column=0, sticky="w", padx=15, pady=(12, 5))
         
-        from auto_updater import AutoUpdater
+        from utils.auto_updater import AutoUpdater
         updater = AutoUpdater("https://github.com/A113NWu/Humanaize2-Project.git")
         version_label = ctk.CTkLabel(update_frame, text=f"Current version: {updater.get_local_version()}", anchor="w")
         version_label.grid(row=1, column=0, sticky="w", padx=15, pady=(0, 5))
@@ -479,38 +496,38 @@ class HumanaizeUI:
             result = updater.check_for_updates()
             
             if result.get("error"):
-                status_label.configure(text=f"Error: {result['error']}", text_color="red")
+                status_label.configure(text=f"Error: {result['error']}", text_color="#ef4444")
             elif result.get("has_update"):
-                status_label.configure(text=f"Update available: v{result['latest_version']} (you have v{result['current_version']})", text_color="green")
+                status_label.configure(text=f"Update available: v{result['latest_version']} (you have v{result['current_version']})", text_color="#10b981")
             else:
-                status_label.configure(text=f"You are up to date (v{result['current_version']})", text_color="gray")
+                status_label.configure(text=f"You are up to date (v{result['current_version']})", text_color="#9ca3af")
         
         def download_update():
             def progress_callback(message):
                 update_progress_label.configure(text=message)
                 self.settings_window.update()
             
-            update_progress_label.configure(text="Starting update...", text_color="orange")
+            update_progress_label.configure(text="Starting update...", text_color="#f59e0b")
             self.settings_window.update()
             
             result = updater.download_and_install_update(progress_callback)
             
             if result.get("success"):
-                update_progress_label.configure(text="", text_color="green")
-                status_label.configure(text=result["message"], text_color="green")
+                update_progress_label.configure(text="", text_color="#10b981")
+                status_label.configure(text=result["message"], text_color="#10b981")
             else:
-                update_progress_label.configure(text="", text_color="red")
-                status_label.configure(text=result.get("message", "Update failed"), text_color="red")
+                update_progress_label.configure(text="", text_color="#ef4444")
+                status_label.configure(text=result.get("message", "Update failed"), text_color="#ef4444")
         
         button_frame_update = ctk.CTkFrame(update_frame, fg_color="transparent")
-        button_frame_update.grid(row=4, column=0, sticky="ew", padx=10, pady=(5, 10))
+        button_frame_update.grid(row=4, column=0, sticky="ew", padx=15, pady=(5, 12))
         button_frame_update.grid_columnconfigure(0, weight=1)
         button_frame_update.grid_columnconfigure(1, weight=1)
         
-        check_btn = ctk.CTkButton(button_frame_update, text="Check for Updates", command=check_for_updates)
+        check_btn = ctk.CTkButton(button_frame_update, text="Check for Updates", command=check_for_updates, corner_radius=8, fg_color="#6366f1", hover_color="#4f46e5")
         check_btn.grid(row=0, column=0, sticky="ew", padx=(0, 5))
         
-        update_btn = ctk.CTkButton(button_frame_update, text="Download & Install Update", command=download_update)
+        update_btn = ctk.CTkButton(button_frame_update, text="Download & Install Update", command=download_update, corner_radius=8, fg_color="#6366f1", hover_color="#4f46e5")
         update_btn.grid(row=0, column=1, sticky="ew", padx=(5, 0))
         
         check_for_updates()
@@ -550,93 +567,246 @@ class HumanaizeUI:
             
             self.settings_window.destroy()
 
-        ctk.CTkButton(button_frame, text=self._t("save"), command=save_settings).grid(row=0, column=0, sticky="ew", padx=(0, 10))
-        ctk.CTkButton(button_frame, text=self._t("cancel"), command=self.settings_window.destroy).grid(row=0, column=1, sticky="ew")
+        ctk.CTkButton(button_frame, text=self._t("save"), command=save_settings, corner_radius=8, fg_color="#6366f1", hover_color="#4f46e5").grid(row=0, column=0, sticky="ew", padx=(0, 10))
+        ctk.CTkButton(button_frame, text=self._t("cancel"), command=self.settings_window.destroy, corner_radius=8, fg_color="#374151", hover_color="#4b5563").grid(row=0, column=1, sticky="ew")
 
     def _create_ui(self):
+        # Configure appearance
         ctk.set_appearance_mode("Dark" if self.theme.lower() == "dark" else "Light")
-        ctk.set_default_color_theme("dark-blue")
-        self.root.configure(bg="#101010" if self.theme.lower() == "dark" else "#f0f0f0")
+        ctk.set_default_color_theme("blue")
+        
+        # Main window background with modern color
+        main_bg = "#0f0f1a" if self.theme.lower() == "dark" else "#f8f9fc"
+        self.root.configure(bg=main_bg)
+        
+        # 配置主窗口的行和列权重，使子组件能够自适应缩放
+        self.root.grid_rowconfigure(0, weight=1)
+        self.root.grid_columnconfigure(0, weight=1)
 
-        main_frame = ctk.CTkFrame(self.root, corner_radius=20, fg_color="#141414")
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
-        main_frame.grid_rowconfigure(0, weight=1)
-        main_frame.grid_columnconfigure(0, weight=3)
-        main_frame.grid_columnconfigure(1, weight=1)
+        # Main container frame with rounded corners and shadow effect
+        self.main_frame = ctk.CTkFrame(
+            self.root, 
+            corner_radius=24, 
+            fg_color="#1a1a2e",
+            border_width=0
+        )
+        self.main_frame.grid(row=0, column=0, sticky="nsew", padx=16, pady=16)
+        self.main_frame.grid_rowconfigure(0, weight=1)
+        self.main_frame.grid_columnconfigure(0, weight=3)  # 聊天区域占3份
+        self.main_frame.grid_columnconfigure(1, weight=1)  # 右侧面板占1份
 
-        left_frame = ctk.CTkFrame(main_frame, corner_radius=18, fg_color="#1a1a1a")
-        left_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 10), pady=6)
+        # Left Panel - Chat Area
+        left_frame = ctk.CTkFrame(
+            self.main_frame, 
+            corner_radius=20, 
+            fg_color="#252540",
+            border_width=0
+        )
+        left_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 12), pady=8)
         left_frame.grid_rowconfigure(1, weight=1)
         left_frame.grid_columnconfigure(0, weight=1)
 
-        chat_label = ctk.CTkLabel(left_frame, text="💬 Chat", anchor="w", font=("Segoe UI", 14, "bold"))
-        chat_label.grid(row=0, column=0, sticky="w", padx=14, pady=(14, 8))
+        # Chat Header
+        header_frame = ctk.CTkFrame(left_frame, fg_color="transparent")
+        header_frame.grid(row=0, column=0, sticky="ew", padx=16, pady=(16, 8))
+        header_frame.grid_columnconfigure(0, weight=1)
+        
+        self.chat_label = ctk.CTkLabel(
+            header_frame, 
+            text="💬 Chat", 
+            anchor="w", 
+            font=("Segoe UI", 18, "bold"),
+            text_color="#e0e0e0"
+        )
+        self.chat_label.grid(row=0, column=0, sticky="w")
+        
+        # Settings Button
+        self.settings_btn = ctk.CTkButton(
+            header_frame, 
+            text="⚙", 
+            width=44, 
+            height=40, 
+            fg_color="#353560", 
+            hover_color="#454580",
+            corner_radius=12,
+            font=("Segoe UI", 16),
+            command=self._open_settings_window
+        )
+        self.settings_btn.grid(row=0, column=1)
 
-        self.chat_box = ctk.CTkTextbox(left_frame, width=680, height=430, wrap=tk.WORD, fg_color="#1f1f1f", text_color="#f5f5f5")
-        self.chat_box.grid(row=1, column=0, sticky="nsew", padx=14, pady=(0, 14))
-        self.chat_box.configure(state="disabled", corner_radius=16)
+        # Chat Textbox - Adaptive styling (no fixed width/height)
+        self.chat_box = ctk.CTkTextbox(
+            left_frame, 
+            wrap=tk.WORD, 
+            fg_color="#0a0a15",
+            text_color="#e0e0e0",
+            border_width=0,
+            corner_radius=16,
+            font=("Segoe UI", 14)
+        )
+        self.chat_box.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 16))
+        self.chat_box.configure(state="disabled")
         self.chat_box.tag_config("thinking", foreground="#6b7280")
-        self.chat_box.tag_config("autonomous", foreground="#7c3aed")
-        self.chat_box.tag_config("command", foreground="#2563eb")
-        self.chat_box.tag_config("error", foreground="#dc2626")
+        self.chat_box.tag_config("autonomous", foreground="#a78bfa")
+        self.chat_box.tag_config("command", foreground="#60a5fa")
+        self.chat_box.tag_config("error", foreground="#f87171")
         self.chat_box.bind("<MouseWheel>", self._on_chat_scroll)
         self.chat_box.bind("<Enter>", lambda e: self._set_focused_textbox(self.chat_box))
         self.chat_box.bind("<Leave>", lambda e: self._set_focused_textbox(None))
 
-        right_frame = ctk.CTkFrame(main_frame, corner_radius=18, fg_color="#1a1a1a")
-        right_frame.grid(row=0, column=1, sticky="nsew", pady=6)
-        right_frame.grid_rowconfigure(2, weight=1)
-        right_frame.grid_rowconfigure(4, weight=1)
+        # Right Panel - Information Area
+        right_frame = ctk.CTkFrame(
+            self.main_frame, 
+            corner_radius=20, 
+            fg_color="#252540",
+            border_width=0
+        )
+        right_frame.grid(row=0, column=1, sticky="nsew", pady=8)
+        right_frame.grid_rowconfigure(1, weight=2)   # Thoughts 区域权重
+        right_frame.grid_rowconfigure(3, weight=2)   # Command Output 区域权重
+        right_frame.grid_rowconfigure(5, weight=1)   # Status 区域权重较小
         right_frame.grid_columnconfigure(0, weight=1)
-        right_frame.grid_columnconfigure(1, weight=0)
 
-        self.settings_btn = ctk.CTkButton(right_frame, text="⚙", width=40, height=36, fg_color="#262626", hover_color="#333333", command=self._open_settings_window)
-        self.settings_btn.grid(row=0, column=1, sticky="ne", padx=(0, 14), pady=(14, 4))
-
-        thought_label = ctk.CTkLabel(right_frame, text="🤔 Thoughts", anchor="w", font=("Segoe UI", 12, "bold"))
-        thought_label.grid(row=1, column=0, sticky="w", padx=14, pady=(14, 4))
-        self.thought_text = ctk.CTkTextbox(right_frame, width=340, height=200, wrap=tk.WORD, fg_color="#1f1f1f", text_color="#f5f5f5")
-        self.thought_text.grid(row=2, column=0, sticky="nsew", padx=14, pady=(0, 8))
-        self.thought_text.configure(state="disabled", corner_radius=14)
+        # Thoughts Section
+        self.thought_label = ctk.CTkLabel(
+            right_frame, 
+            text="🤔 Thoughts", 
+            anchor="w", 
+            font=("Segoe UI", 14, "bold"),
+            text_color="#e0e0e0"
+        )
+        self.thought_label.grid(row=0, column=0, sticky="w", padx=14, pady=(14, 6))
+        
+        self.thought_text = ctk.CTkTextbox(
+            right_frame, 
+            wrap=tk.WORD, 
+            fg_color="#0a0a15",
+            text_color="#e0e0e0",
+            border_width=0,
+            corner_radius=14,
+            font=("Segoe UI", 12)
+        )
+        self.thought_text.grid(row=1, column=0, sticky="nsew", padx=14, pady=(0, 8))
+        self.thought_text.configure(state="disabled")
         self.thought_text.tag_config("thinking", foreground="#6b7280")
-        self.thought_text.tag_config("command", foreground="#2563eb")
+        self.thought_text.tag_config("command", foreground="#60a5fa")
         self.thought_text.bind("<MouseWheel>", self._on_textbox_scroll)
         self.thought_text.bind("<Enter>", lambda e: self._set_focused_textbox(self.thought_text))
         self.thought_text.bind("<Leave>", lambda e: self._set_focused_textbox(None))
 
-        cmd_label = ctk.CTkLabel(right_frame, text="🔧 Command Output", anchor="w", font=("Segoe UI", 12, "bold"))
-        cmd_label.grid(row=3, column=0, sticky="w", padx=14, pady=(4, 4))
-        self.command_text = ctk.CTkTextbox(right_frame, width=340, height=180, wrap=tk.NONE, fg_color="#1f1f1f", text_color="#f5f5f5")
-        self.command_text.grid(row=4, column=0, sticky="nsew", padx=14, pady=(0, 8))
-        self.command_text.configure(state="disabled", corner_radius=14)
+        # Command Output Section
+        self.cmd_label = ctk.CTkLabel(
+            right_frame, 
+            text="🔧 Command Output", 
+            anchor="w", 
+            font=("Segoe UI", 14, "bold"),
+            text_color="#e0e0e0"
+        )
+        self.cmd_label.grid(row=2, column=0, sticky="w", padx=14, pady=(8, 6))
+        
+        self.command_text = ctk.CTkTextbox(
+            right_frame, 
+            wrap=tk.NONE, 
+            fg_color="#0a0a15",
+            text_color="#e0e0e0",
+            border_width=0,
+            corner_radius=14,
+            font=("Consolas", 11)
+        )
+        self.command_text.grid(row=3, column=0, sticky="nsew", padx=14, pady=(0, 8))
+        self.command_text.configure(state="disabled")
         self.command_text.bind("<MouseWheel>", self._on_textbox_scroll)
         self.command_text.bind("<Enter>", lambda e: self._set_focused_textbox(self.command_text))
         self.command_text.bind("<Leave>", lambda e: self._set_focused_textbox(None))
 
-        status_label = ctk.CTkLabel(right_frame, text="⚙️ System", anchor="w", font=("Segoe UI", 12, "bold"))
-        status_label.grid(row=5, column=0, sticky="w", padx=14, pady=(4, 4))
-        self.status_text = ctk.CTkTextbox(right_frame, width=340, height=100, wrap=tk.WORD, fg_color="#1f1f1f", text_color="#f5f5f5")
-        self.status_text.grid(row=7, column=0, sticky="nsew", padx=14, pady=(0, 14))
-        self.status_text.configure(state="disabled", corner_radius=14)
+        # System Status Section
+        self.status_label = ctk.CTkLabel(
+            right_frame, 
+            text="⚙️ System", 
+            anchor="w", 
+            font=("Segoe UI", 14, "bold"),
+            text_color="#e0e0e0"
+        )
+        self.status_label.grid(row=4, column=0, sticky="w", padx=14, pady=(8, 6))
+        
+        self.status_text = ctk.CTkTextbox(
+            right_frame, 
+            wrap=tk.WORD, 
+            fg_color="#0a0a15",
+            text_color="#e0e0e0",
+            border_width=0,
+            corner_radius=14,
+            font=("Segoe UI", 12)
+        )
+        self.status_text.grid(row=5, column=0, sticky="nsew", padx=14, pady=(0, 14))
+        self.status_text.configure(state="disabled")
         self.status_text.bind("<MouseWheel>", self._on_textbox_scroll)
         self.status_text.bind("<Enter>", lambda e: self._set_focused_textbox(self.status_text))
         self.status_text.bind("<Leave>", lambda e: self._set_focused_textbox(None))
 
-        bottom_frame = ctk.CTkFrame(self.root, corner_radius=0, fg_color="#141414")
-        bottom_frame.pack(fill=tk.X, padx=12, pady=(0, 12))
-        bottom_frame.grid_columnconfigure(1, weight=1)
+        # Bottom Input Area - 使用 grid 布局而不是 pack
+        bottom_frame = ctk.CTkFrame(
+            self.root, 
+            corner_radius=0, 
+            fg_color="#1a1a2e",
+            border_width=0
+        )
+        bottom_frame.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 16))
+        bottom_frame.grid_columnconfigure(1, weight=1)  # 输入框占主要空间
+        bottom_frame.grid_rowconfigure(0, weight=1)     # 允许垂直方向自适应
 
-        input_label = ctk.CTkLabel(bottom_frame, text="📝 Input:", font=("Segoe UI", 12))
-        input_label.grid(row=0, column=0, sticky="w", padx=(14, 6), pady=12)
+        # Input label
+        input_label = ctk.CTkLabel(
+            bottom_frame, 
+            text="📝", 
+            font=("Segoe UI", 14)
+        )
+        input_label.grid(row=0, column=0, sticky="w", padx=(16, 8), pady=14)
 
-        self.entry = ctk.CTkEntry(bottom_frame, width=520, placeholder_text=self._t("input_placeholder"), fg_color="#252525", text_color="#f5f5f5")
-        self.entry.grid(row=0, column=1, sticky="ew", padx=6, pady=12)
+        # Input Entry - Adaptive styling (no fixed width)
+        self.entry = ctk.CTkEntry(
+            bottom_frame, 
+            placeholder_text=self._t("input_placeholder"), 
+            fg_color="#0a0a15",
+            text_color="#e0e0e0",
+            placeholder_text_color="#6b7280",
+            border_width=0,
+            corner_radius=14,
+            font=("Segoe UI", 14),
+            height=48
+        )
+        self.entry.grid(row=0, column=1, sticky="ew", padx=8, pady=14)
         self.entry.bind("<Return>", lambda e: self.send())
 
-        self.send_btn = ctk.CTkButton(bottom_frame, text="Send", command=self.send, width=96)
-        self.send_btn.grid(row=0, column=2, padx=6, pady=12)
-        self.clear_btn = ctk.CTkButton(bottom_frame, text="Clear", command=self.clear_chat, width=96, fg_color="#2d2d2d", text_color="#f5f5f5")
-        self.clear_btn.grid(row=0, column=3, padx=(6, 14), pady=12)
+        # Send Button - Modern styling
+        self.send_btn = ctk.CTkButton(
+            bottom_frame, 
+            text="Send", 
+            command=self.send, 
+            width=100,
+            height=48,
+            corner_radius=14,
+            fg_color="#6366f1",
+            hover_color="#4f46e5",
+            font=("Segoe UI", 14, "bold"),
+            text_color="#ffffff"
+        )
+        self.send_btn.grid(row=0, column=2, padx=8, pady=14)
+        
+        # Clear Button - Modern styling
+        self.clear_btn = ctk.CTkButton(
+            bottom_frame, 
+            text="Clear", 
+            command=self.clear_chat, 
+            width=100,
+            height=48,
+            corner_radius=14,
+            fg_color="#374151",
+            hover_color="#4b5563",
+            font=("Segoe UI", 14),
+            text_color="#e0e0e0"
+        )
+        self.clear_btn.grid(row=0, column=3, padx=(8, 16), pady=14)
 
     def send(self):
         text = self.entry.get().strip()
@@ -972,8 +1142,8 @@ class HumanaizeUI:
             self.running = False
             self._thread = None
             self._last_user_time = None
-            # 控制是否允许自动打破沉默的行为
             self.auto_break_silence = auto_break_silence
+
         def start(self):
             import threading
             self.running = True
@@ -993,24 +1163,16 @@ class HumanaizeUI:
                 try:
                     decision = check_silence_and_decide(self.memory)
                     if decision:
-                        # 如果UI设置禁用了自动打破沉默，则跳过执行逻辑
                         if not getattr(self, "auto_break_silence", True):
                             time.sleep(self.check_interval)
                             continue
-                        # === 阶段1: AI决定打破沉默 ===
-                        # 这只是一个决策信号，不生成对话
                         
-                        # === 阶段2: 进行内部思考（准备阶段） ===
-                        # 思考是打破沉默的准备，只显示在思考面板，不显示在聊天框
                         if self.thinking_engine:
                             try:
-                                # 先运行GAN辩论来进行内部思考
                                 self.thinking_engine.queue_gan_task(is_user_topic=False, memory=self.memory)
                             except:
                                 pass
                         
-                        # === 阶段3: 队列打破沉默任务 ===
-                        # 这才是真正的打破沉默 - 生成AI主动对用户说的话
                         if self.thinking_engine:
                             try:
                                 msgs = self.memory.get("messages", [])[-4:]

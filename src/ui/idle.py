@@ -1,5 +1,6 @@
 import threading, time
 from tools.gan_iteration import GANIteration
+from tools.self_optimizer import get_optimizer
 from memory import add_thought, save_memory
 
 class IdleEngine:
@@ -9,6 +10,7 @@ class IdleEngine:
     功能：
     - 定期GAN自我辩论
     - 定期反思和总结
+    - AI自我优化和性能分析（在GAN空闲时间）
     - 不生成对话回复，只显示在思考面板
     - 在GAN思考期间缓存用户问题，并在GAN完成后交给主引擎处理
     """
@@ -30,8 +32,17 @@ class IdleEngine:
         self.pending_chats = []
         self.gan = GANIteration()
         self.gan.callback = self._gan_callback
+        self.optimizer = get_optimizer()
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
+    
+    def record_interaction(self, user_input: str, response_time: float, success: bool = True, topic: str = None):
+        """Record an interaction for self-optimization"""
+        self.optimizer.record_interaction(user_input, response_time, success, topic)
+    
+    def record_skill_execution(self, skill_name: str, success: bool = True):
+        """Record skill execution for optimization"""
+        self.optimizer.record_skill_execution(skill_name, success)
 
     def _gan_callback(self, response):
         """转发GAN的进度回调"""
@@ -100,6 +111,52 @@ class IdleEngine:
         finally:
             self.is_running_gan = False
             self._flush_pending_chats()
+            
+            # 在GAN完成后运行自我优化（如果有足够的交互数据）
+            self._run_self_optimization()
+    
+    def _run_self_optimization(self):
+        """Run AI self-optimization during GAN idle time"""
+        if not self.optimizer.should_optimize():
+            return
+        
+        try:
+            # 运行优化分析
+            report = self.optimizer.run_optimization()
+            
+            if report.get("optimized"):
+                # 发送优化状态到UI
+                if self.callback:
+                    insights = report.get("user_insights", {})
+                    optimization_msg = f"[Self-Optimization] Analyzed patterns: preferred topics={insights.get('preferred_topics', [])}, strategy={insights.get('recommended_strategy', 'balanced')}"
+                    
+                    self.callback({
+                        "type": "internal_thought",
+                        "thought": optimization_msg
+                    })
+                    
+                    # 如果有应用的优化，通知用户
+                    applied = report.get("optimizations_applied", [])
+                    if applied:
+                        for opt in applied:
+                            self.callback({
+                                "type": "internal_thought",
+                                "thought": f"[Auto-Optimization] {opt}"
+                            })
+        except Exception as e:
+            if self.callback:
+                self.callback({
+                    "type": "error", 
+                    "error": f"Self-optimization failed: {e}"
+                })
+    
+    def get_optimization_status(self) -> str:
+        """Get self-optimization status summary"""
+        return self.optimizer.get_status_summary()
+    
+    def get_optimization_prompt(self) -> str:
+        """Get prompt for AI to create new optimizations"""
+        return self.optimizer.generate_optimization_prompt()
 
     def queue_user_chat(self, prompt, memory):
         if self.is_running_gan:

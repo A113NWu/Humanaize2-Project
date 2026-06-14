@@ -2,7 +2,7 @@
 Name=Humanaize 2.0
 Comment=AI-powered personal assistant with memory and reflection
 Exec=/usr/share/humanaize2/humanaize2.sh boot -m gui
-Icon=/usr/share/icons/hicolor/512x512/apps/humanaize2.png
+Icon=humanaize2
 Terminal=false
 Type=Application
 Categories=Utility;Chat;AI;

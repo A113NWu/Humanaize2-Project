@@ -2,11 +2,11 @@
 
 
 a = Analysis(
-    ['src\\core\\main.py'],
+    ['src/core/main.py'],
     pathex=[],
     binaries=[],
-    datas=[('src/ui/ascii.txt', 'src/ui/'), ('src/config/*.py', 'src/config/'), ('src/core/*.py', 'src/core/'), ('src/ui/*.py', 'src/ui/'), ('src/llm/*.py', 'src/llm/'), ('src/memory/*.py', 'src/memory/'), ('src/tools/*.py', 'src/tools/'), ('src/utils/*.py', 'src/utils/'), ('skills/*', 'skills/'), ('version.json', '. '), ('requirements.txt', '. ')],
-    hiddenimports=['customtkinter', 'requests', 'nltk', 'transformers', 'torch'],
+    datas=[],
+    hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -29,11 +29,10 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,
+    console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['icon.ico'],
 )

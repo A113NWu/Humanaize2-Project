@@ -38,10 +38,13 @@ class ModelDownloader:
                 return {"success": False, "error": f"Unknown model: {model_name}"}
             
             info = model_info[model_name]
-            models_dir = os.path.join(os.path.dirname(__file__), "models")
+            # 下載到專案根目錄的 models 資料夾
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            models_dir = os.path.join(base_dir, "models")
             os.makedirs(models_dir, exist_ok=True)
             
-            file_path = os.path.join(models_dir, info["filename"])
+            # 下載為 tinyllama.gguf（統一名稱）
+            file_path = os.path.join(models_dir, "tinyllama.gguf")
             
             if self._callback(f"Downloading {model_name}..."):
                 return {"success": False, "error": "Download cancelled"}
@@ -167,7 +170,7 @@ class ModelDownloader:
         """Check if the model is already installed"""
         model_info = {
             "tinyllama": {
-                "filename": "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+                "filename": "tinyllama.gguf",
                 "min_size": 170000000  # Minimum expected size in bytes
             }
         }
@@ -176,7 +179,9 @@ class ModelDownloader:
             return False
         
         info = model_info[model_name]
-        file_path = os.path.join(os.path.dirname(__file__), "models", info["filename"])
+        # 檢查專案根目錄的 models 資料夾
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        file_path = os.path.join(base_dir, "models", info["filename"])
         
         if os.path.exists(file_path):
             file_size = os.path.getsize(file_path)
@@ -187,10 +192,11 @@ class ModelDownloader:
     def get_model_path(self, model_name="tinyllama"):
         """Get the path to the model file"""
         model_info = {
-            "tinyllama": "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
+            "tinyllama": "tinyllama.gguf"
         }
         
         if model_name not in model_info:
             return None
         
-        return os.path.join(os.path.dirname(__file__), "models", model_info[model_name])
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        return os.path.join(base_dir, "models", model_info[model_name])

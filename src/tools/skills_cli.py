@@ -15,8 +15,31 @@ class SkillsCLI:
     """Skills command line interface manager"""
     
     def __init__(self):
-        self.skills_dir = os.path.join(os.path.dirname(__file__), "skills")
+        # Try multiple possible skills directories
+        # Priority: system-wide -> user home -> local dev
+        possible_dirs = [
+            "/usr/share/humanaize2/skills",
+            os.path.join(os.path.expanduser("~"), ".humanaize", "skills"),
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), "skills"),
+            os.path.join(os.path.dirname(__file__), "skills")
+        ]
+        
+        self.skills_dir = "/usr/share/humanaize2/skills"
+        for dir_path in possible_dirs:
+            if os.path.isdir(dir_path) and len(os.listdir(dir_path)) > 0:
+                self.skills_dir = dir_path
+                break
+        
+        # Try multiple possible config paths
         self.skills_config_path = os.path.join(os.path.dirname(__file__), "data", "skills_config.json")
+        if not os.path.exists(self.skills_config_path):
+            system_config = "/var/lib/humanaize/skills_config.json"
+            if os.path.exists(system_config):
+                self.skills_config_path = system_config
+            else:
+                os.makedirs(os.path.join(os.path.expanduser("~"), ".humanaize"), exist_ok=True)
+                self.skills_config_path = os.path.join(os.path.expanduser("~"), ".humanaize", "skills_config.json")
+        
         self.skills_config = self._load_skills_config()
         
         os.makedirs(self.skills_dir, exist_ok=True)
