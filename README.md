@@ -30,12 +30,33 @@ Humanaize 2.0
 
 ## Installation
 
-### Prerequisites
+### Method 1: APT Install (Recommended)
 
-- Python 3.8+
-- pip package manager
+```bash
+# Add repository
+echo 'deb [trusted=yes] https://a113nwu.github.io/Humanaize2-Project/apt-repo stable main' | sudo tee /etc/apt/sources.list.d/humanaize2.list
 
-### Quick Start
+# Update package list
+sudo apt update
+
+# Install Humanaize 2.0
+sudo apt install humanaize2
+```
+
+### Method 2: Debian Package
+
+Download and install the Debian package:
+
+```bash
+# Download from GitHub Releases
+wget https://github.com/A113NWu/Humanaize2-Project/releases/download/v2.2.0/humanaize2_2.2.0_amd64.deb
+
+# Install
+sudo dpkg -i humanaize2_2.2.0_amd64.deb
+sudo apt install -f  # Fix dependencies if needed
+```
+
+### Method 3: From Source
 
 ```bash
 # Clone the repository
@@ -47,18 +68,6 @@ pip install -r requirements.txt
 
 # Run the application
 python src/core/main.py
-```
-
-### Debian Package
-
-Download and install the Debian package:
-
-```bash
-# Install the package
-sudo dpkg -i installer_output/humanaize2_2.2.0_amd64.deb
-
-# Run
-humanaize2
 ```
 
 ## Usage
