@@ -1,0 +1,18 @@
+Package: humanaize2
+Version: 2.2.0
+Architecture: amd64
+Maintainer: Humanaize Project <humanaize@example.com>
+Depends: python3 (>= 3.8), python3-pip, python3-tk
+Recommends: python3-venv
+Filename: ./humanaize2_2.2.0_amd64.deb
+Size: 1385572
+MD5sum: 1503d6d3ac9c477f860d0a7c9a77fadb
+SHA1: ab2ce52aaf8f6642ed052480352384df879666e6
+SHA256: 5ccbd2ba17887bd416d20e548388de3618d0391e70a1049a787db39d589e498b
+Section: misc
+Priority: optional
+Homepage: https://github.com/A113NWu/Humanaize2-Project
+Description: Humanaize 2.0 Agent - An AI-powered personal assistant
+ A sophisticated AI agent with memory, reflection, and various skills
+ to assist with daily tasks.
+
