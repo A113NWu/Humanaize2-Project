@@ -60,39 +60,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Animated counters for stats
-    const animateCounter = (element, target, duration = 2000) => {
-        let start = 0;
-        const increment = target / (duration / 16);
-        
-        const timer = setInterval(() => {
-            start += increment;
-            if (start >= target) {
-                element.textContent = target.toLocaleString();
-                clearInterval(timer);
-            } else {
-                element.textContent = Math.floor(start).toLocaleString();
-            }
-        }, 16);
-    };
-
-    // Intersection Observer for stats animation
-    const statsObserver = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                entry.target.querySelectorAll('.stat-number').forEach(stat => {
-                    const target = parseInt(stat.dataset.target);
-                    animateCounter(stat, target);
-                });
-                statsObserver.disconnect();
-            }
-        });
-    }, { threshold: 0.5 });
-
-    const statsSection = document.querySelector('.hero-stats');
-    if (statsSection) {
-        statsObserver.observe(statsSection);
-    }
 
     // Mobile menu toggle
     const mobileMenuBtn = document.querySelector('.mobile-menu-btn');
