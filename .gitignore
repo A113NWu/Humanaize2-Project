@@ -95,3 +95,6 @@ dmypy.json
 *.deb
 installer_output/
 installer/linux/output/
+
+# Releases (exclude large deb files)
+releases/**/*.deb
