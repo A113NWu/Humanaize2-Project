@@ -35,6 +35,7 @@ jobs:
         
     - name: Create installer directory
       run: |
+        if (Test-Path installer_output) { Remove-Item -Recurse -Force installer_output }
         mkdir installer_output
         mkdir installer_output\humanaize2
         
