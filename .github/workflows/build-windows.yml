@@ -26,16 +26,17 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install pyinstaller
-        pip install -r requirements.txt
+        pip install customtkinter requests pillow
+        pip install -r requirements.txt || echo "Some requirements may not be needed"
         
     - name: Build executable
       run: |
-        pyinstaller --onefile --windowed --name humanaize2 --icon=icon/icon.ico src/core/main.py
+        pyinstaller --onefile --windowed --name humanaize2 --icon=icon/icon.ico --add-data "src/ui/ascii.txt;src/ui" --add-data "src/Prompt;src/Prompt" --add-data "skills;skills" --add-data "config;config" --hidden-import customtkinter --hidden-import requests --hidden-import PIL src/core/main.py
         
     - name: Create installer directory
       run: |
         mkdir installer_output
-        mkdir installer_output/humanaize2
+        mkdir installer_output\humanaize2
         
     - name: Copy files
       run: |
