@@ -1,6 +1,12 @@
 import threading, time
-from tools.gan_iteration import GANIteration
-from tools.self_optimizer import get_optimizer
+import os
+import sys
+
+# Add src/tools to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from gan_iteration import GANIteration
+from self_optimizer import get_optimizer
 from memory import add_thought, save_memory
 
 class IdleEngine:

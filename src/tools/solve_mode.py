@@ -16,7 +16,7 @@ from typing import List, Dict, Optional, Any
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from llm import chat
-from tools.gan_iteration import GANIteration
+from gan_iteration import GANIteration
 
 
 class Task:

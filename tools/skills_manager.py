@@ -11,6 +11,12 @@ import importlib
 import inspect
 from typing import Dict, List, Optional, Any, Callable
 
+# 添加 src 到路径
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from src.Prompt import get_skills_prompt
+
 
 class Skill:
     """代表單一技能"""
@@ -350,20 +356,12 @@ class SkillsManager:
         if not enabled_skills:
             return ""
 
-        prompts = {
-            "en": "# Available Skills\n\nYou have access to the following skills. Use them when needed:\n\n",
-            "zh": "# 可用技能\n\n你可以使用以下技能：\n\n",
-            "zh-TW": "# 可用技能\n\n你可以使用以下技能：\n\n",
-        }
+        # 转换为字典列表格式
+        skills_list = [{"name": skill.name, "description": skill.description} 
+                      for skill in enabled_skills]
 
-        prompt = prompts.get(language, prompts["en"])
-
-        for skill in enabled_skills:
-            prompt += f"- **{skill.name}**: {skill.description}\n"
-
-        prompt += "\n**To use a skill, output JSON like:** {\"skill\": \"skill-name\", \"input\": \"...\"}\n"
-
-        return prompt
+        # 使用统一的 Prompt 模块
+        return get_skills_prompt(skills_list, language)
     
     def execute_skill(self, skill_name: str, input_data: Any, language: str = "en") -> Dict:
         """Execute a skill with given input"""

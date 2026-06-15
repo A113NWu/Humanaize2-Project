@@ -1,0 +1,55 @@
+48 INFO: PyInstaller: 6.21.0, contrib hooks: 2026.6
+48 INFO: Python: 3.14.4
+51 INFO: Platform: Linux-7.0.0-22-generic-x86_64-with-glibc2.43
+51 INFO: Python environment: /usr
+51 INFO: wrote /home/allenwu/桌面/Humanaize_2_1/Humanaize2.spec
+51 DEBUG: Testing UPX availability ...
+52 DEBUG: UPX is not available.
+52 DEBUG: script: /home/allenwu/桌面/Humanaize_2_1/src/core/main.py
+52 INFO: Module search paths (PYTHONPATH):
+['/usr/lib/python314.zip',
+ '/usr/lib/python3.14',
+ '/usr/lib/python3.14/lib-dynload',
+ '/home/allenwu/.local/lib/python3.14/site-packages',
+ '/usr/local/lib/python3.14/dist-packages',
+ '/usr/lib/python3/dist-packages',
+ '/usr/lib/python3.14/dist-packages',
+ '/home/allenwu/桌面/Humanaize_2_1/src']
+107 DEBUG: discover_hook_directories: Hook directories: [('/home/allenwu/.local/lib/python3.14/site-packages/numpy/_pyinstaller', 0), ('/home/allenwu/.local/lib/python3.14/site-packages/_pyinstaller_hooks_contrib/stdhooks', -1000), ('/home/allenwu/.local/lib/python3.14/site-packages/_pyinstaller_hooks_contrib', -1000)]
+299 INFO: checking Analysis
+300 INFO: Building Analysis because Analysis-00.toc is non existent
+300 INFO: Looking for Python shared library...
+308 WARNING: Unrecognised line of output '缓存生成者： ldconfig (Ubuntu GLIBC 2.43-2ubuntu2) stable release version 2.43' from ldconfig
+308 INFO: Using Python shared library: /usr/lib/x86_64-linux-gnu/libpython3.14.so.1.0
+308 INFO: Running Analysis Analysis-00.toc
+308 INFO: Target bytecode optimization level: 0
+308 INFO: Initializing module dependency graph...
+309 INFO: Initializing module graph hook caches...
+313 INFO: Analyzing modules for base_library.zip ...
+313 DEBUG: Collecting submodules for encodings
+29 DEBUG: collect_submodules - scanning (sub)package encodings
+29 DEBUG: collect_submodules - scanning (sub)package encodings in location(s): ['/usr/lib/python3.14/encodings']
+427 DEBUG: collect_submodules - found submodules: ['encodings', 'encodings._win_cp_codecs', 'encodings.aliases', 'encodings.ascii', 'encodings.base64_codec', 'encodings.big5', 'encodings.big5hkscs', 'encodings.bz2_codec', 'encodings.charmap', 'encodings.cp037', 'encodings.cp1006', 'encodings.cp1026', 'encodings.cp1125', 'encodings.cp1140', 'encodings.cp1250', 'encodings.cp1251', 'encodings.cp1252', 'encodings.cp1253', 'encodings.cp1254', 'encodings.cp1255', 'encodings.cp1256', 'encodings.cp1257', 'encodings.cp1258', 'encodings.cp273', 'encodings.cp424', 'encodings.cp437', 'encodings.cp500', 'encodings.cp720', 'encodings.cp737', 'encodings.cp775', 'encodings.cp850', 'encodings.cp852', 'encodings.cp855', 'encodings.cp856', 'encodings.cp857', 'encodings.cp858', 'encodings.cp860', 'encodings.cp861', 'encodings.cp862', 'encodings.cp863', 'encodings.cp864', 'encodings.cp865', 'encodings.cp866', 'encodings.cp869', 'encodings.cp874', 'encodings.cp875', 'encodings.cp932', 'encodings.cp949', 'encodings.cp950', 'encodings.euc_jis_2004', 'encodings.euc_jisx0213', 'encodings.euc_jp', 'encodings.euc_kr', 'encodings.gb18030', 'encodings.gb2312', 'encodings.gbk', 'encodings.hex_codec', 'encodings.hp_roman8', 'encodings.hz', 'encodings.idna', 'encodings.iso2022_jp', 'encodings.iso2022_jp_1', 'encodings.iso2022_jp_2', 'encodings.iso2022_jp_2004', 'encodings.iso2022_jp_3', 'encodings.iso2022_jp_ext', 'encodings.iso2022_kr', 'encodings.iso8859_1', 'encodings.iso8859_10', 'encodings.iso8859_11', 'encodings.iso8859_13', 'encodings.iso8859_14', 'encodings.iso8859_15', 'encodings.iso8859_16', 'encodings.iso8859_2', 'encodings.iso8859_3', 'encodings.iso8859_4', 'encodings.iso8859_5', 'encodings.iso8859_6', 'encodings.iso8859_7', 'encodings.iso8859_8', 'encodings.iso8859_9', 'encodings.johab', 'encodings.koi8_r', 'encodings.koi8_t', 'encodings.koi8_u', 'encodings.kz1048', 'encodings.latin_1', 'encodings.mac_arabic', 'encodings.mac_croatian', 'encodings.mac_cyrillic', 'encodings.mac_farsi', 'encodings.mac_greek', 'encodings.mac_iceland', 'encodings.mac_latin2', 'encodings.mac_roman', 'encodings.mac_romanian', 'encodings.mac_turkish', 'encodings.mbcs', 'encodings.oem', 'encodings.palmos', 'encodings.ptcp154', 'encodings.punycode', 'encodings.quopri_codec', 'encodings.raw_unicode_escape', 'encodings.rot_13', 'encodings.shift_jis', 'encodings.shift_jis_2004', 'encodings.shift_jisx0213', 'encodings.tis_620', 'encodings.undefined', 'encodings.unicode_escape', 'encodings.utf_16', 'encodings.utf_16_be', 'encodings.utf_16_le', 'encodings.utf_32', 'encodings.utf_32_be', 'encodings.utf_32_le', 'encodings.utf_7', 'encodings.utf_8', 'encodings.utf_8_sig', 'encodings.uu_codec', 'encodings.zlib_codec']
+427 DEBUG: Collecting submodules for collections
+28 DEBUG: collect_submodules - scanning (sub)package collections
+28 DEBUG: collect_submodules - scanning (sub)package collections in location(s): ['/usr/lib/python3.14/collections']
+577 DEBUG: collect_submodules - found submodules: ['collections']
+577 DEBUG: Collecting submodules for re
+32 DEBUG: collect_submodules - scanning (sub)package re
+32 DEBUG: collect_submodules - scanning (sub)package re in location(s): ['/usr/lib/python3.14/re']
+713 DEBUG: collect_submodules - found submodules: ['re', 're._casefix', 're._compiler', 're._constants', 're._parser']
+718 INFO: Processing standard module hook 'hook-encodings.py' from '/home/allenwu/.local/lib/python3.14/site-packages/PyInstaller/hooks'
+718 DEBUG: Collecting submodules for encodings
+29 DEBUG: collect_submodules - scanning (sub)package encodings
+29 DEBUG: collect_submodules - scanning (sub)package encodings in location(s): ['/usr/lib/python3.14/encodings']
+842 DEBUG: collect_submodules - found submodules: ['encodings', 'encodings._win_cp_codecs', 'encodings.aliases', 'encodings.ascii', 'encodings.base64_codec', 'encodings.big5', 'encodings.big5hkscs', 'encodings.bz2_codec', 'encodings.charmap', 'encodings.cp037', 'encodings.cp1006', 'encodings.cp1026', 'encodings.cp1125', 'encodings.cp1140', 'encodings.cp1250', 'encodings.cp1251', 'encodings.cp1252', 'encodings.cp1253', 'encodings.cp1254', 'encodings.cp1255', 'encodings.cp1256', 'encodings.cp1257', 'encodings.cp1258', 'encodings.cp273', 'encodings.cp424', 'encodings.cp437', 'encodings.cp500', 'encodings.cp720', 'encodings.cp737', 'encodings.cp775', 'encodings.cp850', 'encodings.cp852', 'encodings.cp855', 'encodings.cp856', 'encodings.cp857', 'encodings.cp858', 'encodings.cp860', 'encodings.cp861', 'encodings.cp862', 'encodings.cp863', 'encodings.cp864', 'encodings.cp865', 'encodings.cp866', 'encodings.cp869', 'encodings.cp874', 'encodings.cp875', 'encodings.cp932', 'encodings.cp949', 'encodings.cp950', 'encodings.euc_jis_2004', 'encodings.euc_jisx0213', 'encodings.euc_jp', 'encodings.euc_kr', 'encodings.gb18030', 'encodings.gb2312', 'encodings.gbk', 'encodings.hex_codec', 'encodings.hp_roman8', 'encodings.hz', 'encodings.idna', 'encodings.iso2022_jp', 'encodings.iso2022_jp_1', 'encodings.iso2022_jp_2', 'encodings.iso2022_jp_2004', 'encodings.iso2022_jp_3', 'encodings.iso2022_jp_ext', 'encodings.iso2022_kr', 'encodings.iso8859_1', 'encodings.iso8859_10', 'encodings.iso8859_11', 'encodings.iso8859_13', 'encodings.iso8859_14', 'encodings.iso8859_15', 'encodings.iso8859_16', 'encodings.iso8859_2', 'encodings.iso8859_3', 'encodings.iso8859_4', 'encodings.iso8859_5', 'encodings.iso8859_6', 'encodings.iso8859_7', 'encodings.iso8859_8', 'encodings.iso8859_9', 'encodings.johab', 'encodings.koi8_r', 'encodings.koi8_t', 'encodings.koi8_u', 'encodings.kz1048', 'encodings.latin_1', 'encodings.mac_arabic', 'encodings.mac_croatian', 'encodings.mac_cyrillic', 'encodings.mac_farsi', 'encodings.mac_greek', 'encodings.mac_iceland', 'encodings.mac_latin2', 'encodings.mac_roman', 'encodings.mac_romanian', 'encodings.mac_turkish', 'encodings.mbcs', 'encodings.oem', 'encodings.palmos', 'encodings.ptcp154', 'encodings.punycode', 'encodings.quopri_codec', 'encodings.raw_unicode_escape', 'encodings.rot_13', 'encodings.shift_jis', 'encodings.shift_jis_2004', 'encodings.shift_jisx0213', 'encodings.tis_620', 'encodings.undefined', 'encodings.unicode_escape', 'encodings.utf_16', 'encodings.utf_16_be', 'encodings.utf_16_le', 'encodings.utf_32', 'encodings.utf_32_be', 'encodings.utf_32_le', 'encodings.utf_7', 'encodings.utf_8', 'encodings.utf_8_sig', 'encodings.uu_codec', 'encodings.zlib_codec']
+1433 INFO: Processing standard module hook 'hook-math.py' from '/home/allenwu/.local/lib/python3.14/site-packages/PyInstaller/hooks'
+2328 INFO: Processing standard module hook 'hook-difflib.py' from '/home/allenwu/.local/lib/python3.14/site-packages/PyInstaller/hooks'
+2336 INFO: Processing standard module hook 'hook-heapq.py' from '/home/allenwu/.local/lib/python3.14/site-packages/PyInstaller/hooks'
+2336 DEBUG: Suppressing import of 'doctest' from module 'heapq' due to excluded import 'doctest' specified in a hook for 'heapq' (or its parent package(s)).
+2414 INFO: Processing standard module hook 'hook-pickle.py' from '/home/allenwu/.local/lib/python3.14/site-packages/PyInstaller/hooks'
+2417 DEBUG: Suppressing import of 'argparse' from module 'pickle' due to excluded import 'argparse' specified in a hook for 'pickle' (or its parent package(s)).
+3380 INFO: Caching module dependency graph...
+3400 INFO: Analyzing /home/allenwu/桌面/Humanaize_2_1/src/core/main.py
+3425 INFO: Processing standard module hook 'hook-urllib3.py' from '/home/allenwu/.local/lib/python3.14/site-packages/_pyinstaller_hooks_contrib/stdhooks'
+Aborted by user request.

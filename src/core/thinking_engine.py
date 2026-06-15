@@ -1,6 +1,12 @@
 import os
+import sys
 import threading, queue, re, json
 from datetime import datetime
+
+# Add tools directory to path
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(project_root, "tools"))
+
 from memory import add, add_thought, save_memory
 from llm.llm_enhanced import generate_with_emotion_feedback
 from core.Agent import Agent
