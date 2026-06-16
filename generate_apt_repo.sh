@@ -40,7 +40,7 @@ cat > dists/${DIST_NAME}/Release << EOF
 Origin: Humanaize2
 Label: Humanaize2 Repository
 Suite: ${DIST_NAME}
-Version: 2.2.0
+Version: 2.2.3
 Codename: ${DIST_NAME}
 Date: $(date -R)
 Architectures: amd64 arm64 all

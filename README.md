@@ -91,10 +91,10 @@ Download and install the Debian package:
 
 ```bash
 # Download from GitHub Releases
-wget https://github.com/A113NWu/Humanaize2-Project/releases/download/v2.2.0/humanaize2_2.2.0_amd64.deb
+wget https://github.com/A113NWu/Humanaize2-Project/releases/download/v2.2.3/humanaize2_2.2.3_amd64.deb
 
 # Install
-sudo dpkg -i humanaize2_2.2.0_amd64.deb
+sudo dpkg -i humanaize2_2.2.3_amd64.deb
 sudo apt install -f  # Fix dependencies if needed
 ```
 
@@ -202,7 +202,7 @@ This project is licensed under the MIT License.
 
 ## Version
 
-**v2.2.0**
+**v2.2.3**
 
 - 🎨 Modern Windows GUI with card-based design
 - 🌙 Dark/Light theme support

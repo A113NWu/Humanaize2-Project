@@ -28,7 +28,7 @@ def build_exe(arch="x86_64"):
     """
     # Configuration
     app_name = "Humanaize2"
-    version = "2.2.0"
+    version = "2.2.3"
     # Windows 专用入口脚本，默认启动现代化 GUI
     main_script = "src/core/windows_main.py"
     

@@ -1,5 +1,5 @@
 {
-  "version": "2.2.0",
-  "last_updated": "2026-06-14T00:00:00.000000",
-  "release_notes": "v2.2.0新增：0.AI Selfdevelop模块（用户个性化定制，更新时保留）;1.自我优化系统（AI空闲时间自动分析优化）;2.用户行为模式分析;3.性能监控和优化建议;4.CLI/Solve模式日志修复"
+  "version": "2.2.3",
+  "last_updated": "2026-06-16T00:00:00.000000",
+  "release_notes": "v2.2.3新增：0.Windows現代化GUI介面;1.GitHub Pages官網;2.更新Linux APT完整安裝命令;3.優化Solve模式狀態欄刷新"
 }
