@@ -23,6 +23,7 @@ class Colors:
     DIM = '\033[2m'
     ORANGE = '\033[38;5;208m'
     BLUE = '\033[38;5;39m'
+    PRIMARY = '\033[38;5;39m'  # 主色调，与 BLUE 相同
     GREEN = '\033[38;5;46m'
     RED = '\033[38;5;196m'
     YELLOW = '\033[38;5;226m'
