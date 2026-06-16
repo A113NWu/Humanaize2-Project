@@ -19,10 +19,29 @@ jobs:
           fetch-depth: 0
           ref: main
 
-      - name: Deploy to gh-pages branch
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./docs
-          publish_branch: gh-pages
-          force_orphan: false
+      - name: Setup Git
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+
+      - name: Deploy to gh-pages using git directly
+        run: |
+          # Create temporary directory for deployment
+          mkdir -p /tmp/deploy
+          cp -r docs/* /tmp/deploy/
+          
+          # Checkout gh-pages branch
+          git checkout gh-pages || git checkout --orphan gh-pages
+          
+          # Remove all existing files except .git
+          rm -rf ./*
+          
+          # Copy new files
+          cp -r /tmp/deploy/* .
+          
+          # Add and commit
+          git add -A
+          git commit -m "Auto-deploy: Update website from main branch" --allow-empty
+          
+          # Push to gh-pages
+          git push origin gh-pages --force
