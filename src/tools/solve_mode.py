@@ -241,20 +241,27 @@ class SolveModeStatusBar:
             # 第一次渲染，直接打印
             print(self.render())
             self.first_render = False
+            # 保存光标位置（在状态栏下方）
+            print("\033[s", end='')  # 保存光标位置
         else:
             # 后续更新，使用 ANSI 转义序列原地刷新
-            # 移动光标到状态栏位置
-            print(f"\033[{self.status_bar_lines}A", end='')  # 向上移动状态栏行数
-            # 清除状态栏内容
-            for _ in range(self.status_bar_lines):
-                print(f"\033[2K\033[G", end='')  # 清除当前行并移动到行首
-                print(f"\033[1B", end='')  # 向下移动一行
-            # 移动回状态栏起始位置
-            print(f"\033[{self.status_bar_lines}A", end='')
+            # 恢复光标到状态栏起始位置
+            print("\033[u", end='')  # 恢复光标位置
+            # 向上移动4行到状态栏顶部
+            print("\033[4A", end='')
+            # 清除状态栏内容（4行）
+            for _ in range(4):
+                print("\033[2K", end='')  # 清除当前行
+                print("\033[1B", end='')  # 向下移动
+            # 向上移动4行回到状态栏顶部
+            print("\033[4A", end='')
             # 打印新的状态栏
             print(self.render(), end='')
-            # 移动到状态栏下方
-            print(f"\033[1B", end='', flush=True)
+            # 保存新的光标位置
+            print("\033[s", end='')
+            # 强制刷新输出缓冲区
+            import sys
+            sys.stdout.flush()
 
 
 class HSNetwork:
