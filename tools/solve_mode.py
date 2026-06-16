@@ -309,9 +309,9 @@ class SolveModeStatusBar:
             self.first_render = False
         else:
             # 使用 ANSI 转义序列原地刷新
-            # 向上移动4行到状态栏顶部
+            # 向上移动到状态栏起始位置（4行）
             print("\033[4A", end='')
-            # 清除从当前位置到屏幕末尾（会清除状态栏和下方内容）
+            # 清除从光标位置到屏幕末尾的所有内容
             print("\033[0J", end='')
             # 打印新的状态栏
             print(self.render(), end='')
@@ -551,12 +551,6 @@ class SolveMode:
                     print(f"      {task.description}")
         
         print()
-        # 打印分割线
-        if self._use_color:
-            print(f"{Colors.DIM}{'─' * 70}{Colors.RESET}")
-        else:
-            print(f"{'─' * 70}")
-        
         # 初始化并显示状态栏
         self.status_bar = SolveModeStatusBar(self._use_color)
         self.status_bar.update(
@@ -569,12 +563,6 @@ class SolveMode:
             elapsed_time="00:00"
         )
         self.status_bar.print_update()
-        
-        # 打印分割线
-        if self._use_color:
-            print(f"{Colors.DIM}{'─' * 70}{Colors.RESET}")
-        else:
-            print(f"{'─' * 70}")
         print()
     
     def _execute_tasks(self) -> List[Dict]:

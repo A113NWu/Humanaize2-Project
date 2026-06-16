@@ -614,12 +614,6 @@ The tasks should be ordered logically from first to last step.
                     print(f"      {task.description}")
         
         print()
-        # 打印分割线
-        if self._use_color:
-            print(f"{Colors.DIM}{'─' * 70}{Colors.RESET}")
-        else:
-            print(f"{'─' * 70}")
-        
         # 初始化并显示状态栏
         self.status_bar = SolveModeStatusBar(self._use_color)
         self.status_bar.update(
@@ -632,12 +626,6 @@ The tasks should be ordered logically from first to last step.
             elapsed_time="00:00"
         )
         self.status_bar.print_update()
-        
-        # 打印分割线
-        if self._use_color:
-            print(f"{Colors.DIM}{'─' * 70}{Colors.RESET}")
-        else:
-            print(f"{'─' * 70}")
         print()
     
     def _execute_tasks(self) -> List[Dict]:
