@@ -1,4 +1,4 @@
-# Humanaize v2.1
+# Humanaize v2.2
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
@@ -7,7 +7,15 @@
 
 > English | [中文](README_zh.md)
 
-Humanaize v2.1 is a **local autonomous AI agent** with a modern GUI interface. It runs entirely on your machine using a local LLM server, providing privacy-focused AI interactions with memory, personality, and extensible skills.
+Humanaize v2.2 is a **local autonomous AI agent** with a modern GUI interface. It runs entirely on your machine using a local LLM server, providing privacy-focused AI interactions with memory, personality, and extensible skills.
+
+**New in v2.2:**
+- ✨ Windows modern GUI interface with card-based design
+- ✨ AI Selfdevelop module (user personalization preserved during updates)
+- ✨ Self-optimization system (AI analyzes and optimizes during idle time)
+- ✨ User behavior pattern analysis
+- ✨ Performance monitoring and optimization suggestions
+- ✨ CLI/Solve mode logging fixes
 
 ## 🎯 Key Features
 
@@ -176,9 +184,17 @@ humanaize2.bat download-model
 
 #### Method 1: Using Installer (Recommended)
 
-1. Download the latest `Humanaize2-Setup.exe` from the releases page
+1. Download the latest `Humanaize2-Setup.exe` from the [Releases Page](https://github.com/A113NWu/Humanaize2-Project/releases)
 2. Run the installer and follow the installation wizard
-3. Launch Humanaize 2.0 from the Start Menu
+3. Launch Humanaize 2.2 from the Start Menu
+4. The application will automatically open the modern GUI interface
+
+**Features of Windows Installer:**
+- 🎨 Modern card-based GUI interface
+- 🌙 Dark/Light theme support
+- 🌐 English/Chinese language support
+- 📦 Automatic model download on first launch
+- ⚡ Auto-update functionality
 
 #### Method 2: Manual Installation
 

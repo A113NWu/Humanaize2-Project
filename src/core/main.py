@@ -196,6 +196,32 @@ def boot_gui():
     root.mainloop()
 
 
+def boot_windows_gui():
+    """启动 Windows 专属现代化 GUI"""
+    _check_and_start_server()
+    
+    # 后台检查更新
+    _check_updates_background()
+    
+    import warnings
+    warnings.filterwarnings("ignore")
+    
+    import os
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+    os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+    
+    try:
+        import tensorflow as tf
+        tf.get_logger().setLevel('ERROR')
+    except:
+        pass
+    
+    from ui.windows_gui import ModernWindowsUI
+    root = ctk.CTk()
+    app = ModernWindowsUI(root)
+    root.mainloop()
+
+
 def boot_solve(args):
     """啟動問題解決模式"""
     _check_and_start_server()
@@ -203,10 +229,7 @@ def boot_solve(args):
     # 等待服务器完全启动
     import time
     time.sleep(1)
-    
-    # 清屏并重新显示标题
-    print("\n" * 20)
-    
+
     from tools.solve_mode import SolveMode
     
     solver = SolveMode()
@@ -317,11 +340,13 @@ def main():
         print("Usage:")
         print("  humanaize2 boot         - Start CLI chat interface")
         print("  humanaize2 boot -m gui  - Start GUI interface")
+        print("  humanaize2 boot -m win-gui  - Start Windows modern GUI interface")
         print("  humanaize2 boot -m solve [-r <file>] [-enable HSN] - Start problem solving mode")
         print("  humanaize2 settings     - Open settings interface")
         print("\nOr use directly:")
         print("  python main.py boot")
         print("  python main.py boot -m gui")
+        print("  python main.py boot -m win-gui")
         print("  python main.py boot -m solve")
         print("  python main.py settings")
         return
@@ -359,6 +384,14 @@ def main():
                 print(speeches[choice])
             print("Starting GUI interface...")
             boot_gui()
+        elif mode == "win-gui":
+            choice = random.randint(0, 4)
+            if choice == 3 and ascii_art:
+                print(ascii_art)
+            else:
+                print(speeches[choice])
+            print("Starting Windows modern GUI interface...")
+            boot_windows_gui()
         elif mode == "solve":
             choice = random.randint(0, 4)
             if choice == 3 and ascii_art:

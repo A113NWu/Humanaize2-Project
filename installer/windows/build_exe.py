@@ -29,7 +29,8 @@ def build_exe(arch="x86_64"):
     # Configuration
     app_name = "Humanaize2"
     version = "2.2.0"
-    main_script = "src/core/main.py"
+    # Windows 专用入口脚本，默认启动现代化 GUI
+    main_script = "src/core/windows_main.py"
     
     # Output directory based on architecture
     output_dir = f"dist/{arch}"
@@ -45,7 +46,7 @@ def build_exe(arch="x86_64"):
         "--onefile",
         "--windowed",
         "--icon=icon.ico",
-        # Add data files
+        # 添加数据文件
         "--add-data", f"src/ui/ascii.txt{DATA_SEP}src/ui/",
         "--add-data", f"src/config/*.py{DATA_SEP}src/config/",
         "--add-data", f"src/core/*.py{DATA_SEP}src/core/",
@@ -69,9 +70,14 @@ def build_exe(arch="x86_64"):
         "--hidden-import", "json",
         "--hidden-import", "threading",
         "--hidden-import", "queue",
+        "--hidden-import", "tkinter",
+        "--hidden-import", "tkinter.messagebox",
+        "--hidden-import", "tkinter.filedialog",
         # Output options
         "--distpath", output_dir,
         "--workpath", f"build/{arch}",
+        # Windows GUI mode by default
+        "--add-binary", f"icon.ico{DATA_SEP}.",
         main_script
     ]
     

@@ -1,4 +1,4 @@
-# Humanaize v2.1
+# Humanaize v2.2
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
@@ -7,7 +7,15 @@
 
 > [English](README.md) | 中文
 
-Humanaize v2.1 是一款**本地自治 AI 代理**，具有现代化的图形界面。它完全在本地运行，通过本地 LLM 服务器提供注重隐私的 AI 交互，支持记忆系统、人格引擎和可扩展的技能框架。
+Humanaize v2.2 是一款**本地自治 AI 代理**，具有现代化的图形界面。它完全在本地运行，通过本地 LLM 服务器提供注重隐私的 AI 交互，支持记忆系统、人格引擎和可扩展的技能框架。
+
+**v2.2 新功能：**
+- ✨ Windows 现代化 GUI 界面（卡片式设计）
+- ✨ AI 自我发展模块（用户个性化定制，更新时保留）
+- ✨ 自我优化系统（AI 空闲时间自动分析优化）
+- ✨ 用户行为模式分析
+- ✨ 性能监控和优化建议
+- ✨ CLI/Solve 模式日志修复
 
 ## 🎯 核心特性
 
@@ -176,9 +184,16 @@ humanaize2.bat download-model
 
 #### 方法 1：使用安装程序（推荐）
 
-1. 从 releases 页面下载最新的 `Humanaize2-Setup.exe`
+1. 从 [Releases 页面](https://github.com/A113NWu/Humanaize2-Project/releases) 下载最新的 `Humanaize2-Setup.exe`
 2. 运行安装程序并按照安装向导操作
-3. 从开始菜单启动 Humanaize 2.0
+3. 从开始菜单启动 Humanaize 2.2，现代化 GUI 自动打开
+
+**Windows 安装包特性：**
+- 🎨 现代化卡片式 GUI 界面
+- 🌙 深色/浅色主题支持
+- 🌐 中文/英文语言支持
+- 📦 首次启动自动下载模型
+- ⚡ 自动更新功能
 
 #### 方法 2：手动安装
 
@@ -307,7 +322,14 @@ humanaize2
 
 ## 🚀 快速开始
 
-### 使用 GUI
+### 使用 Windows 现代化 GUI
+```bash
+# Windows 安装包默认启动现代化 GUI
+# 从源代码启动：
+python src/core/main.py boot -m win-gui
+```
+
+### 使用传统 GUI
 ```bash
 # Linux
 humanaize2
