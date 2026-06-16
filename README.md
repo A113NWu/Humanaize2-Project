@@ -1,251 +1,688 @@
-# Humanaize 2.2
-
-> AI-powered personal assistant with self-optimization capabilities and modern GUI
+# Humanaize v2.2
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue.svg)]()
+[![中文](https://img.shields.io/badge/README-中文版-blue.svg)](README_zh.md)
 
-Humanaize 2.2 is an intelligent personal assistant designed to adapt to user habits and optimize response speed through self-iteration during idle time. Now featuring a **modern Windows GUI** with card-based design.
+> English | [中文](README_zh.md)
 
-## ✨ New in v2.2
+Humanaize v2.2 is a **local autonomous AI agent** with a modern GUI interface. It runs entirely on your machine using a local LLM server, providing privacy-focused AI interactions with memory, personality, and extensible skills.
 
-- 🎨 **Modern Windows GUI**: Card-based interface with dark/light theme support
-- 🧠 **AI Self-Development**: Automatically adapts to user habits and optimizes performance
-- 🔧 **Modular Architecture**: Separated Core and AI Selfdevelop modules
-- ⚡ **Self-Optimization**: Analyzes performance metrics and code quality during idle time
-- 💬 **Natural Language Interface**: Interact with AI through intuitive chat interface
-- 📚 **Skill Management**: Extensible skill system for enhanced functionality
-- 🌐 **Multilingual Support**: English and Chinese language support
+**New in v2.2:**
+- ✨ Windows modern GUI interface with card-based design
+- ✨ AI Selfdevelop module (user personalization preserved during updates)
+- ✨ Self-optimization system (AI analyzes and optimizes during idle time)
+- ✨ User behavior pattern analysis
+- ✨ Performance monitoring and optimization suggestions
+- ✨ CLI/Solve mode logging fixes
 
-## Architecture
+## 🎯 Key Features
+
+| Category | Features |
+|----------|----------|
+| **Core AI** | Local chat interface, Memory system, Personality engine, GAN-style self-debate |
+| **Skills Framework** | OpenClaw-compatible skill system with 9 built-in skills |
+| **User Interface** | Modern CustomTkinter GUI, CLI support, Dark/Light themes |
+| **Multilingual** | English and Chinese support with automatic language detection |
+| **Autonomy** | Thread-safe architecture, background task processing, idle thinking |
+| **Maintenance** | Auto-update from GitHub, systemd service support (Linux) |
+
+---
+
+## 🌟 Core Capabilities
+
+### 1. Local Chat Interface
+- Modern CustomTkinter-based UI with chat history
+- Real-time thought display showing AI's internal reasoning
+- Both GUI and CLI modes available
+- Command output panel for skill execution results
+
+### 2. Memory System
+- Persistent conversation memory across sessions
+- Thought tracking and decision logging
+- Memory summarization for efficient context management
+- Configurable memory limits (default: 100 messages)
+
+### 3. Personality Engine
+- Customizable AI personality traits (curiosity, empathy, creativity)
+- Dynamic personality adaptation based on interactions
+- Initial prompt customization
+
+### 4. GAN-Style Self-Debate
+- Internal argumentation for enhanced response quality
+- Automatic decision on when to use deep reflection
+- Synthesis of multiple perspectives
+
+### 5. Skills System (OpenClaw Compatible)
+- Extensible skill framework
+- Support for custom skill development
+- Skill enable/disable management
+- JSON-based skill invocation
+
+---
+
+## 📦 Built-in Skills
+
+| Skill | Description | Risk Level |
+|-------|-------------|------------|
+| `shell` | Execute shell commands | High |
+| `file-read` | Read files from the filesystem | Medium |
+| `file-write` | Write content to files | High |
+| `memory` | Query and manage conversation memory | Low |
+| `reminder` | Set timed reminders | Low |
+| `web-search` | Search the web | Low |
+| `web-fetch` | Fetch content from URLs | Low |
+| `detect-emotion` | Analyze user's facial expressions via camera | Medium |
+| `humanaize-society-network` | Connect with other Humanaize AIs | Medium |
+
+---
+
+## 📁 Project Structure
 
 ```
-Humanaize 2.0
+Humanaize_2_1/
 ├── src/
-│   ├── core/          # Core modules (updated via updates)
-│   ├── ui/            # User interface components
-│   ├── llm/           # LLM integration
-│   ├── memory/        # Memory management
-│   ├── tools/         # Utility tools
-│   └── ai_selfdevelop/ # AI-modifiable files (persists through updates)
-├── skills/            # Extensible skills
-├── config/            # Configuration files
-└── models/            # AI models (GGUF format)
+│   ├── core/              # Core components
+│   │   ├── main.py        # Application entry point
+│   │   ├── Agent.py       # Agent execution engine
+│   │   ├── thinking_engine.py  # Async task processing
+│   │   ├── autonomous.py  # Autonomous decision engine
+│   │   ├── personality.py # Personality system
+│   │   ├── reflection.py  # Reflection system
+│   │   └── internal_state.py   # Internal state management
+│   ├── llm/               # LLM communication
+│   │   ├── llm.py         # Basic LLM client
+│   │   ├── llm_enhanced.py # Enhanced LLM with emotion feedback
+│   │   ├── prompt_builder.py  # Prompt construction
+│   │   ├── response_validator.py # Response validation
+│   │   └── model_downloader.py # Model download utilities
+│   ├── memory/            # Memory management
+│   │   ├── memory.py      # Core memory operations
+│   │   └── memory_summarizer.py # Memory summarization
+│   ├── config/            # Configuration
+│   │   ├── config.py      # Global settings
+│   │   └── language_adapter.py # Language detection
+│   ├── tools/             # Tools and utilities
+│   │   ├── skills_manager.py # Skills framework
+│   │   ├── skills_cli.py  # Skills CLI management
+│   │   ├── gan_iteration.py # GAN self-debate
+│   │   ├── solve_mode.py  # Problem solving mode
+│   │   ├── vision.py      # Camera/vision support
+│   │   └── tools.py       # General utilities
+│   ├── ui/                # User interface
+│   │   ├── ui.py          # Main GUI interface
+│   │   ├── cli.py         # CLI interface
+│   │   ├── cli_settings.py # Settings CLI
+│   │   └── idle.py        # Idle engine
+│   └── utils/             # Utility modules
+│       └── auto_updater.py # Auto-update functionality
+├── skills/                # Skills directory
+│   ├── shell/
+│   ├── file-read/
+│   ├── file-write/
+│   ├── memory/
+│   ├── reminder/
+│   ├── web-search/
+│   ├── web-fetch/
+│   ├── detect-emotion/
+│   └── HumanaizeSocietyNetwork/
+├── data/                  # Runtime data storage
+├── docs/                  # Documentation
+│   ├── DEPLOY_LINUX.md
+│   ├── DIRECTORY_STRUCTURE.md
+│   └── TROUBLESHOOTING_LINUX.md
+├── installer/             # Installer scripts
+│   ├── linux/             # Debian/RPM package builders
+│   │   ├── debian/        # Debian package structure
+│   │   ├── build_deb.sh  # Build Debian package
+│   │   └── build_rpm.sh   # Build RPM package
+│   └── windows/           # Windows installer
+│       ├── build_all.bat  # Build Windows installer
+│       ├── build_exe.py   # Python build script
+│       └── humanaize2.iss # Inno Setup script
+├── Humanaize2/            # Virtual environment
+├── models/                 # LLM model files
+├── llama/                  # Llama.cpp binaries
+├── version.json           # Version information
+├── requirements.txt       # Python dependencies
+├── pyproject.toml         # Build configuration
+├── humanaize2.sh          # Linux launch script
+├── humanaize2.bat         # Windows launch script
+├── humanaize2.service.template # systemd service template
+├── Humanaize2.spec        # RPM spec file
+├── LICENSE                # MIT License
+└── README.md              # This file
 ```
 
-## Installation
+---
+
+## ⚙️ Installation
+
+### Prerequisites
+
+| Requirement | Version | Description |
+|-------------|---------|-------------|
+| Python | 3.10+ | Core runtime |
+| OS | Windows 10/11 or Linux (Ubuntu 20.04+, Debian 11+, CentOS 7+) | Supported platforms |
+| LLM Server | llama.cpp compatible | Required for AI inference |
+| RAM | Minimum 8GB recommended | For model loading |
+
+### Quick Download Command
+
+Use the built-in download command to get TinyLlama automatically:
+
+```bash
+# Linux
+./humanaize2.sh download-model
+
+# Windows
+humanaize2.bat download-model
+```
 
 ### Windows Installation
 
-#### Method 1: Windows Installer (Recommended)
+#### Method 1: Using Installer (Recommended)
 
-Download the Windows installer with modern GUI:
+1. Download the latest `Humanaize2-Setup.exe` from the [Releases Page](https://github.com/A113NWu/Humanaize2-Project/releases)
+2. Run the installer and follow the installation wizard
+3. Launch Humanaize 2.2 from the Start Menu
+4. The application will automatically open the modern GUI interface
 
-1. Download `Humanaize2-Setup.exe` from [GitHub Releases](https://github.com/A113NWu/Humanaize2-Project/releases)
-2. Run the installer and follow the wizard
-3. Launch from Start Menu - modern GUI opens automatically
-
-**Windows GUI Features:**
-- 🎨 Modern card-based design
+**Features of Windows Installer:**
+- 🎨 Modern card-based GUI interface
 - 🌙 Dark/Light theme support
-- 🌐 English/Chinese language
-- 📦 Auto model download
+- 🌐 English/Chinese language support
+- 📦 Automatic model download on first launch
 - ⚡ Auto-update functionality
 
-#### Method 2: From Source (Windows)
+#### Method 2: Manual Installation
 
+##### Step 1: Clone the Repository
 ```bash
-# Clone the repository
 git clone https://github.com/A113NWu/Humanaize2-Project.git
 cd Humanaize2-Project
+```
 
-# Install dependencies
+##### Step 2: Create Virtual Environment
+```bash
+python -m venv Humanaize2
+Humanaize2\Scripts\activate
+```
+
+##### Step 3: Install Dependencies
+```bash
 pip install -r requirements.txt
+```
 
-# Run modern GUI
-python src/core/main.py boot -m win-gui
+##### Step 4: Download LLM Model
+Use the built-in download command:
+```bash
+humanaize2.bat download-model
+```
 
-# Or run traditional GUI
-python src/core/main.py boot -m gui
+Or manually place your GGUF model file in the `models/` directory. Recommended: [TinyLlama-1.1B-Chat-v1.0-GGUF](https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0-GGUF)
+
+##### Step 5: Download Llama.cpp Server
+
+Download the Windows version of llama-server from [llama.cpp releases](https://github.com/ggerganov/llama.cpp/releases) and place it in the `llama/` directory.
+
+##### Step 6: Run Humanaize
+```bash
+python src/core/main.py boot          # CLI mode
+python src/core/main.py boot -m gui   # GUI mode
+```
+
+Or use the launch script:
+```bash
+humanaize2.bat boot
+humanaize2.bat boot -m gui
 ```
 
 ### Linux Installation
 
-#### Method 1: APT Install (Recommended)
+#### Method 1: Using Installer (Recommended)
 
+1. Download the latest `.deb` or `.rpm` package from the releases page
+2. Install using your package manager:
+
+**For Debian/Ubuntu:**
 ```bash
-# Add repository
-echo 'deb [trusted=yes] https://a113nwu.github.io/Humanaize2-Project/apt-repo stable main' | sudo tee /etc/apt/sources.list.d/humanaize2.list
-
-# Update package list
-sudo apt update
-
-# Install Humanaize 2.2
-sudo apt install humanaize2
+sudo dpkg -i humanaize2_*.deb
+# or
+sudo apt install ./humanaize2_*.deb
 ```
 
-#### Method 2: Debian Package
-
-Download and install the Debian package:
-
+**For Fedora/RHEL/CentOS:**
 ```bash
-# Download from GitHub Releases
-wget https://github.com/A113NWu/Humanaize2-Project/releases/download/v2.2.0/humanaize2_2.2.0_amd64.deb
-
-# Install
-sudo dpkg -i humanaize2_2.2.0_amd64.deb
-sudo apt install -f  # Fix dependencies if needed
+sudo rpm -i humanaize2_*.rpm
+# or
+sudo dnf install ./humanaize2_*.rpm
 ```
 
-#### Method 3: From Source (Linux)
-
+3. Download the LLM model:
 ```bash
-# Clone the repository
+humanaize2 download-model
+```
+
+4. Run Humanaize:
+```bash
+humanaize2
+```
+
+#### Method 2: Manual Installation
+
+##### Step 1: Clone the Repository
+```bash
 git clone https://github.com/A113NWu/Humanaize2-Project.git
 cd Humanaize2-Project
+```
 
-# Install dependencies
-pip install -r requirements.txt
+##### Step 2: Install System Dependencies
+```bash
+chmod +x installer/linux/install_deps.sh
+sudo ./installer/linux/install_deps.sh
+```
 
-# Run the application
+This will install:
+- Python 3.11 (if not present)
+- python3-tk
+- Required system libraries
+
+##### Step 3: Install Humanaize
+```bash
+chmod +x install.sh
+sudo ./install.sh
+```
+
+For installation with systemd service:
+```bash
+sudo ./install.sh --with-service
+```
+
+##### Step 4: Download LLM Model
+Use the built-in download command:
+```bash
+./humanaize2.sh download-model
+```
+
+Or manually place your GGUF model file in `~/.local/share/Humanaize2/models/`
+
+##### Step 5: Download Llama.cpp Server
+
+Download the Linux version of llama-server from [llama.cpp releases](https://github.com/ggerganov/llama.cpp/releases) and place it in the `~/.local/share/Humanaize2/llama/` directory.
+
+##### Step 6: Run Humanaize
+```bash
+humanaize2
+```
+
+For more details, see [docs/DEPLOY_LINUX.md](docs/DEPLOY_LINUX.md)
+
+---
+
+## 🚀 Quick Start
+
+### Using the GUI
+```bash
+# Linux
+humanaize2
+# or
+./humanaize2.sh boot -m gui
+
+# Windows
+humanaize2.bat boot -m gui
+# or
+python src/core/main.py boot -m gui
+```
+
+### Using the CLI
+```bash
+# Linux
+humanaize2 boot
+# or
+./humanaize2.sh boot
+
+# Windows
+humanaize2.bat boot
+# or
 python src/core/main.py boot
 ```
 
-## Usage
-
-### Windows
-
+### Managing Skills
 ```bash
-# Modern Windows GUI (default for installer)
-python src/core/main.py boot -m win-gui
+# List all skills
+python src/core/main.py skills -list
 
-# Traditional GUI
-python src/core/main.py boot -m gui
+# Enable a skill
+python src/core/main.py skills -enable shell
 
-# CLI mode
-python src/core/main.py boot
+# Disable a skill
+python src/core/main.py skills -disable shell
 
-# Solve mode
+# Install a skill from file
+python src/core/main.py skills -install skill.zip
+```
+
+### Auto-Update
+```bash
+# Check for updates
+python src/core/main.py update
+
+# Force update
+python src/core/main.py update -f
+```
+
+### Settings
+```bash
+python src/core/main.py settings
+```
+
+---
+
+## 🎮 Usage
+
+### Starting a Conversation
+1. Launch the application in GUI or CLI mode
+2. Type your message in the input field
+3. Press Enter or click Send
+4. The AI will respond with thoughts and answers
+
+### Using Skills
+Skills can be invoked through natural language. Example:
+```
+"Can you read the file at /home/user/test.txt?"
+"What's the weather like today?"
+"Set a reminder for 5 minutes from now."
+"Execute: ls -la"
+```
+
+### Configuring Settings
+Access settings via the ⚙️ button in the GUI:
+- Language selection (English/中文)
+- Theme (Dark/Light)
+- Model configuration
+- Skills prompt customization
+- GAN toggle
+- Auto break silence toggle
+- Software updates
+
+### Solve Mode
+For problem-solving tasks:
+```bash
 python src/core/main.py boot -m solve
 ```
 
-### Linux
+---
+
+## 🔧 Configuration
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LLAMA_SERVER_URL` | `http://127.0.0.1:8080/completion` | LLM server endpoint |
+
+### Config File (`src/config/config.py`)
+
+```python
+# LLM Configuration
+LLAMA_SERVER = "http://127.0.0.1:8080"
+LLAMA_SERVER_URL = f"{LLAMA_SERVER}/completion"
+MODEL_NAME = "tinyllama"
+MAX_TOKENS = 256
+TEMPERATURE = 0.7
+TOP_P = 0.9
+
+# UI Configuration
+UI_WIDTH = 1200
+UI_HEIGHT = 900
+
+# Memory Configuration
+MEMORY_FILE = "data/memory.json"
+MAX_MEMORY = 100
+
+# Personality Configuration
+DEFAULT_PERSONALITY = {
+    "traits": {"curiosity": 0.7, "empathy": 0.5, "creativity": 0.6},
+    "initial_prompt": "You are a friendly helpful AI."
+}
+
+# Autonomous Behavior
+SCREENSHOT_INTERVAL = 300  # seconds
+REFLECTION_INTERVAL = 1800
+AUTONOMOUS_CHECK_INTERVAL = 300
+```
+
+---
+
+## 📦 Creating Custom Skills
+
+### Skill Structure
+Create a folder in `skills/` with a `SKILL.md` file:
+
+```
+skills/my-skill/
+├── SKILL.md          # Required skill definition
+└── __init__.py       # Optional executor module
+```
+
+### SKILL.md Format
+```markdown
+---
+name: my-skill
+description: What this skill does
+metadata:
+  category: utility
+  risk_level: low
+  requires_approval: false
+  version: 1.0.0
+---
+
+# My Skill
+
+## Purpose
+Describe what this skill does.
+
+## Input Format
+JSON object with input data.
+
+## Example
+{"skill": "my-skill", "input": "..."}
+```
+
+### Executor Module (`__init__.py`)
+```python
+def execute(input_data):
+    """Execute the skill with given input"""
+    # Your skill logic here
+    return {"status": "success", "result": "output"}
+```
+
+---
+
+## 🧠 Architecture
+
+### Core Components
+
+1. **ThinkingEngine** - Thread-safe async task processor for chat, GAN, and reflection
+2. **Agent** - Executes skills and shell commands
+3. **SkillsManager** - Loads and manages skill lifecycle
+4. **Memory** - Persists conversation history and thoughts
+5. **Personality** - Manages AI character traits
+6. **AutoUpdater** - Manages software updates from GitHub
+
+### Thread Architecture
+
+| Thread | Purpose |
+|--------|---------|
+| **UI Thread** | Handles user input and display updates |
+| **Decision Thread** | Handles async AI decision-making (non-blocking) |
+| **Thinking Thread** | Handles GAN and chat task processing |
+| **Idle/Autonomous Threads** | Handle background AI activity |
+
+### Data Flow
+
+```
+User Input → Language Detection → ThinkingEngine → LLM Query
+    ↓                      ↓
+Memory Store ← Skill Execution ← Agent
+    ↓
+Response Generation → User Interface
+```
+
+---
+
+## 🛠️ Building Installation Packages
+
+### Windows Installer
+
+#### Prerequisites
+- Windows 10/11
+- Python 3.10+ (for building)
+- Inno Setup 6.x (for creating the installer)
+
+#### Build Steps
+
+1. Navigate to the installer directory:
+```bash
+cd installer/windows
+```
+
+2. Run the build script:
+```bash
+build_all.bat
+```
+
+This will:
+- Create a virtual environment
+- Install all dependencies
+- Download TinyLlama model
+- Build the executable using PyInstaller
+- Create the installer using Inno Setup
+
+3. Find the installer at:
+```
+dist/Humanaize2-Setup.exe
+```
+
+### Linux Packages
+
+#### Debian/Ubuntu (.deb)
 
 ```bash
-# GUI mode (default)
-humanaize2
-
-# CLI mode
-humanaize2 boot
-
-# Solve mode
-humanaize2 boot -m solve
+cd installer/linux
+chmod +x build_deb.sh
+sudo ./build_deb.sh
 ```
 
-## Modules
+The package will be created at:
+```
+dist/humanaize2_*.deb
+```
 
-### Humanaize2 Core
-Foundational modules including:
-- Skill management
-- Agent framework
-- UI components
-- Memory system
-
-### AI Selfdevelop
-AI-modifiable files that persist through updates:
-- Custom skills
-- User preferences
-- Learning data
-- Personalized optimizations
-
-## Development
-
-### Build from Source
+#### Fedora/RHEL (.rpm)
 
 ```bash
-# Build Debian packages
-./build_all.sh
-
-# Output: installer_output/humanaize2_*.deb
+cd installer/linux
+chmod +x build_rpm.sh
+sudo ./build_rpm.sh
 ```
 
-### Project Structure
-
+The package will be created at:
 ```
-src/
-├── core/              # Main application entry
-│   └── main.py        # Application entry point
-├── ui/                # GUI components
-│   ├── ui.py          # Main UI layout
-│   └── idle.py        # Idle engine for self-optimization
-├── llm/               # LLM integration
-│   └── model_downloader.py
-├── memory/            # Memory management
-├── tools/             # Utility tools
-│   ├── skills_manager.py
-│   └── self_optimizer.py
-└── ai_selfdevelop/    # AI self-developed content
-    ├── skills/
-    ├── preferences/
-    ├── learning/
-    └── customizations/
+dist/humanaize2-*.rpm
 ```
 
-## Contributing
+---
 
-Contributions are welcome! Please feel free to submit issues and pull requests.
+## 🐛 Troubleshooting
 
-## License
+### LLM Server Not Responding
+- Ensure llama.cpp server is running
+- Check server URL in `src/config/config.py`
+- Verify model file path is correct
+- Ensure port 8080 is not blocked by firewall
 
-This project is licensed under the MIT License.
+### Skills Not Working
+- Verify skill is enabled: `python src/core/main.py skills -list`
+- Check skill configuration in `data/skills_config.json`
+- Ensure skill executor module has proper `execute` function
 
-## Version
+### Camera Access Error (detect-emotion)
+- Ensure no other application is using the camera
+- Grant camera permissions to Python
+- Check OpenCV installation: `pip install opencv-python`
 
-**v2.2.0**
+### GUI Issues
+- Update CustomTkinter: `pip install --upgrade customtkinter`
+- Check Python version compatibility
+- Try running in CLI mode first to isolate UI issues
+- Check for tkinter installation: `python -c "import tkinter"`
 
-- 🎨 Modern Windows GUI with card-based design
-- 🌙 Dark/Light theme support
-- 🌐 English/Chinese language support
-- 🧠 Modular architecture separation (Core + AI Selfdevelop)
-- ⚡ AI self-optimization during idle time
-- 🔧 Adaptive UI layout
-- 🐛 Bug fixes and improvements
+### Installation Issues (Linux)
+- Ensure you have root/sudo privileges
+- Check that Python 3.10+ is installed
+- Verify system dependencies are installed
+- Check logs in `/var/log/humanaize2/` if using systemd
 
-## Screenshots
+For Linux-specific troubleshooting, see [docs/TROUBLESHOOTING_LINUX.md](docs/TROUBLESHOOTING_LINUX.md)
 
-### Windows Modern GUI
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Humanaize v2.2                                    ●  ⚙    │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  ┌──────────────────────────┐  ┌─────────────────────────┐ │
-│  │      Chat Panel          │  │   Thoughts              │ │
-│  │                          │  │                         │ │
-│  │  User: Hello!            │  │  AI thinking about...   │ │
-│  │  AI: Hi there!           │  │                         │ │
-│  │                          │  ├─────────────────────────┤ │
-│  │                          │  │   Command Output        │ │
-│  │                          │  │                         │ │
-│  │                          │  │  $ ls -la               │ │
-│  │                          │  │  total 42               │ │
-│  │                          │  ├─────────────────────────┤ │
-│  │                          │  │   System Status         │ │
-│  │                          │  │                         │ │
-│  │                          │  │  Model: tinyllama       │ │
-│  │                          │  │  Status: Running        │ │
-│  └──────────────────────────┘  └─────────────────────────┘ │
-│                                                             │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │ Enter your message...                      [Send] [Clr]│  │
-│  └──────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
-```
+---
 
-## Links
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+## 🤝 Contributing
+
+### Guidelines
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature-name`
+3. Make your changes and commit: `git commit -m 'Add feature'`
+4. Push to the branch: `git push origin feature-name`
+5. Submit a pull request
+
+### Code Standards
+- Follow PEP 8 style guidelines
+- Use type hints where appropriate
+- Include docstrings for all functions and classes
+- Add tests for new functionality
+
+### Reporting Issues
+- Use GitHub Issues for bug reports and feature requests
+- Include version information and error logs
+- Provide reproduction steps for bugs
+
+---
+
+## 🙏 Acknowledgments
+
+- [llama.cpp](https://github.com/ggerganov/llama.cpp) - Local LLM inference
+- [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) - Modern Python UI
+- [DeepFace](https://github.com/serengil/deepface) - Facial analysis
+- [OpenClaw](https://github.com/secondself/openclaw) - Skill framework inspiration
+
+---
+
+## 📊 Stats
+
+![GitHub stars](https://img.shields.io/github/stars/A113NWu/Humanaize2-Project?style=social)
+![GitHub forks](https://img.shields.io/github/forks/A113NWu/Humanaize2-Project?style=social)
+
+---
+
+**Note**: This software requires a local LLM server. Humanaize provides the framework but does not include LLM model files due to their size. Download a compatible GGUF model separately.
+
+---
+
+## 🔗 Useful Links
 
 - [GitHub Repository](https://github.com/A113NWu/Humanaize2-Project)
 - [Releases Page](https://github.com/A113NWu/Humanaize2-Project/releases)
 - [Issue Tracker](https://github.com/A113NWu/Humanaize2-Project/issues)
-- [Detailed Documentation](docs/README.md)
+- [Wiki/Documentation](https://github.com/A113NWu/Humanaize2-Project/wiki)
+- [TinyLlama Model](https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0-GGUF)
+- [llama.cpp](https://github.com/ggerganov/llama.cpp)
