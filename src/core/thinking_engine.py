@@ -268,7 +268,7 @@ Should you perform GAN thinking before answering? Answer YES or NO and briefly e
 
     def _run_gan_debate(self, user_topic, memory):
         try:
-            from gan_iteration import GANIteration
+            from tools.gan_iteration import GANIteration
             gan = GANIteration()
             debate_result = gan.self_debate(True, user_topic)
             synthesis = debate_result.get("synthesis", "")
@@ -282,7 +282,7 @@ Should you perform GAN thinking before answering? Answer YES or NO and briefly e
 
     def _handle_chat_with_gan_decision_task(self, prompt, memory, emotion_monitor, exec_instr, user_text):
         try:
-            from gan_iteration import GANIteration
+            from tools.gan_iteration import GANIteration
             gan = GANIteration()
             should_use_gan, decision_text = gan.decide_use_gan(user_text, exec_instr, emotion_monitor)
         except Exception as e:
@@ -338,7 +338,7 @@ Should you perform GAN thinking before answering? Answer YES or NO and briefly e
     def _handle_gan_task(self, task, memory):
         """Handle GAN task - show internal debate process."""
         try:
-            from gan_iteration import GANIteration
+            from tools.gan_iteration import GANIteration
             gan = GANIteration()
             is_user_topic = task.get("is_user_topic", False)
             user_topic = task.get("user_topic")
