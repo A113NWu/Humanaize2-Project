@@ -608,6 +608,7 @@ The tasks should be ordered logically from first to last step.
             
             # 更新并显示状态栏
             self._update_status_bar()
+            print(self.status_bar.render())
             
             # Validate task completion
             if task.status != Task.STATUS_COMPLETED:

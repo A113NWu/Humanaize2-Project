@@ -409,6 +409,10 @@ class SolveMode:
             result = self._execute_task(task)
             results.append(result)
             
+            # 更新并显示状态栏
+            self._update_status_bar()
+            print(self.status_bar.render())
+            
             # Validate task completion
             if task.status != Task.STATUS_COMPLETED:
                 if self._use_color:
