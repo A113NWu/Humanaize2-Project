@@ -304,29 +304,19 @@ class SolveModeStatusBar:
         """打印状态栏更新（原地刷新）"""
         import sys
         if self.first_render:
-            # 设置滚动区域（从第5行开始，状态栏占用前4行）
-            print("\033[5;r", end='')  # 设置滚动区域从第5行到屏幕底部
-            print("\033[1;1H", end='')  # 移动到屏幕左上角
-            print(self.render(), end='')  # 打印状态栏
-            print("\033[5;1H", end='')  # 移动到状态栏下方（第5行）
+            # 第一次渲染，直接打印
+            print(self.render())
             self.first_render = False
         else:
-            # 保存当前光标位置
-            print("\033[s", end='')
-            # 移动到屏幕顶部（状态栏位置）
-            print("\033[1;1H", end='')
-            # 清除状态栏区域（4行）
-            for _ in range(4):
-                print("\033[2K", end='')  # 清除当前行
-                if _ < 3:
-                    print("\n", end='')    # 向下移动（最后一行不换行）
-            # 移动回顶部打印新状态栏
-            print("\033[1;1H", end='')
+            # 使用 ANSI 转义序列原地刷新
+            # 向上移动4行到状态栏顶部
+            print("\033[4A", end='')
+            # 清除从当前位置到屏幕末尾（会清除状态栏和下方内容）
+            print("\033[0J", end='')
+            # 打印新的状态栏
             print(self.render(), end='')
-            # 恢复光标位置继续输出
-            print("\033[u", end='')
-        # 强制刷新输出缓冲区
-        sys.stdout.flush()
+            # 强制刷新输出缓冲区
+            sys.stdout.flush()
 
 
 class SolveMode:
@@ -561,19 +551,44 @@ class SolveMode:
                     print(f"      {task.description}")
         
         print()
+        # 打印分割线
+        if self._use_color:
+            print(f"{Colors.DIM}{'─' * 70}{Colors.RESET}")
+        else:
+            print(f"{'─' * 70}")
+        
+        # 初始化并显示状态栏
+        self.status_bar = SolveModeStatusBar(self._use_color)
+        self.status_bar.update(
+            total=len(self.todo_list),
+            completed=0,
+            failed=0,
+            progress=0.0,
+            hsn_enabled=self.hsn_enabled,
+            hsn_peers=len(self.hsn.peers) if self.hsn.connected else 0,
+            elapsed_time="00:00"
+        )
+        self.status_bar.print_update()
+        
+        # 打印分割线
+        if self._use_color:
+            print(f"{Colors.DIM}{'─' * 70}{Colors.RESET}")
+        else:
+            print(f"{'─' * 70}")
+        print()
     
     def _execute_tasks(self) -> List[Dict]:
         """Execute all tasks in order"""
         results = []
         
-        for task in self.todo_list:
+        for idx, task in enumerate(self.todo_list):
             if not self._running:
                 break
             
             result = self._execute_task(task)
             results.append(result)
             
-            # 更新并显示状态栏
+            # 更新状态栏
             self._update_status_bar()
             self.status_bar.print_update()
             
@@ -583,6 +598,19 @@ class SolveMode:
                     print(f"{Colors.YELLOW}[WARN]{Colors.RESET} 任务 {task.id} 未完成")
                 else:
                     print(f"[WARN] 任务 {task.id} 未完成")
+            
+            # 清除当前任务输出，为下一个任务做准备（不是最后一个任务时）
+            if idx < len(self.todo_list) - 1:
+                # 向上移动到状态栏下方的分割线
+                # 计算需要移动的行数（大约是当前任务输出的行数 + 状态栏下方的空行）
+                print("\033[10A", end='')  # 向上移动10行
+                print("\033[0J", end='')   # 清除从当前位置到屏幕末尾
+                # 重新打印分割线
+                if self._use_color:
+                    print(f"{Colors.DIM}{'─' * 70}{Colors.RESET}")
+                else:
+                    print(f"{'─' * 70}")
+                print()
         
         return results
     
