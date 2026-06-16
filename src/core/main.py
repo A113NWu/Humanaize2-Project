@@ -294,10 +294,10 @@ def handle_update(args):
         
         if is_git_repo:
             print("[INFO] Git repository detected, using git pull method...")
-            result = updater.pull_latest_from_git(progress_callback)
+            result = updater.pull_latest_from_git(progress_callback, force=force_update)
         else:
             print("[INFO] Using download and install method...")
-            result = updater.download_and_install_update(progress_callback)
+            result = updater.download_and_install_update(progress_callback, force=force_update)
         
         if result.get("success"):
             print(f"\n{result['message']}")

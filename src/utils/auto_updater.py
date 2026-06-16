@@ -180,7 +180,7 @@ class AutoUpdater:
                 pass
         return None
     
-    def download_and_install_update(self, progress_callback=None) -> Dict:
+    def download_and_install_update(self, progress_callback=None, force=False) -> Dict:
         result = {
             "success": False,
             "message": "",
@@ -189,7 +189,7 @@ class AutoUpdater:
         
         try:
             update_info = self.check_for_updates()
-            if not update_info.get("has_update"):
+            if not update_info.get("has_update") and not force:
                 result["message"] = "You are already on the latest version."
                 return result
             
@@ -294,7 +294,7 @@ class AutoUpdater:
         
         return result
     
-    def pull_latest_from_git(self, progress_callback=None) -> Dict:
+    def pull_latest_from_git(self, progress_callback=None, force=False) -> Dict:
         result = {
             "success": False,
             "message": "",
@@ -307,7 +307,7 @@ class AutoUpdater:
             
             update_info = self.check_for_updates()
             
-            if not update_info.get("has_update"):
+            if not update_info.get("has_update") and not force:
                 result["message"] = "You are already on the latest version."
                 return result
             
