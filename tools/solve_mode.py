@@ -165,6 +165,160 @@ class HSNetwork:
         return {"status": "success", "collaborators": len(self.peers), "results": results}
 
 
+class SolveModeStatusBar:
+    """Solve 模式现代化状态信息栏"""
+    
+    def __init__(self, use_color: bool = True):
+        self.use_color = use_color
+        self.width = 80
+        self.stats = {
+            "total": 0,
+            "completed": 0,
+            "failed": 0,
+            "progress": 0.0,
+            "hsn_enabled": False,
+            "hsn_peers": 0,
+            "elapsed_time": "00:00"
+        }
+        self.first_render = True
+        self.status_bar_lines = 4  # 状态栏占用的行数
+    
+    def _get_terminal_width(self) -> int:
+        """获取终端宽度"""
+        try:
+            import shutil
+            return shutil.get_terminal_size().columns
+        except:
+            return 80
+    
+    def update(self, **kwargs):
+        """更新状态"""
+        self.stats.update(kwargs)
+        self.width = self._get_terminal_width()
+    
+    def render(self):
+        """渲染状态栏"""
+        w = self.width
+        
+        # 顶部边框
+        if self.use_color:
+            top = f"{Colors.DIM}{'─' * w}{Colors.RESET}"
+        else:
+            top = f"{'─' * w}"
+        
+        # 构建状态信息
+        total = self.stats.get("total", 0)
+        completed = self.stats.get("completed", 0)
+        failed = self.stats.get("failed", 0)
+        progress = self.stats.get("progress", 0.0)
+        hsn_enabled = self.stats.get("hsn_enabled", False)
+        hsn_peers = self.stats.get("hsn_peers", 0)
+        elapsed = self.stats.get("elapsed_time", "00:00")
+        
+        # 计算进度条
+        bar_width = 20
+        filled = int(bar_width * progress)
+        empty = bar_width - filled
+        
+        if self.use_color:
+            # 状态标签
+            status_left = f"{Colors.BOLD}{Colors.BLUE}Humanaize{Colors.RESET}"
+            status_left += f" {Colors.DIM}v2.1{Colors.RESET}"
+            status_left += f" {Colors.BOLD}[{Colors.GREEN}SOLVE{Colors.RESET}{Colors.BOLD}]{Colors.RESET}"
+            
+            # 进度条
+            progress_bar = f"{Colors.CYAN}[{Colors.GREEN}{'█' * filled}{Colors.DIM}{'░' * empty}{Colors.CYAN}]{Colors.RESET}"
+            progress_text = f"{Colors.BOLD}{Colors.GREEN}{int(progress * 100)}%{Colors.RESET}"
+            
+            # 任务统计
+            task_stats = f"{Colors.DIM}Tasks:{Colors.RESET} "
+            task_stats += f"{Colors.GREEN}{completed}{Colors.RESET}"
+            task_stats += f"{Colors.DIM}/{Colors.RESET}"
+            task_stats += f"{Colors.BLUE}{total}{Colors.RESET}"
+            if failed > 0:
+                task_stats += f" {Colors.RED}({failed} failed){Colors.RESET}"
+            
+            # HSN状态
+            if hsn_enabled:
+                hsn_status = f"{Colors.BOLD}{Colors.CYAN}HSN{Colors.RESET}"
+                hsn_status += f"{Colors.DIM}:{Colors.RESET}"
+                hsn_status += f"{Colors.CYAN}{hsn_peers} peers{Colors.RESET}"
+            else:
+                hsn_status = f"{Colors.DIM}HSN: Disabled{Colors.RESET}"
+            
+            # 时间
+            time_status = f"{Colors.DIM}Time:{Colors.RESET} {Colors.YELLOW}{elapsed}{Colors.RESET}"
+            
+            # 组装状态行
+            status_line = f"  {status_left}"
+            
+            # 填充使统计信息靠右
+            remaining = w - len(self._strip(status_line))
+            
+            # 右对齐统计信息
+            right_info = f"{task_stats}  {hsn_status}  {time_status}"
+            right_stripped = self._strip(right_info)
+            right_len = len(right_stripped)
+            
+            if remaining > right_len + 2:
+                status_line += " " * (remaining - right_len - 2)
+                status_line += f"{Colors.DIM}│{Colors.RESET} {right_info}"
+            else:
+                status_line = f"  {status_left}  {task_stats}"
+            
+            # 进度行
+            progress_line = f"  {progress_bar} {progress_text}"
+            progress_stripped = self._strip(progress_line)
+            if len(progress_stripped) < w:
+                progress_line += " " * (w - len(progress_stripped))
+            
+        else:
+            # 无颜色版本
+            status_line = f"  Humanaize v2.1 [SOLVE]"
+            progress_bar = f"[{'#' * filled}{'-' * empty}]"
+            progress_text = f"{int(progress * 100)}%"
+            task_stats = f"Tasks: {completed}/{total}"
+            hsn_status = f"HSN: {hsn_peers} peers" if hsn_enabled else "HSN: Disabled"
+            time_status = f"Time: {elapsed}"
+            
+            progress_line = f"  {progress_bar} {progress_text}"
+            progress_stripped = self._strip(progress_line)
+            if len(progress_stripped) < w:
+                progress_line += " " * (w - len(progress_stripped))
+        
+        # 底部边框
+        if self.use_color:
+            bottom = f"{Colors.DIM}{'─' * w}{Colors.RESET}"
+        else:
+            bottom = f"{'─' * w}"
+        
+        return f"{top}\n{status_line}\n{progress_line}\n{bottom}"
+    
+    def _strip(self, text: str) -> str:
+        """移除ANSI颜色码"""
+        import re
+        ansi_escape = re.compile(r'\x1b\[[0-9;]*m')
+        return ansi_escape.sub('', text)
+    
+    def print_update(self):
+        """打印状态栏更新（原地刷新）"""
+        if self.first_render:
+            # 第一次渲染，直接打印
+            print(self.render())
+            self.first_render = False
+        else:
+            # 后续更新，使用 ANSI 转义序列原地刷新
+            # 向上移动4行（状态栏占用4行）
+            print("\033[4A", end='')
+            # 清除从当前位置到屏幕末尾的内容
+            print("\033[0J", end='')
+            # 打印新的状态栏
+            print(self.render(), end='')
+            # 强制刷新输出缓冲区
+            import sys
+            sys.stdout.flush()
+
+
 class SolveMode:
     """Main solve mode implementation"""
     
@@ -411,7 +565,7 @@ class SolveMode:
             
             # 更新并显示状态栏
             self._update_status_bar()
-            print(self.status_bar.render())
+            self.status_bar.print_update()
             
             # Validate task completion
             if task.status != Task.STATUS_COMPLETED:
