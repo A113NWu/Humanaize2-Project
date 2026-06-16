@@ -237,31 +237,31 @@ class SolveModeStatusBar:
     
     def print_update(self):
         """打印状态栏更新（原地刷新）"""
+        import sys
         if self.first_render:
-            # 第一次渲染，直接打印
-            print(self.render())
+            # 设置滚动区域（从第5行开始，状态栏占用前4行）
+            print("\033[5;r", end='')  # 设置滚动区域从第5行到屏幕底部
+            print("\033[1;1H", end='')  # 移动到屏幕左上角
+            print(self.render(), end='')  # 打印状态栏
+            print("\033[5;1H", end='')  # 移动到状态栏下方（第5行）
             self.first_render = False
-            # 保存光标位置（在状态栏下方）
-            print("\033[s", end='')  # 保存光标位置
         else:
-            # 后续更新，使用 ANSI 转义序列原地刷新
-            # 恢复光标到状态栏起始位置
-            print("\033[u", end='')  # 恢复光标位置
-            # 向上移动4行到状态栏顶部
-            print("\033[4A", end='')
-            # 清除状态栏内容（4行）
+            # 保存当前光标位置
+            print("\033[s", end='')
+            # 移动到屏幕顶部（状态栏位置）
+            print("\033[1;1H", end='')
+            # 清除状态栏区域（4行）
             for _ in range(4):
                 print("\033[2K", end='')  # 清除当前行
-                print("\033[1B", end='')  # 向下移动
-            # 向上移动4行回到状态栏顶部
-            print("\033[4A", end='')
-            # 打印新的状态栏
+                if _ < 3:
+                    print("\n", end='')    # 向下移动（最后一行不换行）
+            # 移动回顶部打印新状态栏
+            print("\033[1;1H", end='')
             print(self.render(), end='')
-            # 保存新的光标位置
-            print("\033[s", end='')
-            # 强制刷新输出缓冲区
-            import sys
-            sys.stdout.flush()
+            # 恢复光标位置继续输出
+            print("\033[u", end='')
+        # 强制刷新输出缓冲区
+        sys.stdout.flush()
 
 
 class HSNetwork:
