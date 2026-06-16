@@ -115,6 +115,8 @@ class SolveModeStatusBar:
             "hsn_peers": 0,
             "elapsed_time": "00:00"
         }
+        self.first_render = True
+        self.status_bar_lines = 4  # 状态栏占用的行数
     
     def _get_terminal_width(self) -> int:
         """获取终端宽度"""
@@ -232,6 +234,27 @@ class SolveModeStatusBar:
         import re
         ansi_escape = re.compile(r'\x1b\[[0-9;]*m')
         return ansi_escape.sub('', text)
+    
+    def print_update(self):
+        """打印状态栏更新（原地刷新）"""
+        if self.first_render:
+            # 第一次渲染，直接打印
+            print(self.render())
+            self.first_render = False
+        else:
+            # 后续更新，使用 ANSI 转义序列原地刷新
+            # 移动光标到状态栏位置
+            print(f"\033[{self.status_bar_lines}A", end='')  # 向上移动状态栏行数
+            # 清除状态栏内容
+            for _ in range(self.status_bar_lines):
+                print(f"\033[2K\033[G", end='')  # 清除当前行并移动到行首
+                print(f"\033[1B", end='')  # 向下移动一行
+            # 移动回状态栏起始位置
+            print(f"\033[{self.status_bar_lines}A", end='')
+            # 打印新的状态栏
+            print(self.render(), end='')
+            # 移动到状态栏下方
+            print(f"\033[1B", end='', flush=True)
 
 
 class HSNetwork:
@@ -364,7 +387,7 @@ class SolveMode:
         
         # 显示初始状态栏
         self._update_status_bar()
-        print(self.status_bar.render())
+        self.status_bar.print_update()
         print()
         
         # Execute tasks
@@ -372,8 +395,8 @@ class SolveMode:
         
         # 显示最终状态栏
         self._update_status_bar(progress=1.0)
-        print(self.status_bar.render())
-        
+        self.status_bar.print_update()
+        print()
         # Generate summary
         summary = self._generate_summary(results)
         
@@ -608,7 +631,7 @@ The tasks should be ordered logically from first to last step.
             
             # 更新并显示状态栏
             self._update_status_bar()
-            print(self.status_bar.render())
+            self.status_bar.print_update()
             
             # Validate task completion
             if task.status != Task.STATUS_COMPLETED:
