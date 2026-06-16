@@ -1,0 +1,10 @@
+# Humanaize v2.0 Dependencies
+
+# Core dependencies
+customtkinter>=5.2.0
+requests>=2.28.0
+PyYAML>=6.0
+opencv-python>=4.8.0
+
+# Optional dependencies (uncomment if needed for emotion detection)
+# deepface>=0.0.79

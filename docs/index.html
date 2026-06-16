@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Humanaize v2.2 - 本地自治AI助手，支持现代化GUI界面">
+    <title>Humanaize v2.2 - 本地自治AI助手</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <span class="logo">🤖</span>
+                <span class="brand-text">Humanaize v2.2</span>
+            </div>
+            <div class="nav-links">
+                <a href="#features" class="nav-link">功能</a>
+                <a href="#download" class="nav-link">下载</a>
+                <a href="#install" class="nav-link">安装</a>
+                <a href="#docs" class="nav-link">文档</a>
+                <a href="https://github.com/A113NWu/Humanaize2-Project" class="nav-link github-link" target="_blank">
+                    <svg height="20" width="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-content">
+            <div class="hero-badge">✨ v2.2 现已发布</div>
+            <h1 class="hero-title">Humanaize v2.2</h1>
+            <p class="hero-subtitle">本地自治 AI 助手 · 现代化 GUI 界面</p>
+            <p class="hero-description">
+                完全本地运行的智能助手，保护您的隐私。通过本地 LLM 服务器提供 AI 交互，
+                支持记忆系统、人格引擎和可扩展技能框架。
+            </p>
+            <div class="hero-buttons">
+                <a href="#download" class="btn btn-primary">立即下载</a>
+                <a href="#features" class="btn btn-secondary">了解更多</a>
+            </div>
+            <div class="hero-stats">
+                <div class="stat">
+                    <span class="stat-value">🎨</span>
+                    <span class="stat-label">现代化 GUI</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value">🔒</span>
+                    <span class="stat-label">完全本地</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value">🌙</span>
+                    <span class="stat-label">深色/浅色</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value">🌐</span>
+                    <span class="stat-label">中英双语</span>
+                </div>
+            </div>
+        </div>
+        <div class="hero-visual">
+            <div class="gui-preview">
+                <div class="gui-header">
+                    <div class="gui-dots">
+                        <span></span><span></span><span></span>
+                    </div>
+                    <span class="gui-title">Humanaize v2.2</span>
+                </div>
+                <div class="gui-body">
+                    <div class="gui-sidebar">
+                        <div class="gui-panel-title">💭 思考</div>
+                        <div class="gui-panel-title">📝 命令</div>
+                        <div class="gui-panel-title">⚙️ 状态</div>
+                    </div>
+                    <div class="gui-main">
+                        <div class="gui-chat">
+                            <div class="gui-message user">用户: 你好！</div>
+                            <div class="gui-message ai">AI: 你好！有什么可以帮助你的吗？</div>
+                        </div>
+                        <div class="gui-input">
+                            <span>输入消息...</span>
+                            <button>发送</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="features">
+        <div class="section-header">
+            <h2 class="section-title">✨ 核心特性</h2>
+            <p class="section-subtitle">强大的功能，简单易用</p>
+        </div>
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon">🎨</div>
+                <h3>现代化 GUI</h3>
+                <p>全新卡片式界面设计，支持深色/浅色主题，带来流畅的用户体验</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🧠</div>
+                <h3>AI 自我发展</h3>
+                <p>自动适应用户习惯，在空闲时间优化性能，学习您的偏好</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🔒</div>
+                <h3>隐私优先</h3>
+                <p>完全本地运行，无需云端，所有数据都在您的设备上</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">📚</div>
+                <h3>技能系统</h3>
+                <p>可扩展的技能框架，支持自定义开发，满足各种需求</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">💾</div>
+                <h3>记忆系统</h3>
+                <p>跨会话持久化对话记忆，理解上下文，提供连贯交互</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🌐</div>
+                <h3>多语言支持</h3>
+                <p>支持中文和英文，自动检测语言，提供本地化体验</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Download Section -->
+    <section id="download" class="download">
+        <div class="section-header">
+            <h2 class="section-title">📦 下载</h2>
+            <p class="section-subtitle">选择适合您的平台版本</p>
+        </div>
+        <div class="download-grid">
+            <div class="download-card featured">
+                <div class="download-badge">推荐</div>
+                <div class="download-icon">🪟</div>
+                <h3>Windows 安装包</h3>
+                <p class="download-desc">现代化 GUI 界面，一键安装</p>
+                <ul class="download-features">
+                    <li>🎨 现代化卡片式界面</li>
+                    <li>🌙 深色/浅色主题</li>
+                    <li>📦 自动下载模型</li>
+                    <li>⚡ 自动更新功能</li>
+                </ul>
+                <a href="https://github.com/A113NWu/Humanaize2-Project/releases" class="btn btn-primary btn-block" target="_blank">
+                    下载 Windows 版
+                </a>
+                <p class="download-note">版本: v2.2.0 | 支持 Windows 10/11</p>
+            </div>
+            <div class="download-card">
+                <div class="download-icon">🐧</div>
+                <h3>Linux (Debian/Ubuntu)</h3>
+                <p class="download-desc">APT 安装，轻松管理</p>
+                <div class="code-block">
+                    <code>sudo apt install humanaize2</code>
+                    <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                </div>
+                <p class="download-note">或下载 .deb 包手动安装</p>
+            </div>
+            <div class="download-card">
+                <div class="download-icon">📦</div>
+                <h3>源码</h3>
+                <p class="download-desc">适用于所有平台</p>
+                <div class="code-block">
+                    <code>git clone https://github.com/A113NWu/Humanaize2-Project.git</code>
+                    <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                </div>
+                <p class="download-note">需要 Python 3.10+</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Installation Section -->
+    <section id="install" class="install">
+        <div class="section-header">
+            <h2 class="section-title">🚀 快速安装</h2>
+            <p class="section-subtitle">几步即可开始使用</p>
+        </div>
+        <div class="install-steps">
+            <div class="step">
+                <div class="step-number">1</div>
+                <div class="step-content">
+                    <h3>下载安装包</h3>
+                    <p>从 GitHub Releases 下载适合您系统的版本</p>
+                    <a href="https://github.com/A113NWu/Humanaize2-Project/releases" class="btn btn-small" target="_blank">
+                        前往下载
+                    </a>
+                </div>
+            </div>
+            <div class="step">
+                <div class="step-number">2</div>
+                <div class="step-content">
+                    <h3>运行安装程序</h3>
+                    <p>Windows 用户运行 .exe 安装程序，Linux 用户使用 apt 安装</p>
+                    <div class="code-block">
+                        <code>sudo apt install ./humanaize2_2.2.0_amd64.deb</code>
+                        <button class="copy-btn" onclick="copyCode(this)">复制</button>
+                    </div>
+                </div>
+            </div>
+            <div class="step">
+                <div class="step-number">3</div>
+                <div class="step-content">
+                    <h3>启动应用</h3>
+                    <p>Windows 从开始菜单启动，Linux 在终端运行 humanaize2</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Documentation Section -->
+    <section id="docs" class="docs-section">
+        <div class="section-header">
+            <h2 class="section-title">📖 文档</h2>
+            <p class="section-subtitle">详细的文档和指南</p>
+        </div>
+        <div class="docs-grid">
+            <a href="README.md" class="doc-card">
+                <div class="doc-icon">📘</div>
+                <h3>英文文档</h3>
+                <p>English README</p>
+            </a>
+            <a href="README_zh.md" class="doc-card">
+                <div class="doc-icon">📗</div>
+                <h3>中文文档</h3>
+                <p>详细的中文使用指南</p>
+            </a>
+            <a href="BUILDING.md" class="doc-card">
+                <div class="doc-icon">🔨</div>
+                <h3>构建指南</h3>
+                <p>如何从源码构建</p>
+            </a>
+            <a href="TROUBLESHOOTING_LINUX.md" class="doc-card">
+                <div class="doc-icon">🔧</div>
+                <h3>故障排除</h3>
+                <p>常见问题解答</p>
+            </a>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-brand">
+                <span class="logo">🤖</span>
+                <span>Humanaize v2.2</span>
+            </div>
+            <div class="footer-links">
+                <a href="https://github.com/A113NWu/Humanaize2-Project" target="_blank">GitHub</a>
+                <a href="https://github.com/A113NWu/Humanaize2-Project/releases" target="_blank">Releases</a>
+                <a href="https://github.com/A113NWu/Humanaize2-Project/issues" target="_blank">Issues</a>
+            </div>
+            <p class="footer-copy">© 2024 Humanaize Project. MIT License.</p>
+        </div>
+    </footer>
+
+    <script>
+        // Copy code functionality
+        function copyCode(btn) {
+            const code = btn.parentElement.querySelector('code').textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                const originalText = btn.textContent;
+                btn.textContent = '已复制!';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.classList.remove('copied');
+                }, 2000);
+            });
+        }
+
+        // Smooth scroll
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+
+        // Navbar scroll effect
+        window.addEventListener('scroll', () => {
+            const navbar = document.querySelector('.navbar');
+            if (window.scrollY > 50) {
+                navbar.classList.add('scrolled');
+            } else {
+                navbar.classList.remove('scrolled');
+            }
+        });
+    </script>
+</body>
+</html>

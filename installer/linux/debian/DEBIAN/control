@@ -1,0 +1,12 @@
+Package: humanaize2
+Version: 2.1.0
+Architecture: all
+Maintainer: Humanaize Project <humanaize@example.com>
+Depends: python3 (>= 3.8), python3-pip, python3-tk
+Recommends: python3-venv
+Section: misc
+Priority: optional
+Homepage: https://github.com/A113NWu/Humanaize2-Project
+Description: Humanaize 2.0 Agent - An AI-powered personal assistant
+ A sophisticated AI agent with memory, reflection, and various skills
+ to assist with daily tasks.
