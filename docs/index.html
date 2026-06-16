@@ -162,10 +162,10 @@
                 <h3>Linux (Debian/Ubuntu)</h3>
                 <p class="download-desc">APT 安装，轻松管理</p>
                 <div class="code-block">
-                    <code>sudo apt install humanaize2</code>
+                    <code>echo 'deb [trusted=yes] https://a113nwu.github.io/Humanaize2-Project/apt-repo stable main' | sudo tee /etc/apt/sources.list.d/humanaize2.list && sudo apt update && sudo apt install humanaize2</code>
                     <button class="copy-btn" onclick="copyCode(this)">复制</button>
                 </div>
-                <p class="download-note">或下载 .deb 包手动安装</p>
+                <p class="download-note">支持 Debian / Ubuntu / Linux Mint 等</p>
             </div>
             <div class="download-card">
                 <div class="download-icon">📦</div>
