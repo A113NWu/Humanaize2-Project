@@ -11,6 +11,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
+    <div id="banner-spacer" style="height: 0; width: 100%;"></div>
+    <script src="https://keepandroidopen.org/banner.js"></script>
     <!-- Navigation -->
     <nav class="navbar">
         <div class="nav-container">
@@ -31,7 +33,6 @@
             </div>
         </div>
     </nav>
-
     <!-- Hero Section -->
     <section class="hero">
         <div class="hero-content">
@@ -265,6 +266,107 @@
     </footer>
 
     <script>
+        // Adjust navbar position to avoid banner overlap
+        function adjustNavbarPosition() {
+            const navbar = document.querySelector('.navbar');
+            const bannerSpacer = document.getElementById('banner-spacer');
+            if (!navbar || !bannerSpacer) return;
+            
+            // Get all elements that might be the banner
+            const allElements = document.body.children;
+            let bannerHeight = 0;
+            let bannerElement = null;
+            
+            // Find the first element that is not the navbar, not the spacer, and has height
+            for (let i = 0; i < allElements.length; i++) {
+                const element = allElements[i];
+                if (element !== navbar && element !== bannerSpacer && element.offsetHeight > 0) {
+                    // Check if this element is positioned at the top
+                    const style = window.getComputedStyle(element);
+                    const position = style.getPropertyValue('position');
+                    const zIndex = style.getPropertyValue('z-index');
+                    
+                    // If it's fixed or absolute at top, or if it's the first non-spacer element
+                    if (position === 'fixed' || position === 'absolute' || i === 1) {
+                        bannerHeight = element.offsetHeight;
+                        bannerElement = element;
+                        console.log('Found banner element:', element.className || element.id || element.tagName, 'height:', bannerHeight);
+                        break;
+                    }
+                }
+            }
+            
+            // Apply the adjustment
+            if (bannerHeight > 0) {
+                navbar.style.top = bannerHeight + 'px';
+                bannerSpacer.style.height = bannerHeight + 'px';
+                document.body.style.paddingTop = bannerHeight + 'px';
+                console.log('Adjusted navbar position by', bannerHeight, 'px');
+                
+                // Also adjust any content that might be behind the banner
+                const mainContent = document.querySelector('main') || document.querySelector('.container');
+                if (mainContent) {
+                    mainContent.style.marginTop = '0px';
+                }
+            } else {
+                console.log('No banner found, using default spacing');
+                navbar.style.top = '0px';
+                bannerSpacer.style.height = '0px';
+                document.body.style.paddingTop = '0px';
+            }
+        }
+        
+        // Use MutationObserver to detect when banner is added to DOM
+        const observer = new MutationObserver(function(mutations) {
+            mutations.forEach(function(mutation) {
+                if (mutation.addedNodes.length > 0) {
+                    // Check if any added node might be a banner
+                    for (let node of mutation.addedNodes) {
+                        if (node.nodeType === 1) { // Element node
+                            const className = node.className || '';
+                            const id = node.id || '';
+                            if ('banner' in className.toLowerCase() || 'banner' in id.toLowerCase() || 
+                                node.offsetHeight > 50 || node.offsetHeight < 0) {
+                                adjustNavbarPosition();
+                                break;
+                            }
+                        }
+                    }
+                }
+            });
+        });
+        
+        // Start observing the body for changes
+        document.addEventListener('DOMContentLoaded', function() {
+            observer.observe(document.body, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ['style', 'class', 'id']
+            });
+            
+            // Initial adjustment
+            adjustNavbarPosition();
+            
+            // Check multiple times in case banner loads asynchronously
+            setTimeout(adjustNavbarPosition, 100);
+            setTimeout(adjustNavbarPosition, 500);
+            setTimeout(adjustNavbarPosition, 1000);
+            setTimeout(adjustNavbarPosition, 2000);
+            setTimeout(adjustNavbarPosition, 3000);
+            setTimeout(adjustNavbarPosition, 5000);
+            setTimeout(adjustNavbarPosition, 10000);
+        });
+        
+        // Also check on window resize
+        window.addEventListener('resize', adjustNavbarPosition);
+        
+        // Also check on scroll (in case banner appears/disappears)
+        window.addEventListener('scroll', adjustNavbarPosition);
+        
+        // Also check periodically
+        setInterval(adjustNavbarPosition, 5000);
+
         // Copy code functionality
         function copyCode(btn) {
             const code = btn.parentElement.querySelector('code').textContent;

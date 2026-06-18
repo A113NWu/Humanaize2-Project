@@ -1,0 +1,19 @@
+#!/bin/bash
+set -e
+
+# Post-removal script
+
+# Remove systemd service file
+if [ -f /etc/systemd/system/humanaize2.service ]; then
+    systemctl daemon-reload 2>/dev/null || true
+fi
+
+# Clean up data directories (only on complete purge)
+if [ "$1" = "purge" ]; then
+    rm -rf /var/lib/humanaize
+    rm -rf /var/log/humanaize2
+fi
+
+echo "Humanaize 2.0 Agent removed successfully!"
+
+exit 0

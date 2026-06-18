@@ -4,7 +4,7 @@
 [Setup]
 AppId={{A1B2C3D4-E5F6-7890-ABCD-EFGHIJKLMNOP}
 AppName=Humanaize 2.0 Agent
-AppVersion=2.1.0
+AppVersion=2.2.3
 AppPublisher=Humanaize Project
 AppPublisherURL=https://github.com/A113NWu/Humanaize2-Project
 AppSupportURL=https://github.com/A113NWu/Humanaize2-Project/issues

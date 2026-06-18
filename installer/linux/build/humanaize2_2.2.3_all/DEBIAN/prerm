@@ -1,0 +1,21 @@
+#!/bin/bash
+set -e
+
+# Pre-removal script
+
+# Stop service
+if command -v systemctl >/dev/null 2>&1; then
+    if systemctl is-active --quiet humanaize2.service 2>/dev/null; then
+        systemctl stop humanaize2.service
+    fi
+    if systemctl is-enabled --quiet humanaize2.service 2>/dev/null; then
+        systemctl disable humanaize2.service
+    fi
+fi
+
+# Remove CLI symlink
+if [ -L /usr/local/bin/humanaize2 ]; then
+    rm -f /usr/local/bin/humanaize2
+fi
+
+exit 0

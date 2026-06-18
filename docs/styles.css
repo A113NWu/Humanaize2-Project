@@ -43,6 +43,8 @@ body {
     color: var(--text-primary);
     line-height: 1.6;
     overflow-x: hidden;
+    padding-top: 0; /* Will be adjusted by JavaScript */
+    transition: padding-top 0.3s ease;
 }
 
 a {
@@ -62,6 +64,7 @@ a {
     backdrop-filter: blur(12px);
     border-bottom: 1px solid transparent;
     transition: var(--transition);
+    transition-property: top, background, border-bottom-color;
 }
 
 .navbar.scrolled {

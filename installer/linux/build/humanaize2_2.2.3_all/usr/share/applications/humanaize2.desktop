@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Humanaize 2.0
+Comment=AI-powered personal assistant with memory and reflection
+Exec=/usr/share/humanaize2/humanaize2.sh boot -m gui
+Icon=humanaize2
+Terminal=false
+Type=Application
+Categories=Utility;Chat;AI;
+Keywords=AI;chatbot;assistant;personal;
+StartupWMClass=Humanaize2
+X-GNOME-UsesNotifications=true

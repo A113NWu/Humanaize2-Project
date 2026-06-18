@@ -1,0 +1,9 @@
+{
+  "language": "中文",
+  "theme": "Light",
+  "model_name": "tinyllama",
+  "model_path": "",
+  "skills_prompt": "",
+  "auto_break_silence": true,
+  "gan_enabled": true
+}

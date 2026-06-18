@@ -4,7 +4,7 @@
 [Setup]
 AppId={{HUMANAIZE2-ARM64-2024}}
 AppName=Humanaize 2.0 Agent
-AppVersion=2.1.0
+AppVersion=2.2.3
 AppVerName=Humanaize 2.0 Agent (ARM64)
 AppPublisher=Humanaize Team
 AppPublisherURL=https://github.com/humanaize

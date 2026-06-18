@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "humanaize2"
+version = "2.0"
+description = "Humanaize - AI Assistant with GAN Internal Thinking"
+readme = "README.md"
+requires-python = ">=3.8"
+
+[project.scripts]
+humanaize2 = "main:main"
+
+[project.scripts]
+# Platform-specific entry points will be created via batch scripts on Windows
