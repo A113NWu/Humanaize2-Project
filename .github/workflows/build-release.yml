@@ -1,0 +1,160 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (e.g., 2.2.3)'
+        required: true
+        default: '2.2.3'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [x86_64, arm64]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller customtkinter
+      
+      - name: Create icon
+        run: |
+          cd installer/windows
+          python create_icon.py
+      
+      - name: Build executable
+        run: |
+          python installer/windows/build_exe.py ${{ matrix.arch }}
+      
+      - name: Install Inno Setup
+        run: |
+          choco install innosetup -y
+      
+      - name: Build installer
+        run: |
+          cd installer/windows
+          iscc humanaize2-${{ matrix.arch }}.iss
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.arch }}-installer
+          path: installer/windows/output/Humanaize2-Setup-${{ matrix.arch }}.exe
+      
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.arch }}-exe
+          path: dist/${{ matrix.arch }}/Humanaize2.exe
+
+  build-linux:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev fakeroot
+      
+      - name: Build Debian package
+        run: |
+          cd installer/linux
+          chmod +x build_deb.sh
+          ./build_deb.sh
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-deb-package
+          path: installer/linux/output/*.deb
+
+  create-release:
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Download Windows x86_64 installer
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-x86_64-installer
+          path: artifacts/windows-x86_64
+      
+      - name: Download Windows ARM64 installer
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-arm64-installer
+          path: artifacts/windows-arm64
+      
+      - name: Download Linux deb package
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-deb-package
+          path: artifacts/linux
+      
+      - name: Get version
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.get_version.outputs.VERSION }}
+          name: Humanaize v${{ steps.get_version.outputs.VERSION }}
+          body: |
+            ## Humanaize v${{ steps.get_version.outputs.VERSION }} Release
+            
+            ### 📦 Downloads
+            
+            **Windows:**
+            - `Humanaize2-Setup-x86_64.exe` - Windows 64-bit installer (Intel/AMD)
+            - `Humanaize2-Setup-arm64.exe` - Windows ARM64 installer
+            
+            **Linux:**
+            - `humanaize2_${{ steps.get_version.outputs.VERSION }}_all.deb` - Debian/Ubuntu package
+            
+            ### ✨ New Features
+            
+            - 🎨 Modern Windows GUI with card-based design
+            - 📁 Unified version management system
+            - 🔧 AI self-development module
+            - 🌐 Multilingual support (English/Chinese)
+            
+            ### 📖 Documentation
+            
+            See [README](https://github.com/A113NWu/Humanaize2-Project/blob/main/docs/README.md) for installation instructions.
+          files: |
+            artifacts/windows-x86_64/Humanaize2-Setup-x86_64.exe
+            artifacts/windows-arm64/Humanaize2-Setup-arm64.exe
+            artifacts/linux/*.deb
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
