@@ -1,0 +1,7 @@
+Origin: Humanaize Project
+Label: Humanaize
+Suite: stable
+Codename: stable
+Architectures: amd64 i386 all
+Components: main
+Description: Humanaize APT Repository
