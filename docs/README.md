@@ -217,9 +217,265 @@ This project is licensed under the MIT License.
 - 🔧 Improved update mechanism
 - 🐛 Bug fixes and improvements
 
-## Links
+## 📖 Documentation
+
+Welcome! Here are the available documentation files to help you get started:
+
+### 🚀 Quick Start
+- **[快速开始 (Quick Start)](./README_zh.md)** - 中文快速入门指南
+
+### 📦 Installation Guides
+- **[APT 安装指南 (APT Install)](./APT_INSTALL.md)** - Linux APT仓库安装详细步骤
+- **[构建指南 (Building Guide)](./BUILDING.md)** - 从源码构建安装包
+- **[Windows 构建指南 (Windows Build)](./WINDOWS_BUILD_GUIDE.md)** - Windows平台构建说明
+- **[Linux 部署指南 (Linux Deploy)](./DEPLOY_LINUX.md)** - Linux服务器部署教程
+
+### 🛠️ Troubleshooting & Reference
+- **[故障排除 (Troubleshooting)](./TROUBLESHOOTING_LINUX.md)** - 常见问题与解决方案
+- **[目录结构 (Directory Structure)](./DIRECTORY_STRUCTURE.md)** - 项目目录说明
+- **[版本管理 (Version Management)](./VERSION_MANAGEMENT.md)** - 版本号统一管理说明
+
+### 🎨 Development
+- **[构建指南 (Building Guide)](./BUILDING.md)** - 开发者构建说明
+
+---
+
+## 🔗 Quick Links
 
 - [GitHub Repository](https://github.com/A113NWu/Humanaize2-Project)
 - [Releases Page](https://github.com/A113NWu/Humanaize2-Project/releases)
 - [Issue Tracker](https://github.com/A113NWu/Humanaize2-Project/issues)
-- [Detailed Documentation](docs/README.md)
+
+---
+
+## 📁 Project Structure
+
+```
+Humanaize_2_1/
+├── src/
+│   ├── ai_selfdevelop/    # AI-modifiable files (persists through updates)
+│   │   ├── skills/        # Custom skills developed by AI
+│   │   ├── preferences/   # User preferences
+│   │   ├── learning/      # Learning data and models
+│   │   └── customizations/# UI themes and response templates
+│   └── core/              # Core application modules (updated via updates)
+│       ├── Agent.py       # Main agent class
+│       ├── main.py        # Application entry point
+│       ├── windows_main.py# Windows-specific entry point
+│       ├── thinking_engine.py
+│       ├── personality.py
+│       ├── autonomous.py
+│       ├── internal_state.py
+│       ├── Prompt/        # Prompt templates
+│       ├── config/        # Configuration management
+│       ├── llm/           # LLM integration
+│       ├── memory/        # Memory system
+│       ├── tools/         # Utility tools
+│       ├── ui/            # UI components
+│       └── utils/         # Utilities (auto-updater)
+├── skills/                # Built-in skills (OpenClaw compatible)
+├── config/                # Global configuration
+├── docs/                  # Documentation (you're here!)
+└── installer/             # Build scripts and installers
+```
+
+**📚 更多信息**: 查看 [目录结构文档](./DIRECTORY_STRUCTURE.md) 了解每个目录的详细说明。
+
+---
+
+## 🔄 Update Mechanism
+
+- **`src/ai_selfdevelop/`**: Protected directory - **NOT** overwritten during updates
+  - Contains AI-developed skills, user preferences, and learning data
+  - Preserved across version updates
+
+- **`src/core/`**: Updated directory - **IS** overwritten during updates
+  - Contains core application code
+  - Updated with new features and bug fixes
+
+**🔧 了解更多**: 查看 [版本管理文档](./VERSION_MANAGEMENT.md) 了解版本号如何统一管理。
+
+---
+
+## Installation
+
+**❓ 不知道选择哪种安装方式？**
+- **Windows 用户**: 推荐使用 [Windows Installer](https://github.com/A113NWu/Humanaize2-Project/releases)
+- **Linux 用户**: 推荐使用 APT 安装 - 查看 [APT 安装指南](./APT_INSTALL.md)
+- **开发者**: 查看 [构建指南](./BUILDING.md)
+
+### Windows Installation
+
+#### Method 1: Windows Installer (Recommended)
+
+Download the Windows installer with modern GUI:
+
+1. Download `Humanaize2-Setup.exe` from [GitHub Releases](https://github.com/A113NWu/Humanaize2-Project/releases)
+2. Run the installer and follow the wizard
+3. Launch from Start Menu - modern GUI opens automatically
+
+**Windows GUI Features:**
+- 🎨 Modern card-based design
+- 🌙 Dark/Light theme support
+- 🌐 English/Chinese language
+- 📦 Auto model download
+- ⚡ Auto-update functionality
+
+#### Method 2: From Source (Windows)
+
+```bash
+# Clone the repository
+git clone https://github.com/A113NWu/Humanaize2-Project.git
+cd Humanaize2-Project
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run modern GUI
+python src/core/main.py boot -m win-gui
+
+# Or run traditional GUI
+python src/core/main.py boot -m gui
+```
+
+### Linux Installation
+
+#### Method 1: APT Install (Recommended)
+
+**📖 详细说明**: 查看 [APT 安装指南](./APT_INSTALL.md)
+
+```bash
+# Add repository
+echo 'deb [trusted=yes] https://a113nwu.github.io/Humanaize2-Project/apt-repo stable main' | sudo tee /etc/apt/sources.list.d/humanaize2.list
+
+# Update package list
+sudo apt update
+
+# Install Humanaize 2.2
+sudo apt install humanaize2
+```
+
+#### Method 2: Debian Package
+
+Download and install the Debian package:
+
+```bash
+# Download from GitHub Releases
+wget https://github.com/A113NWu/Humanaize2-Project/releases/download/v2.2.3/humanaize2_2.2.3_amd64.deb
+
+# Install
+sudo dpkg -i humanaize2_2.2.3_amd64.deb
+sudo apt install -f  # Fix dependencies if needed
+```
+
+#### Method 3: From Source (Linux)
+
+**📖 详细说明**: 查看 [构建指南](./BUILDING.md)
+
+```bash
+# Clone the repository
+git clone https://github.com/A113NWu/Humanaize2-Project.git
+cd Humanaize2-Project
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the application
+python src/core/main.py boot
+```
+
+## Usage
+
+### Windows
+
+```bash
+# Modern Windows GUI (default for installer)
+python src/core/main.py boot -m win-gui
+
+# Traditional GUI
+python src/core/main.py boot -m gui
+
+# CLI mode
+python src/core/main.py boot
+
+# Solve mode
+python src/core/main.py boot -m solve
+```
+
+### Linux
+
+```bash
+# GUI mode (default)
+humanaize2
+
+# CLI mode
+humanaize2 boot
+
+# Solve mode
+humanaize2 boot -m solve
+```
+
+## Modules
+
+### Humanaize2 Core (`src/core/`)
+Foundational modules including:
+- Agent framework
+- Thinking engine
+- LLM integration
+- Memory system
+- UI components
+- Auto-updater
+
+**🔧 了解更多**: 查看 [版本管理文档](./VERSION_MANAGEMENT.md) 了解核心模块的版本管理。
+
+### AI Selfdevelop (`src/ai_selfdevelop/`)
+AI-modifiable files that persist through updates:
+- Custom skills developed by AI
+- User preferences and profiles
+- Learning data and behavior models
+- Personalized UI themes and response templates
+
+## Development
+
+### Build from Source
+
+**📖 详细说明**: 查看 [构建指南](./BUILDING.md)
+
+```bash
+# Build Debian packages
+./build_all.sh
+
+# Output: installer_output/humanaize2_*.deb
+```
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit issues and pull requests.
+
+## License
+
+This project is licensed under the MIT License.
+
+## Version
+
+**v2.2.3**
+
+- 🎨 Modern Windows GUI with card-based design
+- 📁 Refactored directory structure (`src/core/` + `src/ai_selfdevelop/`)
+- 🌙 Dark/Light theme support
+- 🌐 English/Chinese language support
+- ⚡ AI self-optimization during idle time
+- 🔧 Improved update mechanism
+- 🐛 Bug fixes and improvements
+
+**🔧 了解更多**: 查看 [版本管理文档](./VERSION_MANAGEMENT.md) 了解版本号如何统一管理。
+
+## Troubleshooting
+
+**❓ 遇到问题？**
+查看 [故障排除指南](./TROUBLESHOOTING_LINUX.md) 了解常见问题的解决方案。
+
+---
+
+**📚 更多信息**: 查看 [中文快速开始](./README_zh.md) 获得更好的中文文档体验！
+

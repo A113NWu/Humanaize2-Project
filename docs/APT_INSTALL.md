@@ -1,5 +1,7 @@
 # Humanaize 2.0 APT 仓库安装指南
 
+**← [返回主文档](../docs/README.md)** | [📖 文档导航](../docs/README.md)
+
 ## 快速安装
 
 ### 方法 1: 使用仓库（推荐）

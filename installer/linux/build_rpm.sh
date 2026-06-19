@@ -5,7 +5,7 @@ set -e
 
 # Configuration
 PACKAGE_NAME="humanaize2"
-VERSION="2.1.0"
+VERSION="2.2.3"
 RELEASE="1"
 ARCH="noarch"
 BUILD_DIR="rpmbuild"

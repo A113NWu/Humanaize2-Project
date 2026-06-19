@@ -1,5 +1,7 @@
 # Humanaize 2.0 Agent - Build Guide
 
+**← [返回主文档](./README.md)** | [📖 文档导航](./README.md)
+
 This document describes how to build Humanaize 2.0 Agent for both Linux and Windows platforms.
 
 ## 📋 Prerequisites
@@ -30,7 +32,7 @@ chmod +x build_deb.sh
 sudo ./build_deb.sh
 
 # The package will be created at:
-# installer/linux/output/humanaize2_2.1.0_all.deb
+# installer/linux/output/humanaize2_2.2.3_all.deb
 ```
 
 ### Windows (Executable & Installer)
@@ -56,7 +58,7 @@ python build_exe.py all      :: Build both architectures
 ### Linux
 | File | Description |
 |------|-------------|
-| `installer/linux/output/humanaize2_2.1.0_all.deb` | Debian package (works on both x86_64 and ARM64) |
+| `installer/linux/output/humanaize2_2.2.3_all.deb` | Debian package (works on both x86_64 and ARM64) |
 
 ### Windows
 | Architecture | Executable | Installer |
@@ -68,7 +70,7 @@ python build_exe.py all      :: Build both architectures
 
 ### Linux
 ```bash
-sudo dpkg -i humanaize2_2.1.0_all.deb
+sudo dpkg -i humanaize2_2.2.3_all.deb
 sudo apt-get install -f  # Install dependencies if needed
 ```
 
@@ -131,7 +133,7 @@ Humanaize_2_1/
 
 ## 📝 Version Information
 
-- **Version**: 2.1.0
+- **Version**: 2.2.3
 - **Build Date**: Built from source
 - **Supported Platforms**:
   - Linux: Debian/Ubuntu (all architectures via .deb)

@@ -11,6 +11,15 @@ import shutil
 from datetime import datetime
 from typing import Optional, Dict, Callable
 
+# 导入统一版本管理模块
+try:
+    from .version import get_version, get_update_checker_agent, get_downloader_agent
+except ImportError:
+    # 如果从其他目录导入，提供备用方案
+    import sys
+    sys.path.insert(0, os.path.dirname(__file__))
+    from version import get_version, get_update_checker_agent, get_downloader_agent
+
 # Try to use requests for better error handling
 try:
     import requests
@@ -21,16 +30,16 @@ except ImportError:
 
 
 class AutoUpdater:
-    def __init__(self, repo_url: str, current_version: str = "2.1.0"):
+    def __init__(self, repo_url: str, current_version: str = None):
         self.repo_url = repo_url
-        self.current_version = current_version
+        self.current_version = current_version or get_version()
         self.update_info = None
         self.last_check_file = os.path.join(os.path.dirname(__file__), "data", "last_update_check.json")
         self._session = None
         if USE_REQUESTS:
             self._session = requests.Session()
             self._session.headers.update({
-                "User-Agent": "Humanaize2-Update-Checker/2.1.0"
+                "User-Agent": get_update_checker_agent()
             })
     
     def _get_session(self):
@@ -38,31 +47,13 @@ class AutoUpdater:
         if USE_REQUESTS and not self._session:
             self._session = requests.Session()
             self._session.headers.update({
-                "User-Agent": "Humanaize2-Update-Checker/2.1.0"
+                "User-Agent": get_update_checker_agent()
             })
         return self._session
     
     def get_local_version(self) -> str:
-        # 查找 version.json 的多个可能位置
-        possible_paths = [
-            # 安装目录
-            "/usr/share/humanaize2/version.json",
-            "/usr/local/share/humanaize2/version.json",
-            # 项目目录结构
-            os.path.join(os.path.dirname(__file__), "..", "..", "config", "version.json"),
-            os.path.join(os.path.dirname(__file__), "..", "..", "version.json"),
-            os.path.join(os.path.dirname(__file__), "version.json"),
-        ]
-        
-        for version_file in possible_paths:
-            if os.path.exists(version_file):
-                try:
-                    with open(version_file, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                        return data.get("version", self.current_version)
-                except Exception:
-                    pass
-        return self.current_version
+        # 使用统一的版本获取函数
+        return get_version()
     
     def save_local_version(self, version: str):
         os.makedirs(os.path.dirname(__file__), exist_ok=True)
@@ -87,7 +78,7 @@ class AutoUpdater:
                     response.raise_for_status()
                     return response.json()
                 else:
-                    req = urllib.request.Request(url, headers={"User-Agent": "Humanaize2-Update-Checker/2.1.0"})
+                    req = urllib.request.Request(url, headers={"User-Agent": get_update_checker_agent()})
                     with urllib.request.urlopen(req, timeout=timeout) as response:
                         return json.loads(response.read().decode("utf-8"))
             except Exception as e:
@@ -226,7 +217,7 @@ class AutoUpdater:
                                 progress = int((downloaded / total_size) * 100)
                                 progress_callback(f"Downloading... {progress}%")
             else:
-                req = urllib.request.Request(download_url, headers={"User-Agent": "Humanaize2-Update-Downloader/2.1.0"})
+                req = urllib.request.Request(download_url, headers={"User-Agent": get_downloader_agent()})
                 with urllib.request.urlopen(req, timeout=60) as response:
                     total_size = int(response.headers.get("Content-Length", 0))
                     downloaded = 0

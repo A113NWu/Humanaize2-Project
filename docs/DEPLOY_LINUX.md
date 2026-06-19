@@ -1,4 +1,6 @@
-# Humanaize 2.1 Linux Deployment Guide
+# Humanaize 2.2 Linux Deployment Guide
+
+**← [返回主文档](./README.md)** | [📖 文档导航](./README.md)
 
 ## Table of Contents
 - [Supported Distributions](#supported-distributions)

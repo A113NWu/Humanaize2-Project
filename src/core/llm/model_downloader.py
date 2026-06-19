@@ -9,6 +9,15 @@ import threading
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
+# 导入统一版本管理模块
+try:
+    from ..utils.version import get_model_downloader_agent
+except ImportError:
+    # 如果从其他目录导入，提供备用方案
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "utils"))
+    from version import get_model_downloader_agent
+
 
 class ModelDownloader:
     def __init__(self):
@@ -54,7 +63,7 @@ class ModelDownloader:
                 try:
                     import requests
                     session = requests.Session()
-                    session.headers.update({"User-Agent": "Humanaize2-Model-Downloader/2.1.0"})
+                    session.headers.update({"User-Agent": get_model_downloader_agent()})
                     
                     with session.get(info["url"], stream=True, timeout=30) as response:
                         response.raise_for_status()
@@ -80,7 +89,7 @@ class ModelDownloader:
                     
                 except ImportError:
                     # Fallback to urllib
-                    req = Request(info["url"], headers={"User-Agent": "Humanaize2-Model-Downloader/2.1.0"})
+                    req = Request(info["url"], headers={"User-Agent": get_model_downloader_agent()})
                     with urlopen(req, timeout=30) as response:
                         total_size = int(response.headers.get('Content-Length', info["size"]))
                         downloaded_size = 0

@@ -1,4 +1,6 @@
-# Humanaize 2.0 Windows 打包指南
+# Humanaize 2.2 Windows 打包指南
+
+**← [返回主文档](./README.md)** | [📖 文档导航](./README.md)
 
 ## 快速开始
 
