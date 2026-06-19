@@ -3,9 +3,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue.svg)]()
-[![English](https://img.shields.io/badge/README-English-blue.svg)](README.md)
+[![English](https://img.shields.io/badge/README-English-blue.svg)](./README_en.md)
 
-> [English](README.md) | 中文
+> [English](./README_en.md) | 中文
 
 Humanaize v2.2 是一款**本地自治 AI 代理**，具有现代化的图形界面。它完全在本地运行，通过本地 LLM 服务器提供注重隐私的 AI 交互，支持记忆系统、人格引擎和可扩展的技能框架。
 

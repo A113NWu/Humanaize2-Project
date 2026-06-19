@@ -1,481 +1,668 @@
-# Humanaize 2.2
-
-> AI-powered personal assistant with self-optimization capabilities and modern GUI
+# Humanaize v2.2
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue.svg)]()
+[![English](https://img.shields.io/badge/README-English-blue.svg)](./README_en.md)
 
-Humanaize 2.2 is an intelligent personal assistant designed to adapt to user habits and optimize response speed through self-iteration during idle time. Now featuring a **modern Windows GUI** with card-based design.
+> [English](./README_en.md) | 中文
 
-## ✨ New in v2.2.3
+Humanaize v2.2 是一款**本地自治 AI 代理**，具有现代化的图形界面。它完全在本地运行，通过本地 LLM 服务器提供注重隐私的 AI 交互，支持记忆系统、人格引擎和可扩展的技能框架。
 
-- 🎨 **Modern Windows GUI**: Card-based interface with dark/light theme support
-- 📁 **Refactored Architecture**: All core modules now in `src/core/`
-- 🔧 **Modular Design**: Clean separation between core and AI self-developed content
-- ⚡ **Self-Optimization**: Analyzes performance metrics and code quality during idle time
-- 💬 **Natural Language Interface**: Interact with AI through intuitive chat interface
-- 📚 **Skill Management**: Extensible skill system for enhanced functionality
-- 🌐 **Multilingual Support**: English and Chinese language support
+**v2.2 新功能：**
+- ✨ Windows 现代化 GUI 界面（卡片式设计）
+- ✨ AI 自我发展模块（用户个性化定制，更新时保留）
+- ✨ 自我优化系统（AI 空闲时间自动分析优化）
+- ✨ 用户行为模式分析
+- ✨ 性能监控和优化建议
+- ✨ CLI/Solve 模式日志修复
 
-## 📁 Project Structure
+## 🎯 核心特性
+
+| 类别 | 功能 |
+|------|------|
+| **核心 AI** | 本地聊天界面、记忆系统、人格引擎、GAN 风格自我辩论 |
+| **技能框架** | OpenClaw 兼容的技能系统，包含 9 个内置技能 |
+| **用户界面** | 基于 CustomTkinter 的现代 GUI、CLI 支持、深色/浅色主题 |
+| **多语言** | 支持英语和中文，自动检测语言 |
+| **自治能力** | 线程安全架构、后台任务处理、空闲思考 |
+| **维护** | GitHub 自动更新、systemd 服务支持（Linux） |
+
+---
+
+## 📖 文档导航
+
+欢迎！以下是帮助您快速上手的文档文件：
+
+### 🚀 快速开始
+- **[英文版文档](./README_en.md)** - English documentation
+
+### 📦 安装指南
+- **[APT 安装指南](./APT_INSTALL.md)** - Linux APT仓库安装详细步骤
+- **[构建指南](./BUILDING.md)** - 从源码构建安装包
+- **[Windows 构建指南](./WINDOWS_BUILD_GUIDE.md)** - Windows平台构建说明
+- **[Linux 部署指南](./DEPLOY_LINUX.md)** - Linux服务器部署教程
+
+### 🛠️ 故障排除 & 参考
+- **[故障排除](./TROUBLESHOOTING_LINUX.md)** - 常见问题与解决方案
+- **[目录结构](./DIRECTORY_STRUCTURE.md)** - 项目目录说明
+- **[版本管理](./VERSION_MANAGEMENT.md)** - 版本号统一管理说明
+
+---
+
+## 🌟 核心能力
+
+### 1. 本地聊天界面
+- 基于 CustomTkinter 的现代 UI，带聊天历史
+- 实时显示 AI 的内部推理过程
+- 支持 GUI 和 CLI 两种模式
+- 技能执行结果输出面板
+
+### 2. 记忆系统
+- 跨会话持久化对话记忆
+- 思考过程和决策记录
+- 高效上下文管理的记忆摘要
+- 可配置的内存限制（默认：100 条消息）
+
+### 3. 人格引擎
+- 可定制的 AI 人格特质（好奇心、同理心、创造力）
+- 基于交互的动态人格适应
+- 可自定义初始提示词
+
+### 4. GAN 风格自我辩论
+- 内部论证以提升回复质量
+- 自动决定何时使用深度反思
+- 多视角综合分析
+
+### 5. 技能系统（OpenClaw 兼容）
+- 可扩展的技能框架
+- 支持自定义技能开发
+- 技能启用/禁用管理
+- 基于 JSON 的技能调用
+
+---
+
+## 📦 内置技能
+
+| 技能 | 描述 | 风险等级 |
+|------|------|----------|
+| `shell` | 执行 shell 命令 | 高 |
+| `file-read` | 读取文件系统中的文件 | 中 |
+| `file-write` | 向文件写入内容 | 高 |
+| `memory` | 查询和管理对话记忆 | 低 |
+| `reminder` | 设置定时提醒 | 低 |
+| `web-search` | 网络搜索 | 低 |
+| `web-fetch` | 获取 URL 内容 | 低 |
+| `detect-emotion` | 通过摄像头分析用户面部表情 | 中 |
+| `humanaize-society-network` | 连接其他 Humanaize AI | 中 |
+
+---
+
+## 📁 项目结构
 
 ```
 Humanaize_2_1/
 ├── src/
-│   ├── ai_selfdevelop/    # AI-modifiable files (persists through updates)
-│   │   ├── skills/        # Custom skills developed by AI
-│   │   ├── preferences/   # User preferences
-│   │   ├── learning/      # Learning data and models
-│   │   └── customizations/# UI themes and response templates
-│   └── core/              # Core application modules (updated via updates)
-│       ├── Agent.py       # Main agent class
-│       ├── main.py        # Application entry point
-│       ├── windows_main.py# Windows-specific entry point
+│   ├── ai_selfdevelop/     # AI可修改文件（更新时保留）
+│   │   ├── skills/        # AI开发的自定义技能
+│   │   ├── preferences/   # 用户偏好设置
+│   │   ├── learning/      # 学习数据和模型
+│   │   └── customizations/# UI主题和响应模板
+│   └── core/              # 核心应用模块（通过更新更新）
+│       ├── Agent.py       # 主要代理类
+│       ├── main.py        # 应用入口点
+│       ├── windows_main.py# Windows特定入口点
 │       ├── thinking_engine.py
 │       ├── personality.py
 │       ├── autonomous.py
 │       ├── internal_state.py
-│       ├── Prompt/        # Prompt templates
-│       ├── config/        # Configuration management
-│       ├── llm/           # LLM integration
-│       ├── memory/        # Memory system
-│       ├── tools/         # Utility tools
-│       ├── ui/            # UI components
-│       └── utils/         # Utilities (auto-updater)
-├── skills/                # Built-in skills (OpenClaw compatible)
-├── config/                # Global configuration
-├── docs/                  # Documentation
-└── installer/             # Build scripts and installers
+│       ├── Prompt/        # 提示词模板
+│       ├── config/        # 配置管理
+│       ├── llm/           # LLM集成
+│       ├── memory/        # 记忆系统
+│       ├── tools/         # 实用工具
+│       ├── ui/            # UI组件
+│       └── utils/         # 工具（自动更新器）
+├── skills/                # 内置技能（OpenClaw兼容）
+├── config/                # 全局配置
+├── docs/                  # 文档
+└── installer/             # 构建脚本和安装程序
 ```
 
-## 🔄 Update Mechanism
+---
 
-- **`src/ai_selfdevelop/`**: Protected directory - **NOT** overwritten during updates
-  - Contains AI-developed skills, user preferences, and learning data
-  - Preserved across version updates
+## ⚙️ 安装
 
-- **`src/core/`**: Updated directory - **IS** overwritten during updates
-  - Contains core application code
-  - Updated with new features and bug fixes
+### 系统要求
 
-## Installation
+| 要求 | 版本 | 说明 |
+|------|------|------|
+| Python | 3.10+ | 核心运行时 |
+| 操作系统 | Windows 10/11 或 Linux (Ubuntu 20.04+, Debian 11+, CentOS 7+) | 支持的平台 |
+| LLM 服务器 | llama.cpp 兼容 | AI 推理必需 |
+| 内存 | 推荐最低 8GB | 用于加载模型 |
 
-### Windows Installation
+### 快速下载命令
 
-#### Method 1: Windows Installer (Recommended)
-
-Download the Windows installer with modern GUI:
-
-1. Download `Humanaize2-Setup.exe` from [GitHub Releases](https://github.com/A113NWu/Humanaize2-Project/releases)
-2. Run the installer and follow the wizard
-3. Launch from Start Menu - modern GUI opens automatically
-
-**Windows GUI Features:**
-- 🎨 Modern card-based design
-- 🌙 Dark/Light theme support
-- 🌐 English/Chinese language
-- 📦 Auto model download
-- ⚡ Auto-update functionality
-
-#### Method 2: From Source (Windows)
+使用内置下载命令自动获取 TinyLlama：
 
 ```bash
-# Clone the repository
+# Linux
+./humanaize2.sh download-model
+
+# Windows
+humanaize2.bat download-model
+```
+
+### Windows 安装
+
+#### 方法 1：使用安装程序（推荐）
+
+1. 从 [Releases 页面](https://github.com/A113NWu/Humanaize2-Project/releases) 下载最新的 `Humanaize2-Setup.exe`
+2. 运行安装程序并按照安装向导操作
+3. 从开始菜单启动 Humanaize 2.2，现代化 GUI 自动打开
+
+**Windows 安装包特性：**
+- 🎨 现代化卡片式 GUI 界面
+- 🌙 深色/浅色主题支持
+- 🌐 中文/英文语言支持
+- 📦 首次启动自动下载模型
+- ⚡ 自动更新功能
+
+#### 方法 2：手动安装
+
+##### 步骤 1：克隆仓库
+```bash
 git clone https://github.com/A113NWu/Humanaize2-Project.git
 cd Humanaize2-Project
+```
 
-# Install dependencies
+##### 步骤 2：创建虚拟环境
+```bash
+python -m venv Humanaize2
+Humanaize2\Scripts\activate
+```
+
+##### 步骤 3：安装依赖
+```bash
 pip install -r requirements.txt
+```
 
-# Run modern GUI
+##### 步骤 4：下载 LLM 模型
+使用内置下载命令：
+```bash
+humanaize2.bat download-model
+```
+
+或手动将 GGUF 模型文件放入 `models/` 目录。推荐使用：[TinyLlama-1.1B-Chat-v1.0-GGUF](https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0-GGUF)
+
+##### 步骤 5：下载 Llama.cpp 服务器
+
+从 [llama.cpp releases](https://github.com/ggerganov/llama.cpp/releases) 下载 Windows 版本的 llama-server，放置在 `llama/` 目录中。
+
+##### 步骤 6：运行 Humanaize
+```bash
+python src/core/main.py boot          # CLI 模式
+python src/core/main.py boot -m gui   # GUI 模式
+```
+
+或使用启动脚本：
+```bash
+humanaize2.bat boot
+humanaize2.bat boot -m gui
+```
+
+### Linux 安装
+
+#### 方法 1：使用安装程序（推荐）
+
+1. 从 releases 页面下载最新的 `.deb` 或 `.rpm` 包
+2. 使用包管理器安装：
+
+**Debian/Ubuntu:**
+```bash
+sudo dpkg -i humanaize2_*.deb
+# 或
+sudo apt install ./humanaize2_*.deb
+```
+
+**Fedora/RHEL/CentOS:**
+```bash
+sudo rpm -i humanaize2_*.rpm
+# 或
+sudo dnf install ./humanaize2_*.rpm
+```
+
+3. 下载 LLM 模型：
+```bash
+humanaize2 download-model
+```
+
+4. 运行 Humanaize：
+```bash
+humanaize2
+```
+
+#### 方法 2：手动安装
+
+##### 步骤 1：克隆仓库
+```bash
+git clone https://github.com/A113NWu/Humanaize2-Project.git
+cd Humanaize2-Project
+```
+
+##### 步骤 2：安装系统依赖
+```bash
+chmod +x installer/linux/install_deps.sh
+sudo ./installer/linux/install_deps.sh
+```
+
+这将安装：
+- Python 3.11（如不存在）
+- python3-tk
+- 所需的系统库
+
+##### 步骤 3：安装 Humanaize
+```bash
+chmod +x install.sh
+sudo ./install.sh
+```
+
+如需安装 systemd 服务：
+```bash
+sudo ./install.sh --with-service
+```
+
+##### 步骤 4：下载 LLM 模型
+使用内置下载命令：
+```bash
+./humanaize2.sh download-model
+```
+
+或手动将 GGUF 模型文件放入 `~/.local/share/Humanaize2/models/`
+
+##### 步骤 5：下载 Llama.cpp 服务器
+
+从 [llama.cpp releases](https://github.com/ggerganov/llama.cpp/releases) 下载 Linux 版本的 llama-server，放置在 `~/.local/share/Humanaize2/llama/` 目录中。
+
+##### 步骤 6：运行 Humanaize
+```bash
+humanaize2
+```
+
+更多详细信息，请参阅 [docs/DEPLOY_LINUX.md](docs/DEPLOY_LINUX.md)
+
+---
+
+## 🚀 快速开始
+
+### 使用 Windows 现代化 GUI
+```bash
+# Windows 安装包默认启动现代化 GUI
+# 从源代码启动：
 python src/core/main.py boot -m win-gui
+```
 
-# Or run traditional GUI
+### 使用传统 GUI
+```bash
+# Linux
+humanaize2
+# 或
+./humanaize2.sh boot -m gui
+
+# Windows
+humanaize2.bat boot -m gui
+# 或
 python src/core/main.py boot -m gui
 ```
 
-### Linux Installation
-
-#### Method 1: APT Install (Recommended)
-
+### 使用 CLI
 ```bash
-# Add repository
-echo 'deb [trusted=yes] https://a113nwu.github.io/Humanaize2-Project/apt-repo stable main' | sudo tee /etc/apt/sources.list.d/humanaize2.list
+# Linux
+humanaize2 boot
+# 或
+./humanaize2.sh boot
 
-# Update package list
-sudo apt update
-
-# Install Humanaize 2.2
-sudo apt install humanaize2
-```
-
-#### Method 2: Debian Package
-
-Download and install the Debian package:
-
-```bash
-# Download from GitHub Releases
-wget https://github.com/A113NWu/Humanaize2-Project/releases/download/v2.2.3/humanaize2_2.2.3_amd64.deb
-
-# Install
-sudo dpkg -i humanaize2_2.2.3_amd64.deb
-sudo apt install -f  # Fix dependencies if needed
-```
-
-#### Method 3: From Source (Linux)
-
-```bash
-# Clone the repository
-git clone https://github.com/A113NWu/Humanaize2-Project.git
-cd Humanaize2-Project
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run the application
+# Windows
+humanaize2.bat boot
+# 或
 python src/core/main.py boot
 ```
 
-## Usage
-
-### Windows
-
+### 管理技能
 ```bash
-# Modern Windows GUI (default for installer)
-python src/core/main.py boot -m win-gui
+# 列出所有技能
+python src/core/main.py skills -list
 
-# Traditional GUI
-python src/core/main.py boot -m gui
+# 启用技能
+python src/core/main.py skills -enable shell
 
-# CLI mode
-python src/core/main.py boot
+# 禁用技能
+python src/core/main.py skills -disable shell
 
-# Solve mode
+# 从文件安装技能
+python src/core/main.py skills -install skill.zip
+```
+
+### 自动更新
+```bash
+# 检查更新
+python src/core/main.py update
+
+# 强制更新
+python src/core/main.py update -f
+```
+
+### 设置
+```bash
+python src/core/main.py settings
+```
+
+---
+
+## 🎮 使用
+
+### 开始对话
+1. 以 GUI 或 CLI 模式启动应用程序
+2. 在输入框中输入您的消息
+3. 按 Enter 或点击发送
+4. AI 将通过思考和答案进行回复
+
+### 使用技能
+技能可以通过自然语言调用。例如：
+```
+"你能读取 /home/user/test.txt 这个文件吗？"
+"今天天气怎么样？"
+"5分钟后设置一个提醒。"
+"执行：ls -la"
+```
+
+### 配置设置
+通过 GUI 中的 ⚙️ 按钮访问设置：
+- 语言选择（English/中文）
+- 主题（深色/浅色）
+- 模型配置
+- 技能提示词自定义
+- GAN 开关
+- 自动打破沉默开关
+- 软件更新
+
+### 解决模式
+用于问题解决任务：
+```bash
 python src/core/main.py boot -m solve
 ```
 
-### Linux
+---
 
-```bash
-# GUI mode (default)
-humanaize2
+## 🔧 配置
 
-# CLI mode
-humanaize2 boot
+### 环境变量
 
-# Solve mode
-humanaize2 boot -m solve
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `LLAMA_SERVER_URL` | `http://127.0.0.1:8080/completion` | LLM 服务器端点 |
+
+### 配置文件（`src/config/config.py`）
+
+```python
+# LLM 配置
+LLAMA_SERVER = "http://127.0.0.1:8080"
+LLAMA_SERVER_URL = f"{LLAMA_SERVER}/completion"
+MODEL_NAME = "tinyllama"
+MAX_TOKENS = 256
+TEMPERATURE = 0.7
+TOP_P = 0.9
+
+# UI 配置
+UI_WIDTH = 1200
+UI_HEIGHT = 900
+
+# 记忆配置
+MEMORY_FILE = "data/memory.json"
+MAX_MEMORY = 100
+
+# 人格配置
+DEFAULT_PERSONALITY = {
+    "traits": {"curiosity": 0.7, "empathy": 0.5, "creativity": 0.6},
+    "initial_prompt": "You are a friendly helpful AI."
+}
+
+# 自治行为
+SCREENSHOT_INTERVAL = 300  # 秒
+REFLECTION_INTERVAL = 1800
+AUTONOMOUS_CHECK_INTERVAL = 300
 ```
-
-## Modules
-
-### Humanaize2 Core (`src/core/`)
-Foundational modules including:
-- Agent framework
-- Thinking engine
-- LLM integration
-- Memory system
-- UI components
-- Auto-updater
-
-### AI Selfdevelop (`src/ai_selfdevelop/`)
-AI-modifiable files that persist through updates:
-- Custom skills developed by AI
-- User preferences and profiles
-- Learning data and behavior models
-- Personalized UI themes and response templates
-
-## Development
-
-### Build from Source
-
-```bash
-# Build Debian packages
-./build_all.sh
-
-# Output: installer_output/humanaize2_*.deb
-```
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit issues and pull requests.
-
-## License
-
-This project is licensed under the MIT License.
-
-## Version
-
-**v2.2.3**
-
-- 🎨 Modern Windows GUI with card-based design
-- 📁 Refactored directory structure (`src/core/` + `src/ai_selfdevelop/`)
-- 🌙 Dark/Light theme support
-- 🌐 English/Chinese language support
-- ⚡ AI self-optimization during idle time
-- 🔧 Improved update mechanism
-- 🐛 Bug fixes and improvements
-
-## 📖 Documentation
-
-Welcome! Here are the available documentation files to help you get started:
-
-### 🚀 Quick Start
-- **[快速开始 (Quick Start)](./README_zh.md)** - 中文快速入门指南
-
-### 📦 Installation Guides
-- **[APT 安装指南 (APT Install)](./APT_INSTALL.md)** - Linux APT仓库安装详细步骤
-- **[构建指南 (Building Guide)](./BUILDING.md)** - 从源码构建安装包
-- **[Windows 构建指南 (Windows Build)](./WINDOWS_BUILD_GUIDE.md)** - Windows平台构建说明
-- **[Linux 部署指南 (Linux Deploy)](./DEPLOY_LINUX.md)** - Linux服务器部署教程
-
-### 🛠️ Troubleshooting & Reference
-- **[故障排除 (Troubleshooting)](./TROUBLESHOOTING_LINUX.md)** - 常见问题与解决方案
-- **[目录结构 (Directory Structure)](./DIRECTORY_STRUCTURE.md)** - 项目目录说明
-- **[版本管理 (Version Management)](./VERSION_MANAGEMENT.md)** - 版本号统一管理说明
-
-### 🎨 Development
-- **[构建指南 (Building Guide)](./BUILDING.md)** - 开发者构建说明
 
 ---
 
-## 🔗 Quick Links
+## 📦 创建自定义技能
 
-- [GitHub Repository](https://github.com/A113NWu/Humanaize2-Project)
-- [Releases Page](https://github.com/A113NWu/Humanaize2-Project/releases)
-- [Issue Tracker](https://github.com/A113NWu/Humanaize2-Project/issues)
+### 技能结构
+在 `skills/` 中创建一个包含 `SKILL.md` 文件的文件夹：
+
+```
+skills/my-skill/
+├── SKILL.md          # 必需的技能定义
+└── __init__.py       # 可选的执行器模块
+```
+
+### SKILL.md 格式
+```markdown
+---
+name: my-skill
+description: 技能的功能描述
+metadata:
+  category: utility
+  risk_level: low
+  requires_approval: false
+  version: 1.0.0
+---
+
+# 我的技能
+
+## 用途
+描述这个技能的功能。
+
+## 输入格式
+包含输入数据的 JSON 对象。
+
+## 示例
+{"skill": "my-skill", "input": "..."}
+```
+
+### 执行器模块（`__init__.py`）
+```python
+def execute(input_data):
+    """使用给定输入执行技能"""
+    # 你的技能逻辑
+    return {"status": "success", "result": "output"}
+```
 
 ---
 
-## 📁 Project Structure
+## 🧠 架构
+
+### 核心组件
+
+1. **ThinkingEngine** - 用于聊天、GAN 和反思的线程安全异步任务处理器
+2. **Agent** - 执行技能和 shell 命令
+3. **SkillsManager** - 加载和管理技能生命周期
+4. **Memory** - 持久化对话历史和思考
+5. **Personality** - 管理 AI 角色特质
+6. **AutoUpdater** - 管理 GitHub 软件更新
+
+### 线程架构
+
+| 线程 | 用途 |
+|------|------|
+| **UI 线程** | 处理用户输入和显示更新 |
+| **决策线程** | 处理异步 AI 决策（非阻塞） |
+| **思考线程** | 处理 GAN 和聊天任务处理 |
+| **空闲/自治线程** | 处理后台 AI 活动 |
+
+### 数据流
 
 ```
-Humanaize_2_1/
-├── src/
-│   ├── ai_selfdevelop/    # AI-modifiable files (persists through updates)
-│   │   ├── skills/        # Custom skills developed by AI
-│   │   ├── preferences/   # User preferences
-│   │   ├── learning/      # Learning data and models
-│   │   └── customizations/# UI themes and response templates
-│   └── core/              # Core application modules (updated via updates)
-│       ├── Agent.py       # Main agent class
-│       ├── main.py        # Application entry point
-│       ├── windows_main.py# Windows-specific entry point
-│       ├── thinking_engine.py
-│       ├── personality.py
-│       ├── autonomous.py
-│       ├── internal_state.py
-│       ├── Prompt/        # Prompt templates
-│       ├── config/        # Configuration management
-│       ├── llm/           # LLM integration
-│       ├── memory/        # Memory system
-│       ├── tools/         # Utility tools
-│       ├── ui/            # UI components
-│       └── utils/         # Utilities (auto-updater)
-├── skills/                # Built-in skills (OpenClaw compatible)
-├── config/                # Global configuration
-├── docs/                  # Documentation (you're here!)
-└── installer/             # Build scripts and installers
+用户输入 → 语言检测 → ThinkingEngine → LLM 查询
+    ↓                      ↓
+记忆存储 ← 技能执行 ← Agent
+    ↓
+响应生成 → 用户界面
 ```
-
-**📚 更多信息**: 查看 [目录结构文档](./DIRECTORY_STRUCTURE.md) 了解每个目录的详细说明。
 
 ---
 
-## 🔄 Update Mechanism
+## 🛠️ 构建安装包
 
-- **`src/ai_selfdevelop/`**: Protected directory - **NOT** overwritten during updates
-  - Contains AI-developed skills, user preferences, and learning data
-  - Preserved across version updates
+### Windows 安装程序
 
-- **`src/core/`**: Updated directory - **IS** overwritten during updates
-  - Contains core application code
-  - Updated with new features and bug fixes
+#### 前提条件
+- Windows 10/11
+- Python 3.10+（用于构建）
+- Inno Setup 6.x（用于创建安装程序）
 
-**🔧 了解更多**: 查看 [版本管理文档](./VERSION_MANAGEMENT.md) 了解版本号如何统一管理。
+#### 构建步骤
+
+1. 导航到安装目录：
+```bash
+cd installer/windows
+```
+
+2. 运行构建脚本：
+```bash
+build_all.bat
+```
+
+这将：
+- 创建虚拟环境
+- 安装所有依赖
+- 下载 TinyLlama 模型
+- 使用 PyInstaller 构建可执行文件
+- 使用 Inno Setup 创建安装程序
+
+3. 安装程序位置：
+```
+dist/Humanaize2-Setup.exe
+```
+
+### Linux 包
+
+#### Debian/Ubuntu (.deb)
+
+```bash
+cd installer/linux
+chmod +x build_deb.sh
+sudo ./build_deb.sh
+```
+
+包将创建在：
+```
+dist/humanaize2_*.deb
+```
+
+#### Fedora/RHEL (.rpm)
+
+```bash
+cd installer/linux
+chmod +x build_rpm.sh
+sudo ./build_rpm.sh
+```
+
+包将创建在：
+```
+dist/humanaize2-*.rpm
+```
 
 ---
 
-## Installation
+## 🐛 故障排除
 
-**❓ 不知道选择哪种安装方式？**
-- **Windows 用户**: 推荐使用 [Windows Installer](https://github.com/A113NWu/Humanaize2-Project/releases)
-- **Linux 用户**: 推荐使用 APT 安装 - 查看 [APT 安装指南](./APT_INSTALL.md)
-- **开发者**: 查看 [构建指南](./BUILDING.md)
+### LLM 服务器无响应
+- 确保 llama.cpp 服务器正在运行
+- 检查 `src/config/config.py` 中的服务器 URL
+- 验证模型文件路径是否正确
+- 确保防火墙未阻止 8080 端口
 
-### Windows Installation
+### 技能不工作
+- 验证技能已启用：`python src/core/main.py skills -list`
+- 检查 `data/skills_config.json` 中的技能配置
+- 确保技能执行器模块具有正确的 `execute` 函数
 
-#### Method 1: Windows Installer (Recommended)
+### 摄像头访问错误（detect-emotion）
+- 确保没有其他应用程序正在使用摄像头
+- 授予 Python 摄像头权限
+- 检查 OpenCV 安装：`pip install opencv-python`
 
-Download the Windows installer with modern GUI:
+### GUI 问题
+- 更新 CustomTkinter：`pip install --upgrade customtkinter`
+- 检查 Python 版本兼容性
+- 先尝试在 CLI 模式下运行以隔离 UI 问题
+- 检查 tkinter 安装：`python -c "import tkinter"`
 
-1. Download `Humanaize2-Setup.exe` from [GitHub Releases](https://github.com/A113NWu/Humanaize2-Project/releases)
-2. Run the installer and follow the wizard
-3. Launch from Start Menu - modern GUI opens automatically
+### Linux 安装问题
+- 确保您有 root/sudo 权限
+- 检查是否已安装 Python 3.10+
+- 验证系统依赖已安装
+- 如果使用 systemd，检查 `/var/log/humanaize2/` 中的日志
 
-**Windows GUI Features:**
-- 🎨 Modern card-based design
-- 🌙 Dark/Light theme support
-- 🌐 English/Chinese language
-- 📦 Auto model download
-- ⚡ Auto-update functionality
-
-#### Method 2: From Source (Windows)
-
-```bash
-# Clone the repository
-git clone https://github.com/A113NWu/Humanaize2-Project.git
-cd Humanaize2-Project
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run modern GUI
-python src/core/main.py boot -m win-gui
-
-# Or run traditional GUI
-python src/core/main.py boot -m gui
-```
-
-### Linux Installation
-
-#### Method 1: APT Install (Recommended)
-
-**📖 详细说明**: 查看 [APT 安装指南](./APT_INSTALL.md)
-
-```bash
-# Add repository
-echo 'deb [trusted=yes] https://a113nwu.github.io/Humanaize2-Project/apt-repo stable main' | sudo tee /etc/apt/sources.list.d/humanaize2.list
-
-# Update package list
-sudo apt update
-
-# Install Humanaize 2.2
-sudo apt install humanaize2
-```
-
-#### Method 2: Debian Package
-
-Download and install the Debian package:
-
-```bash
-# Download from GitHub Releases
-wget https://github.com/A113NWu/Humanaize2-Project/releases/download/v2.2.3/humanaize2_2.2.3_amd64.deb
-
-# Install
-sudo dpkg -i humanaize2_2.2.3_amd64.deb
-sudo apt install -f  # Fix dependencies if needed
-```
-
-#### Method 3: From Source (Linux)
-
-**📖 详细说明**: 查看 [构建指南](./BUILDING.md)
-
-```bash
-# Clone the repository
-git clone https://github.com/A113NWu/Humanaize2-Project.git
-cd Humanaize2-Project
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run the application
-python src/core/main.py boot
-```
-
-## Usage
-
-### Windows
-
-```bash
-# Modern Windows GUI (default for installer)
-python src/core/main.py boot -m win-gui
-
-# Traditional GUI
-python src/core/main.py boot -m gui
-
-# CLI mode
-python src/core/main.py boot
-
-# Solve mode
-python src/core/main.py boot -m solve
-```
-
-### Linux
-
-```bash
-# GUI mode (default)
-humanaize2
-
-# CLI mode
-humanaize2 boot
-
-# Solve mode
-humanaize2 boot -m solve
-```
-
-## Modules
-
-### Humanaize2 Core (`src/core/`)
-Foundational modules including:
-- Agent framework
-- Thinking engine
-- LLM integration
-- Memory system
-- UI components
-- Auto-updater
-
-**🔧 了解更多**: 查看 [版本管理文档](./VERSION_MANAGEMENT.md) 了解核心模块的版本管理。
-
-### AI Selfdevelop (`src/ai_selfdevelop/`)
-AI-modifiable files that persist through updates:
-- Custom skills developed by AI
-- User preferences and profiles
-- Learning data and behavior models
-- Personalized UI themes and response templates
-
-## Development
-
-### Build from Source
-
-**📖 详细说明**: 查看 [构建指南](./BUILDING.md)
-
-```bash
-# Build Debian packages
-./build_all.sh
-
-# Output: installer_output/humanaize2_*.deb
-```
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit issues and pull requests.
-
-## License
-
-This project is licensed under the MIT License.
-
-## Version
-
-**v2.2.3**
-
-- 🎨 Modern Windows GUI with card-based design
-- 📁 Refactored directory structure (`src/core/` + `src/ai_selfdevelop/`)
-- 🌙 Dark/Light theme support
-- 🌐 English/Chinese language support
-- ⚡ AI self-optimization during idle time
-- 🔧 Improved update mechanism
-- 🐛 Bug fixes and improvements
-
-**🔧 了解更多**: 查看 [版本管理文档](./VERSION_MANAGEMENT.md) 了解版本号如何统一管理。
-
-## Troubleshooting
-
-**❓ 遇到问题？**
-查看 [故障排除指南](./TROUBLESHOOTING_LINUX.md) 了解常见问题的解决方案。
+Linux 特定故障排除，请参阅 [docs/TROUBLESHOOTING_LINUX.md](docs/TROUBLESHOOTING_LINUX.md)
 
 ---
 
-**📚 更多信息**: 查看 [中文快速开始](./README_zh.md) 获得更好的中文文档体验！
+## 📄 许可证
 
+本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件。
+
+---
+
+## 🤝 贡献
+
+### 指南
+1. Fork 本仓库
+2. 创建功能分支：`git checkout -b feature-name`
+3. 提交您的更改：`git commit -m 'Add feature'`
+4. 推送到分支：`git push origin feature-name`
+5. 提交 Pull Request
+
+### 代码标准
+- 遵循 PEP 8 风格指南
+- 在适当的地方使用类型提示
+- 为所有函数和类添加文档字符串
+- 为新功能添加测试
+
+### 报告问题
+- 使用 GitHub Issues 报告错误和功能请求
+- 包含版本信息和错误日志
+- 提供错误重现步骤
+
+---
+
+## 🙏 致谢
+
+- [llama.cpp](https://github.com/ggerganov/llama.cpp) - 本地 LLM 推理
+- [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) - 现代 Python UI
+- [DeepFace](https://github.com/serengil/deepface) - 人脸分析
+- [OpenClaw](https://github.com/secondself/openclaw) - 技能框架灵感
+
+---
+
+## 📊 统计
+
+![GitHub stars](https://img.shields.io/github/stars/A113NWu/Humanaize2-Project?style=social)
+![GitHub forks](https://img.shields.io/github/forks/A113NWu/Humanaize2-Project?style=social)
+
+---
+
+**注意**：此软件需要本地 LLM 服务器。Humanaize 提供框架但由于文件大小不包含 LLM 模型文件。请单独下载兼容的 GGUF 模型。
+
+---
+
+## 🔗 链接
+
+- [GitHub 仓库](https://github.com/A113NWu/Humanaize2-Project)
+- [Releases 页面](https://github.com/A113NWu/Humanaize2-Project/releases)
+- [问题跟踪器](https://github.com/A113NWu/Humanaize2-Project/issues)
+- [Wiki/文档](https://github.com/A113NWu/Humanaize2-Project/wiki)
+- [TinyLlama 模型](https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0-GGUF)
+- [llama.cpp](https://github.com/ggerganov/llama.cpp)
