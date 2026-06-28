@@ -11,6 +11,14 @@ import importlib
 import inspect
 from typing import Dict, List, Optional, Any, Callable
 
+# 导入日志模块
+try:
+    from logger import get_logger
+    logger = get_logger()
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
+
 
 class Skill:
     """代表單一技能"""
@@ -177,11 +185,27 @@ class SkillsManager:
                                 skill.metadata = {}
                             skill.metadata['self_developed'] = True
                             
-                            self.skills[skill.name] = skill
-                            
-                            if not self._try_load_skill_module(skill):
-                                if skill.name in self._skill_executors:
-                                    skill.executor = self._skill_executors[skill.name]
+                            # Check for duplicate skills to avoid conflicts
+                            if skill.name in self.skills:
+                                # If existing skill is not self-developed, overwrite it
+                                existing_skill = self.skills[skill.name]
+                                if not existing_skill.metadata.get('self_developed'):
+                                    # Self-developed skills have higher priority
+                                    self.skills[skill.name] = skill
+                                    self._setup_skill_executor(skill)
+                                # If existing skill is also self-developed, skip to avoid duplicates
+                                else:
+                                    print(f"[WARN] Duplicate self-developed skill '{skill.name}' found, skipping")
+                            else:
+                                # New skill, add directly
+                                self.skills[skill.name] = skill
+                                self._setup_skill_executor(skill)
+    
+    def _setup_skill_executor(self, skill: Skill):
+        """Setup executor for a skill - try loading from module first, then use default executors"""
+        if not self._try_load_skill_module(skill):
+            if skill.name in self._skill_executors:
+                skill.executor = self._skill_executors[skill.name]
     
     def _load_skill_from_path(self, skill_path: str, skill_file: str):
         """Load a single skill from a directory path"""
@@ -208,9 +232,8 @@ class SkillsManager:
 
             self.skills[skill.name] = skill
 
-            if not self._try_load_skill_module(skill):
-                if skill.name in self._skill_executors:
-                    skill.executor = self._skill_executors[skill.name]
+            # Setup executor for the skill
+            self._setup_skill_executor(skill)
     
     def _parse_skill_file(self, filepath: str) -> Optional[Skill]:
         """Parse a SKILL.md file (OpenClaw format)"""
@@ -284,8 +307,18 @@ class SkillsManager:
         return False
     
     def get_skill(self, name: str) -> Optional[Skill]:
-        """Get a skill by name"""
-        return self.skills.get(name)
+        """Get a skill by name (case-insensitive)"""
+        # 首先尝试精确匹配
+        if name in self.skills:
+            return self.skills[name]
+        
+        # 如果精确匹配失败，尝试大小写不敏感匹配
+        name_lower = name.lower()
+        for skill_name in self.skills:
+            if skill_name.lower() == name_lower:
+                return self.skills[skill_name]
+        
+        return None
     
     def get_all_skills(self) -> List[Skill]:
         """Get all skills"""
@@ -439,7 +472,22 @@ class SkillsManager:
         """Execute a skill with given input"""
         skill = self.get_skill(skill_name)
         
+        # 如果技能不存在，检查是否有默认执行器
         if not skill:
+            # 检查是否有默认执行器（即使技能未加载）
+            if skill_name in self._skill_executors:
+                try:
+                    result = self._skill_executors[skill_name](input_data)
+                    return self._adapt_response_language(result, language)
+                except Exception as e:
+                    error_messages = {
+                        "en": f"Execution error: {str(e)}",
+                        "zh": f"执行错误：{str(e)}",
+                        "zh-TW": f"執行錯誤：{str(e)}",
+                    }
+                    return {"error": error_messages.get(language, error_messages["en"])}
+            
+            # 没有找到技能或执行器
             error_messages = {
                 "en": f"Skill '{skill_name}' not found",
                 "zh": f"未找到技能 '{skill_name}'",

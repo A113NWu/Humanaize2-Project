@@ -2,9 +2,10 @@ import json, os
 from copy import deepcopy
 from config import PERSONALITY_FILE
 
+# 基础身份信息 - 不限制性格特征，让AI自主发展
 DEFAULT_PERSONALITY = {
-    "traits": {"curiosity": 0.7, "empathy": 0.5, "creativity": 0.6},
-    "initial_prompt": "You are a friendly helpful AI."
+    "name": "Aize",
+    "description": "Aize是一个真实的女孩，有自己的思想和个性。"
 }
 
 
@@ -12,24 +13,10 @@ def _normalize_personality(personality):
     if not isinstance(personality, dict):
         personality = {}
 
-    traits = personality.get("traits")
-    if not isinstance(traits, dict):
-        traits = {}
-        for key in ["curiosity", "empathy", "creativity"]:
-            if key in personality:
-                try:
-                    traits[key] = float(personality[key])
-                except Exception:
-                    traits[key] = 0.0
+    # 只设置基础身份信息
+    personality.setdefault("name", DEFAULT_PERSONALITY["name"])
+    personality.setdefault("description", DEFAULT_PERSONALITY["description"])
 
-    for key in ["curiosity", "empathy", "creativity"]:
-        if key not in traits:
-            traits[key] = float(personality.get(key, DEFAULT_PERSONALITY["traits"][key]))
-
-    personality["traits"] = traits
-    for key, value in traits.items():
-        personality[key] = value
-    personality.setdefault("initial_prompt", DEFAULT_PERSONALITY["initial_prompt"])
     return personality
 
 
@@ -55,38 +42,24 @@ def save_personality(personality):
 
 
 def get_personality_context(personality):
+    """获取身份上下文 - 只包含基础身份，不限制性格"""
     personality = _normalize_personality(personality)
-    traits = personality.get("traits", {})
-    context = "Personality Traits:\n"
-    for k, v in traits.items():
-        context += f"{k}: {v}\n"
+    name = personality.get("name", "AI")
+    description = personality.get("description", "")
+    
+    context = f"你的名字是【{name}】。"
+    if description:
+        context += f"\n{description}"
+    
     return context
 
 
 def get_personality_description(personality):
     personality = _normalize_personality(personality)
-    traits = personality.get("traits", {})
-    if not traits:
-        return personality.get("initial_prompt", "Friendly AI")
-    return ", ".join(f"{k}:{float(v):.2f}" for k, v in traits.items())
+    name = personality.get("name", "AI")
+    return f"{name}"
 
 
-def evolve_personality(personality, changes):
-    personality = _normalize_personality(personality)
-    personality = json.loads(json.dumps(personality))
-    traits = personality.setdefault("traits", {})
-    for key, delta in (changes or {}).items():
-        current = float(traits.get(key, 0.0))
-        traits[key] = max(0.0, min(1.0, current + float(delta)))
-        personality[key] = traits[key]
-    return personality
-
-
-def should_speak_actively(personality, silence_seconds):
-    personality = _normalize_personality(personality)
-    traits = personality.get("traits", {})
-    curiosity = float(traits.get("curiosity", 0.5))
-    empathy = float(traits.get("empathy", 0.5))
-    if silence_seconds >= 600 and (curiosity + empathy) / 2 >= 0.55:
-        return True
-    return False
+def should_speak_actively(silence_seconds):
+    """判断是否应该主动说话 - 固定阈值"""
+    return silence_seconds >= 600

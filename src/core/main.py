@@ -20,6 +20,12 @@ src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, src_dir)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# 导入并初始化日志模块
+from tools.logger import get_logger
+logger = get_logger()
+logger.redirect_output()
+logger.info("Humanaize v2.0 starting...")
+
 import warnings
 warnings.filterwarnings("ignore", message=".*iCCP.*known incorrect sRGB profile.*")
 
@@ -56,18 +62,18 @@ def _get_model_path():
     """取得當前平台的模型路徑"""
     # 取得專案根目錄 (src/core 的父目錄)
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    models_dir = os.path.join(base_dir, "models")
+    model_dir = os.path.join(base_dir, "model")
     
     # 首先檢查精確匹配
-    exact_path = os.path.join(models_dir, "tinyllama.gguf")
+    exact_path = os.path.join(model_dir, "tinyllama.gguf")
     if os.path.exists(exact_path):
         return exact_path
     
     # 如果精確匹配不存在，查找任何 GGUF 文件
-    if os.path.exists(models_dir):
-        for f in os.listdir(models_dir):
+    if os.path.exists(model_dir):
+        for f in os.listdir(model_dir):
             if f.endswith('.gguf'):
-                return os.path.join(models_dir, f)
+                return os.path.join(model_dir, f)
     
     # 如果都找不到，返回預設路徑（讓調用者處理錯誤）
     return exact_path

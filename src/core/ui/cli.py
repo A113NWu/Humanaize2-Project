@@ -32,6 +32,12 @@ class Colors:
     WHITE = '\033[37m'
     GRAY = '\033[90m'
     
+    # 新增颜色定义
+    PURPLE = '\033[38;5;147m'      # 紫色 - GAN决策
+    GOLD = '\033[38;5;220m'        # 金色 - GAN主题
+    PINK = '\033[38;5;213m'        # 粉色 - GAN反论
+    LIGHT_PURPLE = '\033[38;5;183m' # 浅紫色 - 反思
+    
     @classmethod
     def support_color(cls) -> bool:
         """檢查終端是否支援 ANSI 顏色碼"""
@@ -611,15 +617,27 @@ class HumanaizeCLI:
             self.system_logs = self.system_logs[-20:]
 
     def _on_response(self, response):
-        """處理回應回呼"""
+        """處理回應回呼 - 支持GUI端發送的各種事件類型"""
         rtype = response.get("type", "")
         
-        if rtype == "chat":
+        # 支持GUI端的chat_response類型
+        if rtype == "chat_response":
+            r = response.get("reply", "")
+            r = " ".join(r.split())
+            if r:
+                if self._use_color:
+                    self._add_chat(f"{Colors.GREEN}{self._t('ai')}:{Colors.RESET} {r}")
+                else:
+                    self._add_chat(f"{self._t('ai')}: {r}")
+            self._resume()
+            self._add_system_log("success", self._t("response_generated"))
+        
+        elif rtype == "chat":
             r = response.get("response", "")
             r = " ".join(r.split())
             if r:
                 if self._use_color:
-                    self._add_chat(f"{Colors.GREEN}AI:{Colors.RESET} {r}")
+                    self._add_chat(f"{Colors.GREEN}{self._t('ai')}:{Colors.RESET} {r}")
                 else:
                     self._add_chat(f"AI: {r}")
             self._resume()
@@ -637,11 +655,28 @@ class HumanaizeCLI:
         
         elif rtype == "internal_thought":
             t = response.get("thought", "")
+            thought_type = response.get("thought_type", "internal")
+            
             if t:
+                # 根據不同的思考類型顯示不同的標識和顏色
+                type_config = {
+                    "gan_decision": {"prefix": "GAN Decision", "color": Colors.PURPLE},
+                    "gan_topic": {"prefix": "GAN Topic", "color": Colors.GOLD},
+                    "gan_argument": {"prefix": "GAN Argument A", "color": Colors.BLUE},
+                    "gan_counter_argument": {"prefix": "GAN Argument B", "color": Colors.PINK},
+                    "gan_synthesis": {"prefix": "GAN Synthesis", "color": Colors.GREEN},
+                    "web_search": {"prefix": "Web Search", "color": Colors.CYAN},
+                    "break_silence": {"prefix": "Break Silence", "color": Colors.ORANGE},
+                    "reflection": {"prefix": "Reflection", "color": Colors.LIGHT_PURPLE},
+                    "internal": {"prefix": self._t('thinking'), "color": Colors.YELLOW}
+                }
+                
+                config = type_config.get(thought_type, type_config["internal"])
+                
                 if self._use_color:
-                    self._add_thought(f"{Colors.YELLOW}{self._t('thinking')}:{Colors.RESET} {t}")
+                    self._add_thought(f"{config['color']}[{config['prefix']}]{Colors.RESET} {t}")
                 else:
-                    self._add_thought(f"[{self._t('thinking')}] {t}")
+                    self._add_thought(f"[{config['prefix']}] {t}")
             self._add_system_log("info", self._t("internal_thinking"))
         
         elif rtype == "autonomous_message":
@@ -663,47 +698,115 @@ class HumanaizeCLI:
                     self._add_chat(f"{self._t('ai')}: {msg}")
             self._add_system_log("success", self._t("gan_thinking_complete"))
         
-        self._render()
-
-    def _on_idle_callback(self, response):
-        """處理閒置引擎回呼"""
-        rtype = response.get("type", "")
-        
-        if rtype == "internal_thought":
-            t = response.get("thought", "")
-            if t:
-                if self._use_color:
-                    self._add_thought(f"{Colors.YELLOW}{self._t('thinking')}:{Colors.RESET} {t}")
-                else:
-                    self._add_thought(f"[{self._t('thinking')}] {t}")
-        
+        # 直接處理GAN事件（兼容舊的事件格式）
         elif rtype == "gan_topic":
-            topic = response.get("topic", "")
+            topic = response.get("gan_topic", response.get("topic", ""))
             if topic:
                 if self._use_color:
-                    self._add_thought(f"{Colors.CYAN}[{self._t('topic')}]{Colors.RESET} {topic}")
+                    self._add_thought(f"{Colors.GOLD}[{self._t('topic')}]{Colors.RESET} {topic}")
                 else:
                     self._add_thought(f"[{self._t('topic')}] {topic}")
             self._add_system_log("info", f"GAN Topic: {topic[:30]}...")
         
         elif rtype == "gan_argument":
-            arg = response.get("argument", "")
+            arg = response.get("gan_argument", response.get("argument", ""))
             if arg:
                 if self._use_color:
-                    self._add_thought(f"{Colors.GREEN}[{self._t('argument')}]{Colors.RESET} {arg}")
+                    self._add_thought(f"{Colors.BLUE}[{self._t('argument')}]{Colors.RESET} {arg}")
+                else:
+                    self._add_thought(f"[{self._t('argument')}] {arg}")
+        
+        elif rtype == "gan_counter_argument":
+            counter = response.get("gan_counter_argument", response.get("counter", ""))
+            if counter:
+                if self._use_color:
+                    self._add_thought(f"{Colors.PINK}[{self._t('counter_argument')}]{Colors.RESET} {counter}")
+                else:
+                    self._add_thought(f"[{self._t('counter_argument')}] {counter}")
+        
+        elif rtype == "gan_synthesis":
+            synthesis = response.get("gan_synthesis", "")
+            if synthesis:
+                if self._use_color:
+                    self._add_thought(f"{Colors.GREEN}[GAN Synthesis]{Colors.RESET} {synthesis}")
+                else:
+                    self._add_thought(f"[GAN Synthesis] {synthesis}")
+        
+        # 支持命令执行相关事件
+        elif rtype == "command_start":
+            msg = response.get("message", "")
+            if msg:
+                if self._use_color:
+                    self._add_chat(f"{Colors.YELLOW}[Command]{Colors.RESET} {msg}")
+                else:
+                    self._add_chat(f"[Command] {msg}")
+        
+        elif rtype == "command_result":
+            output = response.get("output", "")
+            if output:
+                if self._use_color:
+                    self._add_chat(f"{Colors.CYAN}[Command Output]{Colors.RESET}\n{output}")
+                else:
+                    self._add_chat(f"[Command Output]\n{output}")
+        
+        self._render()
+
+    def _on_idle_callback(self, response):
+        """處理閒置引擎回呼 - 支持新的thought_type格式"""
+        rtype = response.get("type", "")
+        
+        if rtype == "internal_thought":
+            t = response.get("thought", "")
+            thought_type = response.get("thought_type", "internal")
+            
+            if t:
+                # 根據不同的思考類型顯示不同的標識和顏色
+                type_config = {
+                    "gan_decision": {"prefix": "GAN Decision", "color": Colors.PURPLE},
+                    "gan_topic": {"prefix": "GAN Topic", "color": Colors.GOLD},
+                    "gan_argument": {"prefix": "GAN Argument A", "color": Colors.BLUE},
+                    "gan_counter_argument": {"prefix": "GAN Argument B", "color": Colors.PINK},
+                    "gan_synthesis": {"prefix": "GAN Synthesis", "color": Colors.GREEN},
+                    "web_search": {"prefix": "Web Search", "color": Colors.CYAN},
+                    "break_silence": {"prefix": "Break Silence", "color": Colors.ORANGE},
+                    "reflection": {"prefix": "Reflection", "color": Colors.LIGHT_PURPLE},
+                    "internal": {"prefix": self._t('thinking'), "color": Colors.YELLOW}
+                }
+                
+                config = type_config.get(thought_type, type_config["internal"])
+                
+                if self._use_color:
+                    self._add_thought(f"{config['color']}[{config['prefix']}]{Colors.RESET} {t}")
+                else:
+                    self._add_thought(f"[{config['prefix']}] {t}")
+        
+        elif rtype == "gan_topic":
+            topic = response.get("gan_topic", response.get("topic", ""))
+            if topic:
+                if self._use_color:
+                    self._add_thought(f"{Colors.GOLD}[{self._t('topic')}]{Colors.RESET} {topic}")
+                else:
+                    self._add_thought(f"[{self._t('topic')}] {topic}")
+            self._add_system_log("info", f"GAN Topic: {topic[:30]}...")
+        
+        elif rtype == "gan_argument":
+            arg = response.get("gan_argument", response.get("argument", ""))
+            if arg:
+                if self._use_color:
+                    self._add_thought(f"{Colors.BLUE}[{self._t('argument')}]{Colors.RESET} {arg}")
                 else:
                     self._add_thought(f"[{self._t('argument')}] {arg}")
         
         elif rtype == "gan_counter":
-            counter = response.get("counter", "")
+            counter = response.get("gan_counter", response.get("counter", ""))
             if counter:
                 if self._use_color:
-                    self._add_thought(f"{Colors.RED}[{self._t('counter_argument')}]{Colors.RESET} {counter}")
+                    self._add_thought(f"{Colors.PINK}[{self._t('counter_argument')}]{Colors.RESET} {counter}")
                 else:
                     self._add_thought(f"[{self._t('counter_argument')}] {counter}")
         
         elif rtype == "gan_rebuttal":
-            rebuttal = response.get("rebuttal", "")
+            rebuttal = response.get("gan_rebuttal", response.get("rebuttal", ""))
             if rebuttal:
                 if self._use_color:
                     self._add_thought(f"{Colors.MAGENTA}[{self._t('rebuttal')}]{Colors.RESET} {rebuttal}")
@@ -834,21 +937,21 @@ class HumanaizeCLI:
             gan_status = self._t('enabled') if self.gan_enabled else self._t('disabled')
             msg_count = len(self.memory.get('messages', []))
             thought_count = len(self.memory.get('thoughts', []))
-            trait_info = self.personality.get("traits", {})
-            
+            name = self.personality.get("name", "Aize")
+
             if self._use_color:
                 status_text = f"{Colors.BLUE}{self._t('system_status')}{Colors.RESET}\n"
                 status_text += f"  GAN: {Colors.GREEN if self.gan_enabled else Colors.RED}{gan_status}{Colors.RESET}\n"
                 status_text += f"  {self._t('message_count')}: {Colors.BLUE}{msg_count}{Colors.RESET}\n"
                 status_text += f"  {self._t('thought_count')}: {Colors.MAGENTA}{thought_count}{Colors.RESET}\n"
-                status_text += f"  {self._t('trait_info').format(trait_info.get('curiosity', 0), trait_info.get('empathy', 0), trait_info.get('creativity', 0))}"
+                status_text += f"  Name: {Colors.CYAN}{name}{Colors.RESET}"
                 self._add_chat(status_text)
             else:
                 status_text = f"{self._t('system_status')}\n"
                 status_text += f"  GAN: {gan_status}\n"
                 status_text += f"  {self._t('message_count')}: {msg_count}\n"
                 status_text += f"  {self._t('thought_count')}: {thought_count}\n"
-                status_text += f"  {self._t('trait_info').format(trait_info.get('curiosity', 0), trait_info.get('empathy', 0), trait_info.get('creativity', 0))}"
+                status_text += f"  Name: {name}"
                 self._add_chat(status_text)
         
         elif cmd == "/gan":
@@ -875,18 +978,41 @@ class HumanaizeCLI:
                 self._add_chat(f"未知命令: {cmd}")
 
     def _shutdown(self):
-        """關閉程式"""
+        """關閉程式 - 先清屏再输出告别语"""
         save_memory(self.memory)
         
+        # 清屏
         self._clear_screen()
-        for line in self._initial_lines:
-            print(line)
-        print()
+        
+        # 显示告别语
         if self._use_color:
-            print(f"  {Colors.ORANGE}再見！感謝使用 Humanaize v2.0{Colors.RESET}")
+            print(f"\n{'=' * self.width}")
+            print(f"  {Colors.BOLD}{Colors.ORANGE}╔════════════════════════════════════════════════════════════════╗{Colors.RESET}")
+            print(f"  {Colors.BOLD}{Colors.ORANGE}║                      Humanaize v2.0 告别                        ║{Colors.RESET}")
+            print(f"  {Colors.BOLD}{Colors.ORANGE}╚════════════════════════════════════════════════════════════════╝{Colors.RESET}")
+            print(f"{'=' * self.width}")
+            print()
+            print(f"  {Colors.GREEN}感謝您使用 Humanaize AI 助手！{Colors.RESET}")
+            print(f"  {Colors.BLUE}期待下次与您相见！{Colors.RESET}")
+            print()
+            print(f"  {Colors.GRAY}您的对话历史已自动保存。{Colors.RESET}")
+            print(f"  {Colors.GRAY}再见！👋{Colors.RESET}")
+            print()
+            print(f"{'=' * self.width}")
         else:
-            print("  再見！感謝使用 Humanaize v2.0")
-        print()
+            print(f"\n{'=' * self.width}")
+            print("  ╔════════════════════════════════════════════════════════════════╗")
+            print("  ║                      Humanaize v2.0 告别                        ║")
+            print("  ╚════════════════════════════════════════════════════════════════╝")
+            print(f"{'=' * self.width}")
+            print()
+            print("  感谢您使用 Humanaize AI 助手！")
+            print("  期待下次与您相见！")
+            print()
+            print("  您的对话历史已自动保存。")
+            print("  再见！👋")
+            print()
+            print(f"{'=' * self.width}")
 
 
 if __name__ == "__main__":

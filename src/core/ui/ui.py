@@ -24,6 +24,14 @@ import queue
 import time
 import customtkinter as ctk
 
+# 导入日志模块
+try:
+    from tools.logger import get_logger
+    logger = get_logger()
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
+
 from core.Agent import Agent
 from core.thinking_engine import ThinkingEngine
 from memory.memory import load_memory, save_memory, add
@@ -62,102 +70,27 @@ class HumanaizeUI:
         self.skills_prompt = self.settings.get("skills_prompt", "")
         self.auto_break_silence = self.settings.get("auto_break_silence", True)
         self.gan_enabled = self.settings.get("gan_enabled", True)
-
+        
+        # 检查自定义模型路径是否存在，如果不存在则回退
+        if self.custom_model_path and not os.path.exists(self.custom_model_path):
+            print(f"[WARN] Custom model path not found: {self.custom_model_path}")
+            print("[INFO] Falling back to default model path")
+            self.custom_model_path = ""
+        
         self._language_code_map = {
             "English": "en",
             "中文": "zh",
+            "中文(繁體)": "zh-TW",
             "en": "en",
             "zh": "zh",
-            "zh-TW": "zh"
+            "zh-TW": "zh-TW"
         }
 
         self.thinking_engine = ThinkingEngine(on_response_callback=self.on_engine_response)
         self.thinking_engine.set_language(self.get_language_code())
 
-        self.translations = {
-            "English": {
-                "chat": "Chat",
-                "thoughts": "Thoughts",
-                "system": "System",
-                "command_output": "Command Output",
-                "input": "Input:",
-                "input_placeholder": "Enter your question. AI will pause background GAN while deciding.",
-                "send": "Send",
-                "clear": "Clear",
-                "settings": "Settings",
-                "language": "Language",
-                "theme": "Theme",
-                "model": "Local Model",
-                "custom_model": "Custom Model Path",
-                "skills": "Skills Configuration",
-                "auto_break_silence": "Allow Auto Break Silence",
-                "enable_gan": "Enable GAN",
-                "save": "Save Settings",
-                "cancel": "Cancel",
-                "deciding_gan": "System: Pausing background GAN while AI decides whether to use it...",
-                "gan_chosen": "System: AI decided to continue GAN thinking before answering.",
-                "gan_skipped": "System: AI decided to answer directly without GAN thinking."
-            },
-            "中文": {
-                "chat": "对话",
-                "thoughts": "思考",
-                "system": "系统",
-                "command_output": "命令输出",
-                "input": "输入:",
-                "input_placeholder": "请输入问题，AI会在判断是否使用GAN时暂停后台思考。",
-                "send": "发送",
-                "clear": "清空",
-                "settings": "设置",
-                "language": "语言",
-                "theme": "模式",
-                "model": "本地模型",
-                "custom_model": "自定义模型路径",
-                "skills": "技能配置",
-                "auto_break_silence": "允许自动打破沉默",
-                "enable_gan": "启用 GAN",
-                "save": "保存设置",
-                "cancel": "取消",
-                "deciding_gan": "系统：在AI决定是否继续使用GAN前，已暂停后台GAN。",
-                "gan_chosen": "系统：AI决定在回答前继续GAN思考。",
-                "gan_skipped": "系统：AI决定直接回答，不继续GAN思考。"
-            }
-        }
-        
-        try:
-            import autonomous as _autonomous_mod
-            _orig = getattr(_autonomous_mod, "check_silence_and_decide", None)
-            def _safe_check(mem, threshold_seconds=60):
-                try:
-                    if _orig is None:
-                        return None
-                    return _orig(mem, threshold_seconds)
-                except Exception:
-                    msgs = mem.get("messages", [])
-                    if not msgs:
-                        return None
-                    last = msgs[-1]
-                    t = last.get("time")
-                    try:
-                        from datetime import datetime
-                        if isinstance(t, str):
-                            last_time = datetime.fromisoformat(t)
-                        else:
-                            return None
-                        now = datetime.now()
-                        from datetime import timedelta
-                        if (now - last_time) > timedelta(seconds=threshold_seconds):
-                            return {
-                                "action": "AUTO_THINK",
-                                "message": "对话已经暂停，AI正在回顾上下文并思考下一步行动。",
-                                "confidence": 0.9
-                            }
-                        return None
-                    except Exception:
-                        return None
-            if _orig is not None:
-                _autonomous_mod.check_silence_and_decide = _safe_check
-        except Exception:
-            pass
+        # 从外部文件加载翻译
+        self.translations = self._load_translations()
 
         self.autonomous_engine = self._AutonomousAdapter(
             self.memory,
@@ -178,9 +111,63 @@ class HumanaizeUI:
         self._update_status()
 
         self._event_queue = queue.Queue()
-        self.root.after(100, self._process_event_queue)
-
+        self._ui_update_queue = queue.Queue()  # 用于UI更新的队列
+        self._event_processor_running = True
+        
+        # 创建专门的事件处理线程
+        self._event_processor_thread = threading.Thread(
+            target=self._event_processor_loop, 
+            daemon=True,
+            name="EventProcessor"
+        )
+        self._event_processor_thread.start()
+        
+        # UI更新循环（在主线程中）
+        self.root.after(50, self._ui_update_loop)
+        
+        # 添加性能优化：定期清理UI缓存
+        self._performance_cleanup_interval = 30000  # 30秒清理一次
+        self.root.after(self._performance_cleanup_interval, self._performance_cleanup)
+        
         self.logger.info("Humanaize v2.0 started successfully")
+    
+    def _load_translations(self):
+        """从 languages 文件夹加载翻译文件"""
+        translations = {}
+        # 获取项目根目录 (src/core/ui/ui.py -> src/core/ui -> src/core -> src -> project_root)
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        languages_dir = os.path.join(project_root, "languages")
+        
+        # 语言文件映射
+        lang_file_map = {
+            "English": "en_US.txt",
+            "中文": "zh_CN.txt",
+            "中文(繁體)": "zh_CN_TW.txt"
+        }
+        
+        for lang_name, filename in lang_file_map.items():
+            filepath = os.path.join(languages_dir, filename)
+            translations[lang_name] = self._parse_lang_file(filepath)
+        
+        return translations
+    
+    def _parse_lang_file(self, filepath):
+        """解析语言文件"""
+        lang_dict = {}
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    # 跳过注释和空行
+                    if not line or line.startswith("#"):
+                        continue
+                    if "=" in line:
+                        key, value = line.split("=", 1)
+                        lang_dict[key.strip()] = value.strip()
+        except Exception as e:
+            print(f"Error loading language file {filepath}: {e}")
+        
+        return lang_dict
 
     def _t(self, key: str) -> str:
         return self.translations.get(self.language, self.translations["English"]).get(key, key)
@@ -207,6 +194,7 @@ class HumanaizeUI:
         
         old_language = self.language
         old_theme = self.theme
+        old_model_path = self.custom_model_path
         self.language = settings.get("language", self.language)
         self.theme = settings.get("theme", self.theme)
         self.model_name = settings.get("model_name", self.model_name)
@@ -224,6 +212,33 @@ class HumanaizeUI:
         
         if old_theme != self.theme:
             self._update_theme()
+        
+        # 检查模型路径变化
+        new_model_path = self.custom_model_path
+        if old_model_path != new_model_path and new_model_path:
+            self._restart_llm_server()
+    
+    def _restart_llm_server(self):
+        """重启LLM服务器以加载新模型"""
+        from tools.tools import restart_llm_server
+        
+        def do_restart():
+            model_path = self.custom_model_path
+            if not model_path:
+                print("[ERROR] Model path is empty")
+                return
+            if not os.path.exists(model_path):
+                print(f"[ERROR] Model file does not exist: {model_path}")
+                return
+            print(f"[INFO] Restarting LLM server with model: {model_path}")
+            result = restart_llm_server(model_path)
+            if result:
+                print("[INFO] LLM server restarted successfully!")
+            else:
+                print("[ERROR] Failed to restart LLM server")
+        
+        # 在后台线程中执行，避免阻塞UI
+        threading.Thread(target=do_restart, daemon=True).start()
 
     def _update_theme(self):
         mode = "Dark" if self.theme.lower() == "dark" else "Light"
@@ -299,13 +314,38 @@ class HumanaizeUI:
         self.root.destroy()
         os.execv(sys.executable, [sys.executable, os.path.join(os.path.dirname(__file__), "main.py"), "boot", "-m", "gui"])
 
-    def _browse_model_path(self, path_var):
-        file_path = filedialog.askopenfilename(
-            title=self._t("custom_model"),
-            filetypes=[("GGUF Model", "*.gguf"), ("All Files", "*.*")]
-        )
-        if file_path:
-            path_var.set(file_path)
+    def _browse_model_path(self, path_var, name_var=None):
+        # 使用 initialdir 设置默认目录，避免每次都从根目录开始
+        initial_dir = os.path.dirname(path_var.get()) if path_var.get() else os.path.expanduser("~")
+        if not os.path.exists(initial_dir):
+            initial_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "model")
+        
+        # 使用 askopenfilenames 的 callback 版本，避免阻塞主线程
+        def on_file_selected():
+            file_path = self._pending_file_path
+            if file_path:
+                path_var.set(file_path)
+                # 自动刷新模型名称为新模型文件名称
+                if name_var is not None:
+                    model_name = os.path.splitext(os.path.basename(file_path))[0]
+                    name_var.set(model_name)
+                self._pending_file_path = None
+        
+        # 存储待处理的路径
+        self._pending_file_path = None
+        
+        # 使用线程打开文件对话框
+        import threading
+        def open_dialog():
+            self._pending_file_path = filedialog.askopenfilename(
+                title=self._t("custom_model"),
+                initialdir=initial_dir,
+                filetypes=[("GGUF Model", "*.gguf"), ("All Files", "*.*")]
+            )
+            # 回到主线程更新UI
+            self.root.after(0, on_file_selected)
+        
+        threading.Thread(target=open_dialog, daemon=True).start()
 
     def _open_settings_window(self):
         if getattr(self, "settings_window", None) and self.settings_window.winfo_exists():
@@ -360,7 +400,7 @@ class HumanaizeUI:
         lang_frame.grid_columnconfigure(0, weight=1)
         
         ctk.CTkLabel(lang_frame, text=self._t("language"), anchor="w", font=("Segoe UI", 12, "bold")).grid(row=0, column=0, sticky="w", padx=15, pady=(12, 8))
-        ctk.CTkOptionMenu(lang_frame, values=["English", "中文"], variable=language_var, corner_radius=8).grid(row=1, column=0, sticky="ew", padx=15, pady=(0, 12))
+        ctk.CTkOptionMenu(lang_frame, values=["English", "中文", "中文(繁體)"], variable=language_var, corner_radius=8).grid(row=1, column=0, sticky="ew", padx=15, pady=(0, 12))
         row += 1
 
         # Theme Section
@@ -384,11 +424,11 @@ class HumanaizeUI:
         model_path_frame = ctk.CTkFrame(model_frame, fg_color="transparent")
         model_path_frame.grid(row=3, column=0, sticky="ew", padx=15, pady=(0, 12))
         model_path_frame.grid_columnconfigure(0, weight=1)
-        ctk.CTkEntry(model_path_frame, textvariable=model_path_var, placeholder_text="models/tinyllama.gguf", corner_radius=8).grid(row=0, column=0, sticky="ew", padx=(0, 6))
-        ctk.CTkButton(model_path_frame, text="Browse", width=96, corner_radius=8, fg_color="#6366f1", hover_color="#4f46e5").grid(row=0, column=1)
+        ctk.CTkEntry(model_path_frame, textvariable=model_path_var, placeholder_text="model/tinyllama.gguf", corner_radius=8).grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        ctk.CTkButton(model_path_frame, text="Browse", width=96, corner_radius=8, fg_color="#6366f1", hover_color="#4f46e5", command=lambda: self._browse_model_path(model_path_var, model_name_var)).grid(row=0, column=1)
         row += 1
         
-        from llm.model_downloader import ModelDownloader
+        from core.llm.model_downloader import ModelDownloader
         downloader = ModelDownloader()
         is_installed = downloader.is_model_installed()
         
@@ -414,7 +454,7 @@ class HumanaizeUI:
             
             if result.get("success"):
                 download_status_label.configure(text=result["message"], text_color="#10b981")
-                model_path_var.set("models/tinyllama.gguf")
+                model_path_var.set("model/tinyllama.gguf")
             else:
                 download_status_label.configure(text=f"Error: {result.get('error', 'Unknown error')}", text_color="#ef4444")
         
@@ -443,7 +483,7 @@ class HumanaizeUI:
         skills_frame.grid(row=1, column=0, sticky="nsew", padx=15, pady=(0, 8))
         skills_frame.grid_columnconfigure(0, weight=1)
         
-        from tools.skills_manager import SkillsManager
+        from core.tools.skills_manager import SkillsManager
         skills_manager = SkillsManager()
         installed_skills = skills_manager.get_all_skills()
         skill_vars = {}
@@ -479,7 +519,7 @@ class HumanaizeUI:
         update_title = ctk.CTkLabel(update_frame, text="Software Updates", font=("Segoe UI", 12, "bold"), anchor="w")
         update_title.grid(row=0, column=0, sticky="w", padx=15, pady=(12, 5))
         
-        from utils.auto_updater import AutoUpdater
+        from core.utils.auto_updater import AutoUpdater
         updater = AutoUpdater("https://github.com/A113NWu/Humanaize2-Project.git")
         version_label = ctk.CTkLabel(update_frame, text=f"Current version: {updater.get_local_version()}", anchor="w")
         version_label.grid(row=1, column=0, sticky="w", padx=15, pady=(0, 5))
@@ -827,6 +867,18 @@ class HumanaizeUI:
         )
         self.thought_text.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 16))
         self.thought_text.configure(state="disabled")
+        
+        # 为不同类型的思考配置不同的颜色标签
+        self.thought_text.tag_config("gan_decision", foreground="#a78bfa")  # 紫色 - GAN决策
+        self.thought_text.tag_config("gan_topic", foreground="#fbbf24")  # 金色 - GAN主题
+        self.thought_text.tag_config("gan_argument", foreground="#60a5fa")  # 蓝色 - GAN论点A
+        self.thought_text.tag_config("gan_counter_argument", foreground="#f472b6")  # 粉色 - GAN论点B
+        self.thought_text.tag_config("gan_synthesis", foreground="#34d399")  # 绿色 - GAN综合
+        self.thought_text.tag_config("web_search", foreground="#38bdf8")  # 天蓝色 - 网络搜索
+        self.thought_text.tag_config("break_silence", foreground="#fb923c")  # 橙色 - 打破沉默
+        self.thought_text.tag_config("reflection", foreground="#c084fc")  # 浅紫色 - 反思
+        self.thought_text.tag_config("internal", foreground="#9ca3af")  # 灰色 - 内部思考
+        self.thought_text.tag_config("thinking", foreground="#6b7280")  # 默认灰色
 
     def _create_command_panel(self):
         """创建命令输出面板"""
@@ -853,6 +905,10 @@ class HumanaizeUI:
         )
         self.cmd_label.grid(row=0, column=0, sticky="w")
 
+        # 创建滚动条
+        self.command_scrollbar = ctk.CTkScrollbar(self.command_frame, orientation="vertical")
+        self.command_scrollbar.grid(row=1, column=1, sticky="ns", padx=(0, 16), pady=(0, 16))
+        
         # 命令输出内容区域
         self.command_text = ctk.CTkTextbox(
             self.command_frame,
@@ -861,9 +917,11 @@ class HumanaizeUI:
             text_color="#e0e0e0",
             border_width=0,
             corner_radius=16,
-            font=("Consolas", 12)
+            font=("Consolas", 12),
+            yscrollcommand=self.command_scrollbar.set
         )
-        self.command_text.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 16))
+        self.command_text.grid(row=1, column=0, sticky="nsew", padx=(16, 0), pady=(0, 16))
+        self.command_scrollbar.configure(command=self.command_text.yview)
         self.command_text.configure(state="disabled")
 
     def _create_status_panel(self):
@@ -972,10 +1030,17 @@ class HumanaizeUI:
         text = self.entry.get().strip()
         if not text:
             return
+        
+        logger.info(f"User input: {text}")
 
-        self.entry.delete(0, tk.END)
-        self.send_btn.configure(state="disabled")
-        self.entry.configure(state="disabled")
+        # 确保在主线程执行UI更新
+        def disable_ui():
+            self.entry.delete(0, tk.END)
+            self.send_btn.configure(state="disabled")
+            self.entry.configure(state="disabled")
+            self._add_chat_message("AI: Thinking...", "thinking_placeholder")
+        
+        self.root.after(0, disable_ui)
 
         self._add_chat_message(f"You: {text}")
 
@@ -986,11 +1051,22 @@ class HumanaizeUI:
             self.idle_engine.pause()
         self.autonomous_engine.on_user_message()
 
-        self._add_chat_message("System: AI is thinking...", "autonomous")
+        # 设置超时机制，防止UI永久卡住（60秒超时）
+        def timeout_handler():
+            logger.warning("UI timeout triggered")
+            self.root.after(0, self._restore_ui_state)
+        
+        self._ui_timeout_id = self.root.after(60000, timeout_handler)
 
         def on_answer_decision(result):
+            
+            # 取消超时定时器
+            if hasattr(self, '_ui_timeout_id'):
+                self.root.after_cancel(self._ui_timeout_id)
+            
             should_answer, answer_reason = result
             
+            # 使用 root.after() 确保在主线程执行UI更新
             def update_ui_answer():
                 if not should_answer:
                     self._add_chat_message(f"System: AI chose not to respond to your input.", "autonomous")
@@ -1006,6 +1082,7 @@ class HumanaizeUI:
                 def on_gan_decision(gan_result):
                     should_use_gan, gan_decision_reason = gan_result
                     
+                    # 使用 root.after() 确保在主线程执行UI更新
                     def update_ui_gan():
                         if should_use_gan:
                             self._add_chat_message(self._t("gan_chosen"), "autonomous")
@@ -1014,7 +1091,7 @@ class HumanaizeUI:
                             self._add_chat_message(self._t("gan_skipped"), "autonomous")
                         
                         prompt = f"""{context}\n\nUser: {text}\nAssistant:"""
-
+                        
                         try:
                             if self.gan_enabled:
                                 self.thinking_engine.queue_chat_task(prompt, memory=self.memory, use_gan_decision=True, user_text=text)
@@ -1023,6 +1100,7 @@ class HumanaizeUI:
                         except TypeError:
                             self.thinking_engine.queue_chat_task(prompt)
                     
+                    # 使用 root.after() 确保在主线程执行
                     self.root.after(0, update_ui_gan)
                 
                 if self.gan_enabled:
@@ -1030,6 +1108,7 @@ class HumanaizeUI:
                 else:
                     on_gan_decision((False, "GAN disabled"))
             
+            # 使用 root.after() 确保在主线程执行
             self.root.after(0, update_ui_answer)
         
         self.thinking_engine.should_answer_user_async(text, on_answer_decision)
@@ -1049,113 +1128,295 @@ class HumanaizeUI:
         return context
 
     def _add_chat_message(self, text: str, message_type: str = "normal"):
-        self.root.after(0, lambda: self._unsafe_add_chat_message(text, message_type))
+        # Chat区域只显示：1) 用户消息 2) AI回复 3) AI打破沉默的消息
+        # 过滤掉系统消息、错误信息、命令执行消息等
+        
+        # 只允许以下类型的消息显示在Chat区域
+        allowed_types = ["normal", "thinking_placeholder"]  # normal包含用户消息和AI回复
+        
+        # 检查消息内容是否为允许的类型
+        if message_type not in allowed_types:
+            # 检查是否是AI打破沉默的消息（以"📢 AI decided to speak proactively"开头）
+            if not text.startswith("📢 AI decided to speak proactively"):
+                # 其他系统消息、错误消息等不在Chat区域显示
+                logger.info(f"Filtered message from Chat area: type={message_type}, text={text[:50]}...")
+                return
+        
+        # Direct call for faster UI update (avoid after(0) delay)
+        try:
+            self._unsafe_add_chat_message(text, message_type)
+        except Exception as e:
+            # Fallback to after(0) if direct call fails
+            self.root.after(0, lambda: self._unsafe_add_chat_message(text, message_type))
 
-    def _add_thought_message(self, text: str):
-        self.root.after(0, lambda: self._unsafe_add_thought_message(text))
+    def _add_thought_message(self, text: str, thought_type: str = "internal"):
+        try:
+            self._unsafe_add_thought_message(text, thought_type)
+        except Exception:
+            self.root.after(0, lambda: self._unsafe_add_thought_message(text, thought_type))
 
-    def _unsafe_add_thought_message(self, text: str):
+    def _unsafe_add_thought_message(self, text: str, thought_type: str = "internal"):
+        """Add thought message with type-specific formatting"""
         self.thought_text.configure(state="normal")
-        self.thought_text.insert(tk.END, text + "\n", "thinking")
+        
+        # 为不同类型的思考添加标识和颜色
+        type_prefixes = {
+            "gan_decision": "🧠 [GAN Decision]",
+            "gan_topic": "🎯 [GAN Topic]",
+            "gan_argument": "💬 [GAN Argument A]",
+            "gan_counter_argument": "💭 [GAN Argument B]",
+            "gan_synthesis": "✨ [GAN Synthesis]",
+            "web_search": "🔍 [Web Search]",
+            "break_silence": "📢 [Break Silence]",
+            "reflection": "🤔 [Reflection]",
+            "internal": "💭 [Internal Thought]"
+        }
+        
+        # 获取对应的前缀
+        prefix = type_prefixes.get(thought_type, "💭 [Thought]")
+        
+        # 添加带前缀的消息
+        formatted_text = f"{prefix} {text}\n"
+        self.thought_text.insert(tk.END, formatted_text, thought_type)
         self.thought_text.see(tk.END)
         self.thought_text.configure(state="disabled")
+        # 不强制更新UI，让Tkinter自然处理
 
     def _unsafe_add_chat_message(self, text: str, message_type: str):
-        self.chat_box.configure(state="normal")
-        if message_type == "thinking":
-            self.chat_box.insert(tk.END, text + "\n", "thinking")
-        elif message_type == "thinking_placeholder":
-            self.chat_box.insert(tk.END, text + "\n", "thinking")
-        elif message_type == "autonomous":
-            self.chat_box.insert(tk.END, text + "\n", "autonomous")
-        elif message_type == "command":
-            self.chat_box.insert(tk.END, text + "\n", "command")
-        elif message_type == "error":
-            self.chat_box.insert(tk.END, text + "\n", "error")
-        else:
-            self.chat_box.insert(tk.END, text + "\n")
-        self.chat_box.see(tk.END)
-        self.chat_box.configure(state="disabled")
+        try:
+            self.chat_box.configure(state="normal")
+            if message_type == "thinking":
+                self.chat_box.insert(tk.END, text + "\n", "thinking")
+            elif message_type == "thinking_placeholder":
+                self.chat_box.insert(tk.END, text + "\n", "thinking")
+            elif message_type == "autonomous":
+                self.chat_box.insert(tk.END, text + "\n", "autonomous")
+            elif message_type == "command":
+                self.chat_box.insert(tk.END, text + "\n", "command")
+            elif message_type == "error":
+                self.chat_box.insert(tk.END, text + "\n", "error")
+            else:
+                self.chat_box.insert(tk.END, text + "\n")
+            self.chat_box.see(tk.END)
+            self.chat_box.configure(state="disabled")
+            # 不强制更新UI，让Tkinter自然处理
+        except Exception as e:
+            pass
 
     def on_engine_response(self, response: dict):
+        """接收来自引擎的响应 - 线程安全"""
         try:
             self._event_queue.put(response)
-        except Exception:
+        except Exception as e:
             pass
 
-    def _process_event_queue(self):
-        try:
-            while True:
-                event = self._event_queue.get_nowait()
-                try:
-                    self._handle_engine_response(event)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        finally:
-            self.root.after(100, self._process_event_queue)
+    def _event_processor_loop(self):
+        """在后台线程中处理事件 - 永不阻塞UI主线程"""
+        while self._event_processor_running:
+            try:
+                # 使用较长的超时时间，减少CPU轮询
+                event = self._event_queue.get(timeout=0.1)
+                if event is None:
+                    break
+                
+                # 处理事件并生成UI更新任务
+                ui_updates = self._process_event_to_ui_updates(event)
+                
+                # 将UI更新任务放入UI队列
+                for update in ui_updates:
+                    self._ui_update_queue.put(update)
+                    
+            except queue.Empty:
+                continue
+            except Exception as e:
+                pass
 
-    def _handle_engine_response(self, response: dict):
-        response_type = response.get("type")
+    def _process_event_to_ui_updates(self, event):
+        """处理事件并返回UI更新任务列表"""
+        updates = []
+        response_type = event.get("type")
+        
         if response_type == "chat_response":
-            reply = response.get("reply", "")
-            content = self.chat_box.get("1.0", tk.END)
-            if content.rstrip().endswith("AI: Thinking..."):
-                self.chat_box.configure(state="normal")
-                self.chat_box.delete("end-2l", "end-1l")
-                self.chat_box.configure(state="disabled")
-            r = reply.strip()
-            r = "\n".join([ln.rstrip() for ln in r.splitlines() if ln.strip() != ""]) or ""
-            display = f"AI: {r}" if r else "AI:"
-            self._add_chat_message(display)
-            self.send_btn.configure(state="normal")
-            self.entry.configure(state="normal")
-            self.entry.focus()
-            self._resume_idle_engine()
+            reply = event.get("reply", "")
+            updates.append({
+                "type": "chat_response",
+                "reply": reply
+            })
+        
         elif response_type == "error":
-            error = response.get("error", "Unknown error")
-            self._add_chat_message(f"[ERROR] {error}", "error")
-            self.send_btn.configure(state="normal")
-            self.entry.configure(state="normal")
-            self._resume_idle_engine()
+            error = event.get("error", "Unknown error")
+            updates.append({
+                "type": "error",
+                "error": error
+            })
+        
         elif response_type == "internal_thought":
-            thought = response.get("thought", "")
+            thought = event.get("thought", "")
+            thought_type = event.get("thought_type", "internal")
             if thought:
-                self._add_thought_message(thought)
-        elif response_type == "pending_chat_ready":
-            prompt = response.get("prompt")
-            memory = response.get("memory")
-            if prompt:
-                try:
-                    self.thinking_engine.queue_chat_task(prompt, memory=memory)
-                except TypeError:
-                    self.thinking_engine.queue_chat_task(prompt)
-                self._add_chat_message("System: Current internal GAN finished. Answering your question now.", "autonomous")
-        elif response_type == "autonomous_message":
-            message = response.get("message", "The conversation is paused, AI is reviewing the context and preparing a reply.")
-            self._add_chat_message(f"📢 AI decided to speak proactively: {message}", "autonomous")
+                updates.append({
+                    "type": "internal_thought",
+                    "thought": thought,
+                    "thought_type": thought_type
+                })
+        
         elif response_type == "command_start":
-            msg = response.get("message", "AI is executing a command...\n")
+            msg = event.get("message", "AI is executing a command...\n")
             if not msg.endswith("\n"):
                 msg += "\n"
-            self._add_chat_message(msg, "command")
-            self.command_text.configure(state="normal")
-            self.command_text.delete("1.0", tk.END)
-            self.command_text.insert(tk.END, "Executing...\n")
-            self.command_text.configure(state="disabled")
+            updates.append({
+                "type": "command_start",
+                "message": msg
+            })
+        
         elif response_type == "command_result":
-            out = response.get("output", "")
-            self._add_chat_message(f"Command output:\n{out if out else '(no output)'}", "command")
+            output = event.get("output", "")
+            updates.append({
+                "type": "command_result",
+                "output": output
+            })
+        
+        elif response_type == "pending_chat_ready":
+            prompt = event.get("prompt")
+            memory = event.get("memory")
+            updates.append({
+                "type": "pending_chat_ready",
+                "prompt": prompt,
+                "memory": memory
+            })
+        
+        elif response_type == "autonomous_message":
+            message = event.get("message", "The conversation is paused, AI is reviewing the context and preparing a reply.")
+            updates.append({
+                "type": "autonomous_message",
+                "message": message
+            })
+        
+        return updates
+
+    def _ui_update_loop(self):
+        """在主线程中执行UI更新 - 每50ms检查一次"""
+        try:
+            # 一次处理最多5个更新，避免阻塞
+            for _ in range(5):
+                try:
+                    update = self._ui_update_queue.get_nowait()
+                    self._apply_ui_update(update)
+                except queue.Empty:
+                    break
+        except Exception as e:
+            pass
+        
+        # 继续下一个循环
+        self.root.after(50, self._ui_update_loop)
+
+    def _apply_ui_update(self, update):
+        """应用UI更新 - 在主线程中调用"""
+        update_type = update.get("type")
+        
+        if update_type == "chat_response":
+            self._handle_chat_response_update(update)
+        elif update_type == "error":
+            self._handle_error_update(update)
+        elif update_type == "internal_thought":
+            self._handle_internal_thought_update(update)
+        elif update_type == "command_start":
+            self._handle_command_start_update(update)
+        elif update_type == "command_result":
+            self._handle_command_result_update(update)
+        elif update_type == "pending_chat_ready":
+            self._handle_pending_chat_ready_update(update)
+        elif update_type == "autonomous_message":
+            self._handle_autonomous_message_update(update)
+
+    def _handle_chat_response_update(self, update):
+        """处理聊天响应更新"""
+        # 取消超时定时器（任何响应都表示流程正常进行）
+        if hasattr(self, '_ui_timeout_id'):
+            try:
+                self.root.after_cancel(self._ui_timeout_id)
+            except Exception:
+                pass
+        
+        reply = update.get("reply", "")
+        logger.info(f"AI response to display: {reply[:200] if reply else 'Empty'}")
+        
+        # 优化的删除Thinking消息逻辑 - 只检查最后几行
+        self.chat_box.configure(state="normal")
+        content = self.chat_box.get("1.0", tk.END)
+        
+        # 检查最后几行是否包含Thinking消息
+        if "AI: Thinking..." in content or "System: AI is thinking..." in content:
+            lines = content.split('\n')
+            for i in range(len(lines) - 1, max(0, len(lines) - 5), -1):
+                if "Thinking..." in lines[i]:
+                    line_num = i + 1
+                    self.chat_box.delete(f"{line_num}.0", f"{line_num}.end")
+                    break
+        
+        self.chat_box.configure(state="disabled")
+        
+        r = reply.strip()
+        r = "\n".join([ln.rstrip() for ln in r.splitlines() if ln.strip() != ""]) or ""
+        display = f"AI: {r}" if r else "AI:"
+        logger.info(f"Final display text: {display}")
+        self._add_chat_message(display)
+        self.send_btn.configure(state="normal")
+        self.entry.configure(state="normal")
+        self.entry.focus()
+        self._resume_idle_engine()
+
+    def _handle_error_update(self, update):
+        """处理错误更新"""
+        error = update.get("error", "Unknown error")
+        self._add_chat_message(f"[ERROR] {error}", "error")
+        self.send_btn.configure(state="normal")
+        self.entry.configure(state="normal")
+        self._resume_idle_engine()
+
+    def _handle_internal_thought_update(self, update):
+        """处理内部思考更新"""
+        thought = update.get("thought", "")
+        thought_type = update.get("thought_type", "internal")
+        if thought:
+            self._add_thought_message(thought, thought_type)
+
+    def _handle_command_start_update(self, update):
+        """处理命令开始更新"""
+        msg = update.get("message", "AI is executing a command...\n")
+        self._add_chat_message(msg, "command")
+        self.command_text.configure(state="normal")
+        self.command_text.delete("1.0", tk.END)
+        self.command_text.insert(tk.END, "Executing...\n")
+        self.command_text.configure(state="disabled")
+
+    def _handle_command_result_update(self, update):
+        """处理命令结果更新"""
+        output = update.get("output", "")
+        if output:
+            if not output.endswith("\n"):
+                output += "\n"
             self.command_text.configure(state="normal")
             self.command_text.delete("1.0", tk.END)
-            self.command_text.insert(tk.END, out if out else "(no output)")
+            self.command_text.insert(tk.END, output)
+            self.command_text.see(tk.END)
             self.command_text.configure(state="disabled")
-        elif response_type == "gan_complete":
-            gan_result = response.get("gan_result", {})
-            should_speak, message = self.thinking_engine.should_proactively_speak(self.memory, gan_result)
-            if should_speak and message:
-                self._add_chat_message(f"AI (proactive): {message}", "autonomous")
+
+    def _handle_pending_chat_ready_update(self, update):
+        """处理待处理聊天就绪更新"""
+        prompt = update.get("prompt")
+        memory = update.get("memory")
+        if prompt:
+            try:
+                self.thinking_engine.queue_chat_task(prompt, memory=memory)
+            except TypeError:
+                self.thinking_engine.queue_chat_task(prompt)
+            self._add_chat_message("System: Current internal GAN finished. Answering your question now.", "autonomous")
+
+    def _handle_autonomous_message_update(self, update):
+        """处理自主消息更新"""
+        message = update.get("message", "The conversation is paused, AI is reviewing the context and preparing a reply.")
+        self._add_chat_message(f"📢 AI decided to speak proactively: {message}", "autonomous")
 
     def on_autonomous_speak(self):
         self._add_chat_message("📢 AI decided to speak proactively (thinking...)", "autonomous")
@@ -1205,6 +1466,57 @@ class HumanaizeUI:
     def _resume_idle_engine(self):
         if hasattr(self, "idle_engine") and getattr(self.idle_engine, "paused", False):
             self.idle_engine.resume()
+
+    def _restore_ui_state(self):
+        """恢复UI状态 - 用于超时或异常情况下的UI恢复"""
+        try:
+            self.send_btn.configure(state="normal")
+            self.entry.configure(state="normal")
+            self.entry.focus()
+            self._resume_idle_engine()
+            self._add_chat_message("System: UI timeout occurred, please try again.", "error")
+        except Exception as e:
+            pass
+
+    def _performance_cleanup(self):
+        """定期清理UI缓存，优化性能"""
+        try:
+            # 清理聊天框缓存（限制最大行数）
+            chat_content = self.chat_box.get("1.0", tk.END)
+            chat_lines = chat_content.split('\n')
+            max_chat_lines = 500  # 最多保留500行
+            
+            if len(chat_lines) > max_chat_lines:
+                # 删除多余的行
+                self.chat_box.configure(state="normal")
+                self.chat_box.delete("1.0", f"{len(chat_lines) - max_chat_lines + 1}.0")
+                self.chat_box.configure(state="disabled")
+            
+            # 清理思考框缓存
+            thought_content = self.thought_text.get("1.0", tk.END)
+            thought_lines = thought_content.split('\n')
+            max_thought_lines = 300  # 最多保留300行
+            
+            if len(thought_lines) > max_thought_lines:
+                self.thought_text.configure(state="normal")
+                self.thought_text.delete("1.0", f"{len(thought_lines) - max_thought_lines + 1}.0")
+                self.thought_text.configure(state="disabled")
+            
+            # 清理命令输出框缓存
+            command_content = self.command_text.get("1.0", tk.END)
+            command_lines = command_content.split('\n')
+            max_command_lines = 200
+            
+            if len(command_lines) > max_command_lines:
+                self.command_text.configure(state="normal")
+                self.command_text.delete("1.0", f"{len(command_lines) - max_command_lines + 1}.0")
+                self.command_text.configure(state="disabled")
+            
+        except Exception as e:
+            pass
+        
+        # 继续定期清理
+        self.root.after(self._performance_cleanup_interval, self._performance_cleanup)
 
     def _update_status(self):
         def update():

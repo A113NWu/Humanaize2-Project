@@ -7,14 +7,32 @@ from datetime import datetime
 core_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, core_dir)
 
+# 导入日志模块
+try:
+    from tools.logger import get_logger
+    logger = get_logger()
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
+
 from memory import add, add_thought, save_memory
 from llm.llm_enhanced import generate_with_emotion_feedback
 from Agent import Agent
 from tools.notify import notify_ai_decision, notify_ai_response
 from tools.web_search import WebSearch
+from tools.self_optimizer import get_optimizer
+from Prompt.chat_prompt import get_break_silence_prompt
+from data.prompts_manager import (
+    load_should_answer_user_prompt,
+    load_should_use_gan_prompt,
+    load_should_reconsider_prompt,
+    load_should_proactively_speak_prompt,
+    load_choose_response_topic_prompt
+)
 
 class ThinkingEngine:
     def __init__(self, on_response_callback=None):
+        logger.info("Initializing ThinkingEngine")
         self.on_response = on_response_callback
         self.queue = queue.Queue()
         self.running = True
@@ -24,10 +42,15 @@ class ThinkingEngine:
         self.language = "en"
         self._decision_queue = queue.Queue()
         self._decision_thread = threading.Thread(target=self._process_decisions, daemon=True)
+        # 初始化自我优化器
+        self.optimizer = get_optimizer()
+        self._last_interaction_time = None
+        self._interaction_count = 0
         self._decision_thread.start()
         
         # Initialize web search capability
         self.web_search = WebSearch()
+        logger.info("ThinkingEngine initialized successfully")
         self.search_enabled = True  # Enable web search by default
     
     def set_language(self, language: str):
@@ -62,58 +85,32 @@ class ThinkingEngine:
         """Synchronous version of should_answer_user for internal use"""
         from llm import chat
         
-        decision_prompt = f"""
-You are an AI assistant deciding whether to respond to a user input.
-User input: "{user_text}"
-
-Consider whether this input:
-- Is a question asking for information (should answer)
-- Is a greeting or acknowledgment (may not need direct answer)
-- Is a command or request (should answer)
-- Is just "ok", "yes", "no" or very brief (may not need answer)
-- Requires domain knowledge or opinion (should answer)
-
-Should you respond to this user input? Answer YES or NO and briefly explain why.
-"""
+        decision_prompt = load_should_answer_user_prompt(user_text)
         
         try:
-            response = chat(decision_prompt).strip()
-            should_answer = "YES" in response.upper()
+            response = chat(decision_prompt, max_tokens=100, temperature=0.3).strip()
+            should_answer = "是" in response or "YES" in response.upper() or "会" in response
             # 发送AI决策通知
             decision = "YES" if should_answer else "NO"
             notify_ai_decision(decision, response)
             return (should_answer, response)
         except Exception as e:
-            return (True, f"Error: {e}")
+            # 默认回答用户，避免流程中断
+            return (True, f"Error: {e} (defaulting to answer)")
     
     def _should_use_gan_sync(self, user_text, context=""):
         """Synchronous version of should_use_gan_for_answer for internal use"""
         from llm import chat
         
-        decision_prompt = f"""
-You are an AI assistant with internal GAN self-debate capability.
-You have already decided to answer the user's question. Now decide if you need deep reflection.
-
-User input: "{user_text}"
-
-{context}
-
-Consider whether this question would benefit from GAN self-debate:
-- Complex or controversial topics (needs GAN)
-- Questions requiring balanced analysis (needs GAN)
-- Philosophical or ethical questions (needs GAN)
-- Simple factual questions (no need for GAN)
-- Routine requests (no need for GAN)
-
-Should you perform GAN thinking before answering? Answer YES or NO and briefly explain why.
-"""
+        decision_prompt = load_should_use_gan_prompt(user_text, context)
         
         try:
-            response = chat(decision_prompt).strip()
-            should_use_gan = "YES" in response.upper()
+            response = chat(decision_prompt, max_tokens=100, temperature=0.3).strip()
+            should_use_gan = "是" in response or "YES" in response.upper()
             return (should_use_gan, response)
         except Exception as e:
-            return (False, f"Error: {e}")
+            # 默认不使用GAN，避免流程中断
+            return (False, f"Error: {e} (defaulting to no GAN)")
     
     def should_answer_user_async(self, user_text, callback):
         """Asynchronously decide if AI should answer the user"""
@@ -140,7 +137,7 @@ Should you perform GAN thinking before answering? Answer YES or NO and briefly e
         except Exception:
             return {}
 
-    def _load_agent_prompt(self) -> str:
+    def _load_agent_prompt(self, personality=None) -> str:
         prompt_path = os.path.join(os.path.dirname(__file__), "data", "agent_prompt.txt")
         try:
             with open(prompt_path, "r", encoding="utf-8") as f:
@@ -149,7 +146,6 @@ Should you perform GAN thinking before answering? Answer YES or NO and briefly e
             prompt = (
                 "You are an assistant that can execute shell commands and Openclaw-style skills through the Agent interface. "
                 "Always begin by writing an internal thought section labeled THOUGHT:, then write a final answer section labeled RESPONSE:. "
-                "If you need to run a shell command, output exactly one command wrapped in exclamation marks, for example: !echo hello!. "
                 "If you need to invoke a skill, output exactly one JSON object with keys such as {\"skill\": \"shell\", \"input\": \"...\"} or {\"skill\": \"shell\", \"input\": {\"command\": \"...\"}}. "
                 "Do not output any other text outside the exact command or JSON object. "
                 "Do not use markdown formatting, code fences, or extra commentary. "
@@ -157,6 +153,15 @@ Should you perform GAN thinking before answering? Answer YES or NO and briefly e
                 "After the Agent runs the command or skill, wait for the result and continue with the next step in plain text. "
                 "If a command fails, fix it in the next response. "
             )
+        
+        # 添加人格信息到提示词
+        if personality:
+            try:
+                from personality import get_personality_context
+                personality_context = get_personality_context(personality)
+                prompt = personality_context + "\n\n" + prompt
+            except Exception as e:
+                logger.warning(f"Failed to load personality context: {e}")
         
         try:
             from Agent import Agent
@@ -184,9 +189,11 @@ Should you perform GAN thinking before answering? Answer YES or NO and briefly e
         return None, text.strip()
 
     def _process(self):
+        logger.info("Process thread started")
         while self.running:
             task = self.queue.get()
             if task is None:
+                logger.info("Process thread received None, stopping")
                 break
             
             task_type = task.get("type", "chat")
@@ -194,9 +201,12 @@ Should you perform GAN thinking before answering? Answer YES or NO and briefly e
             memory = task.get("memory")
             emotion_monitor = task.get("emotion_monitor")
             user_text = task.get("user_text")
+            personality = task.get("personality")
             
-            # 从 data/agent_prompt.txt 加载提示词
-            exec_instr = self._load_agent_prompt()
+            logger.info(f"Processing task: type={task_type}, prompt_length={len(prompt) if prompt else 0}")
+            
+            # 从 data/agent_prompt.txt 加载提示词（包含人格信息）
+            exec_instr = self._load_agent_prompt(personality)
             
             # 区分不同的任务类型
             if task_type == "gan":
@@ -213,11 +223,42 @@ Should you perform GAN thinking before answering? Answer YES or NO and briefly e
             else:  # chat
                 # 普通聊天任务
                 self._handle_chat_task(prompt, memory, emotion_monitor, exec_instr)
+        
+        logger.info("Process thread stopped")
 
     def _handle_chat_task(self, prompt, memory, emotion_monitor, exec_instr):
         """Handle a normal chat task."""
+        logger.info(f"Handling chat task, prompt length: {len(prompt) if prompt else 0}")
         # First check if web search is needed
         user_text = self._extract_user_text_from_prompt(prompt)
+        
+        # Solve模式：先尝试从经验数据库快速查找解决方案
+        quick_solution = self.optimizer.solve_problem(user_text)
+        if quick_solution:
+            logger.info(f"Solve mode: Found quick solution for '{user_text[:30]}'")
+            if self.on_response:
+                self.on_response({"type": "internal_thought", "thought": "[Solve Mode] 使用经验数据库快速解决问题", "thought_type": "solve_mode"})
+            
+            # 只保存到经验数据库（Solve模式）
+            self.optimizer.record_solve_interaction(user_text, quick_solution, success=True)
+            
+            if memory is not None:
+                add(memory, "assistant", quick_solution)
+                save_memory(memory)
+            if self.on_response:
+                self.on_response({"type": "chat_response", "reply": quick_solution})
+            notify_ai_response(quick_solution)
+            
+            # 记录学习（只记录到经验）
+            self._record_and_learn(user_text, quick_solution)
+            return
+        
+        # 检查是否有蒸馏知识可用
+        distilled_prompt = self.optimizer.conversation_learner.prompt_distiller.generate_training_prompt(user_text)
+        if distilled_prompt:
+            logger.info(f"Using distilled prompt for topic: {user_text[:30]}")
+            # 将蒸馏知识添加到提示词中
+            prompt = distilled_prompt + "\n\n" + prompt
         
         # Check if we should perform a web search
         if self.search_enabled and user_text:
@@ -226,14 +267,20 @@ Should you perform GAN thinking before answering? Answer YES or NO and briefly e
                 # Add search results to prompt
                 search_summary = self.web_search.summarize_results(user_text, search_results)
                 if self.on_response:
-                    self.on_response({"type": "internal_thought", "thought": f"[Web Search] Found information about: {user_text}"})
+                    self.on_response({"type": "internal_thought", "thought": f"[Web Search] Found information about: {user_text}", "thought_type": "web_search"})
                 prompt = f"Web search results for your question:\n{search_summary}\n\n{prompt}"
+                logger.info(f"Web search performed for: {user_text}")
         
+        logger.info("Calling generate_with_emotion_feedback")
         reply, adaptation = generate_with_emotion_feedback(exec_instr + "\n\n" + prompt, emotion_monitor)
+        logger.info(f"LLM reply received: {reply[:200] if reply else 'Empty'}...")
+        
         thought, target_reply = self._extract_thought_and_response(reply)
+        logger.info(f"Extracted thought: {thought[:100] if thought else 'None'}, target_reply: {target_reply[:100] if target_reply else 'None'}")
+        
         if thought:
             if self.on_response:
-                self.on_response({"type": "internal_thought", "thought": thought})
+                self.on_response({"type": "internal_thought", "thought": thought, "thought_type": "internal"})
             if memory is not None:
                 add_thought(memory, thought, thought_type="internal")
                 save_memory(memory)
@@ -243,20 +290,38 @@ Should you perform GAN thinking before answering? Answer YES or NO and briefly e
             save_memory(memory)
 
         actual_reply = target_reply or reply
+        
+        # 提取RESPONSE内容（如果存在）
+        response_content = self._extract_response_content(actual_reply)
+        logger.info(f"Response content extracted: {response_content[:100] if response_content else 'None'}")
+        
         try:
             agent = Agent('!')
             agent.set_language(self.language)
             if agent.has_actions(actual_reply):
+                logger.info("Agent has actions to execute")
                 if self.on_response:
                     self.on_response({"type": "command_start", "message": "AI is executing a command...\n"})
                 out = agent.agent('!', actual_reply)
+                logger.info(f"Agent output: {out[:200] if out else 'Empty'}")
                 if self.on_response:
                     self.on_response({"type": "command_result", "output": out})
-                cleaned = re.sub(r'!.*?!', '', actual_reply, flags=re.S).strip()
-                if not cleaned or (cleaned.startswith('{') and cleaned.endswith('}')):
-                    final_reply = "[Command executed; see command output]"
+                
+                # 从命令执行中学习
+                self._learn_from_command_result(actual_reply, out, success=True)
+                
+                # 如果有RESPONSE内容，使用它；否则清理命令后作为回复
+                if response_content:
+                    final_reply = response_content
                 else:
-                    final_reply = cleaned
+                    cleaned = re.sub(r'!.*?!', '', actual_reply, flags=re.S).strip()
+                    if not cleaned or (cleaned.startswith('{') and cleaned.endswith('}')):
+                        final_reply = "[Command executed; see command output]"
+                    else:
+                        final_reply = cleaned
+                        
+                logger.info(f"AI final reply (with command): {final_reply}")
+                
                 if memory is not None:
                     add(memory, "assistant", final_reply)
                     add(memory, "system", f"Command output:\n{out}")
@@ -265,24 +330,120 @@ Should you perform GAN thinking before answering? Answer YES or NO and briefly e
                     self.on_response({"type": "chat_response", "reply": final_reply})
                 # 发送AI回复通知
                 notify_ai_response(final_reply)
+                
+                # 将命令结果发给AI，引导她解决问题
                 try:
-                    followup_prompt = final_reply + "\n\nCommand output:\n" + (out or "") + "\n\nPlease use the above output to continue the next step."
+                    followup_prompt = f"""
+命令执行完成！结果如下：
+{out}
+
+请分析这个结果，帮助用户解决问题。如果需要，你可以：
+1. 搜索相关资料获取更多信息
+2. 创建新的技能来解决这类问题
+3. 根据结果继续下一步操作
+
+用户的原始问题是：{user_text}
+"""
+                    logger.info("Generating followup response after command execution")
                     freply, fadapt = generate_with_emotion_feedback(exec_instr + "\n\n" + followup_prompt, emotion_monitor)
+                    logger.info(f"Followup reply: {freply[:200] if freply else 'Empty'}")
                     if memory is not None:
                         add(memory, "assistant", freply)
                         save_memory(memory)
                     if self.on_response:
                         self.on_response({"type": "chat_response", "reply": freply})
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.error(f"Followup generation error: {e}")
             else:
-                if self.on_response:
-                    self.on_response({"type": "chat_response", "reply": actual_reply})
-                # 发送AI回复通知
-                notify_ai_response(actual_reply)
+                # 没有命令时，使用RESPONSE内容（如果存在）或完整回复
+                if response_content:
+                    final_reply = response_content
+                else:
+                    final_reply = actual_reply
+                
+                # 清理并人性化回复
+                final_reply = self._clean_and_humanize_reply(final_reply)
+                
+                # 如果清理后返回None，不发送回复（让AI重新生成）
+                if final_reply:
+                    logger.info(f"AI final reply (no command): {final_reply}")
+                    if self.on_response:
+                        self.on_response({"type": "chat_response", "reply": final_reply})
+                    # 发送AI回复通知
+                    notify_ai_response(final_reply)
+                else:
+                    logger.info("AI reply was filtered out, not sending")
         except Exception as e:
+            logger.error(f"Error in _handle_chat_task: {e}")
             if self.on_response:
                 self.on_response({"type": "error", "error": str(e)})
+        
+        finally:
+            # 记录交互并进行学习
+            self._record_and_learn(user_text, final_reply)
+                
+    def _record_and_learn(self, user_input, ai_response, command_result=None, command_success=True):
+        """Record interaction and run continuous learning"""
+        try:
+            # 记录交互到自我优化器
+            self.optimizer.record_interaction(
+                user_input=user_input,
+                ai_response=ai_response,
+                response_time=0.0,
+                success=True,
+                sentiment=0.5
+            )
+            
+            # 如果有命令执行结果，也记录下来
+            if command_result:
+                self.optimizer.record_command_result(command_result, ai_response, command_success)
+            
+            # 运行学习更新
+            learning_result = self.optimizer.run_learning_update()
+            if learning_result.get("learned", False):
+                logger.info(f"Continuous learning completed: {learning_result}")
+                
+                # 如果学习到了新模式，检查是否需要创建新技能
+                skill_suggestion = self.optimizer.conversation_learner.suggest_new_skill()
+                if skill_suggestion:
+                    logger.info(f"Skill suggestion: {skill_suggestion}")
+                    # 自动生成技能创建提示
+                    self._suggest_skill_creation(skill_suggestion)
+            
+            # 运行优化（如果条件满足）
+            optimization_result = self.optimizer.run_optimization()
+            if optimization_result.get("optimized", False):
+                logger.info(f"Self-optimization completed: {optimization_result}")
+                
+        except Exception as e:
+            logger.error(f"Error in _record_and_learn: {e}")
+    
+    def _suggest_skill_creation(self, suggestion):
+        """Suggest creating a new skill based on learning"""
+        if self.on_response:
+            self.on_response({
+                "type": "learning_insight",
+                "message": f"根据学习分析，{suggestion} 需要我帮你创建这个技能吗？"
+            })
+    
+    def _learn_from_command_result(self, command, result, success):
+        """Learn from command execution result"""
+        try:
+            self.optimizer.record_command_result(command, result, success)
+            
+            # 分析命令执行结果，看看是否可以创建新技能
+            if success:
+                skill_suggestion = self.optimizer.conversation_learner.suggest_new_skill()
+                if skill_suggestion:
+                    if self.on_response:
+                        self.on_response({
+                            "type": "skill_suggestion",
+                            "suggestion": skill_suggestion,
+                            "command": command,
+                            "result": result
+                        })
+        except Exception as e:
+            logger.error(f"Error learning from command result: {e}")
                 
     def _extract_user_text_from_prompt(self, prompt):
         """Extract user text from the prompt"""
@@ -302,6 +463,48 @@ Should you perform GAN thinking before answering? Answer YES or NO and briefly e
                 
         # If no pattern matches, return the whole prompt (truncated)
         return prompt[:500].strip()
+    
+    def _extract_response_content(self, text):
+        """
+        提取RESPONSE标签后的内容
+        如果存在RESPONSE:标签，返回其后面的内容；否则返回None
+        """
+        if not text:
+            return None
+        
+        # 查找RESPONSE:标签
+        match = re.search(r'RESPONSE:\s*', text)
+        if not match:
+            return None
+        
+        # 从RESPONSE:后面开始提取内容
+        start_pos = match.end()
+        
+        # 查找下一个标签（THOUGHT:、RESPONSE:等）或文本结束
+        # 这样可以避免提取到THOUGHT部分
+        end_patterns = [
+            r'\n\s*THOUGHT:',
+            r'\n\s*RESPONSE:',
+            r'\n\s*```',
+            r'\n\s*---',
+        ]
+        
+        end_pos = len(text)
+        for pattern in end_patterns:
+            next_match = re.search(pattern, text[start_pos:])
+            if next_match:
+                potential_end = start_pos + next_match.start()
+                if potential_end < end_pos:
+                    end_pos = potential_end
+        
+        content = text[start_pos:end_pos].strip()
+        
+        # 移除可能残留的代码块标记和多余空白
+        content = re.sub(r'^```(?:json)?\s*\n?', '', content)
+        content = re.sub(r'\s*```$', '', content)
+        content = content.strip()
+        
+        return content if content else None
                 
     def _check_and_perform_search(self, user_text):
         """Check if search is needed and perform it"""
@@ -311,7 +514,7 @@ Should you perform GAN thinking before answering? Answer YES or NO and briefly e
         # Check if the message indicates a need for search
         if self.web_search.needs_search(user_text):
             if self.on_response:
-                self.on_response({"type": "internal_thought", "thought": f"[Web Search] Searching for: {user_text}"})
+                self.on_response({"type": "internal_thought", "thought": f"[Web Search] Searching for: {user_text}", "thought_type": "web_search"})
             
             # Perform search
             results = self.web_search.search(user_text)
@@ -336,11 +539,14 @@ Should you perform GAN thinking before answering? Answer YES or NO and briefly e
             return None, ""
 
     def _handle_chat_with_gan_decision_task(self, prompt, memory, emotion_monitor, exec_instr, user_text):
+        logger.info(f"Handling chat_with_gan_decision task, user_text: {user_text[:50] if user_text else 'None'}")
         try:
             from tools.gan_iteration import GANIteration
             gan = GANIteration()
             should_use_gan, decision_text = gan.decide_use_gan(user_text, exec_instr, emotion_monitor)
+            logger.info(f"GAN decision: should_use_gan={should_use_gan}, decision_text={decision_text[:100] if decision_text else 'None'}")
         except Exception as e:
+            logger.error(f"GAN decision error: {e}")
             should_use_gan, decision_text = False, f"GAN decision failed: {e}"
 
         if self.on_response and decision_text:
@@ -350,10 +556,12 @@ Should you perform GAN thinking before answering? Answer YES or NO and briefly e
         gan_enabled = ui_settings.get("gan_enabled", True)
 
         if should_use_gan and gan_enabled:
+            logger.info("GAN enabled, performing GAN debate")
             if self.on_response:
-                self.on_response({"type": "internal_thought", "thought": "[GAN Decision] AI chose to perform GAN thinking before answering."})
+                self.on_response({"type": "internal_thought", "thought": "[GAN Decision] AI chose to perform GAN thinking before answering.", "thought_type": "gan_decision"})
             debate_result = gan.self_debate(True, user_text)
             synthesis = debate_result.get("synthesis", "")
+            logger.info(f"GAN synthesis: {synthesis[:100] if synthesis else 'None'}")
             if memory is not None:
                 add_thought(memory, synthesis, thought_type="gan")
                 save_memory(memory)
@@ -365,19 +573,28 @@ Should you perform GAN thinking before answering? Answer YES or NO and briefly e
             if synthesis:
                 augmentation += f"\n[GAN synthesis: {synthesis}]"
             enhanced_prompt = prompt + "\n\n" + augmentation + "\n\nAssistant: Please answer the user's question using the GAN debate synthesis above."
+            logger.info(f"Enhanced prompt with GAN augmentation")
             self._handle_chat_task(enhanced_prompt, memory, emotion_monitor, exec_instr)
         else:
+            logger.info("GAN skipped, answering directly")
             if self.on_response:
-                self.on_response({"type": "internal_thought", "thought": "[GAN Decision] AI chose to answer directly without GAN thinking."})
+                self.on_response({"type": "internal_thought", "thought": "[GAN Decision] AI chose to answer directly without GAN thinking.", "thought_type": "gan_decision"})
             self._handle_chat_task(prompt, memory, emotion_monitor, exec_instr)
 
     def _handle_break_silence_task(self, prompt, memory, emotion_monitor, exec_instr):
         """Handle break silence task - generate an actual assistant reply."""
-        reply, adaptation = generate_with_emotion_feedback(exec_instr + "\n\n" + prompt, emotion_monitor)
+        logger.info("Handling break_silence task")
+        
+        # 使用更友好的break silence提示词
+        friendly_prompt = self._build_friendly_break_silence_prompt(prompt)
+        
+        reply, adaptation = generate_with_emotion_feedback(friendly_prompt, emotion_monitor)
+        logger.info(f"Break silence reply: {reply[:200] if reply else 'Empty'}")
         thought, target_reply = self._extract_thought_and_response(reply)
         if thought:
+            logger.info(f"Break silence thought: {thought[:100] if thought else 'None'}")
             if self.on_response:
-                self.on_response({"type": "internal_thought", "thought": thought})
+                self.on_response({"type": "internal_thought", "thought": thought, "thought_type": "break_silence"})
             if memory is not None:
                 add_thought(memory, thought, thought_type="break_silence")
                 save_memory(memory)
@@ -387,18 +604,89 @@ Should you perform GAN thinking before answering? Answer YES or NO and briefly e
             save_memory(memory)
 
         actual_reply = target_reply or reply
-        if self.on_response:
-            self.on_response({"type": "chat_response", "reply": actual_reply})
+        # 清理回复，使其更自然
+        actual_reply = self._clean_and_humanize_reply(actual_reply)
+        
+        # 如果清理后返回None，不发送回复（让AI重新生成）
+        if actual_reply:
+            logger.info(f"Break silence final reply: {actual_reply}")
+            if self.on_response:
+                self.on_response({"type": "chat_response", "reply": actual_reply})
+        else:
+            logger.info("Break silence reply was filtered out, not sending")
+    
+    def _build_friendly_break_silence_prompt(self, base_prompt):
+        """构建更友好的打破沉默提示词（从统一的提示词文件获取）"""
+        return get_break_silence_prompt(base_prompt)
+    
+    def _clean_and_humanize_reply(self, reply):
+        """清理并人性化回复内容（只处理RESPONSE部分，THOUGHT已在提取阶段分离）"""
+        if not reply:
+            return None
+        
+        cleaned = str(reply)
+        
+        # 移除代码块标记
+        cleaned = re.sub(r'```[\s\S]*?```', '', cleaned)
+        cleaned = re.sub(r'`[^`]+`', '', cleaned)
+        
+        # 移除元数据和自我修正内容（更全面的模式）
+        cleaned = re.sub(r'\*\([^)]*\)', '', cleaned)  # *(任意内容)
+        cleaned = re.sub(r'\*\*[^*]+\*\*', '', cleaned)  # **任意内容**
+        cleaned = re.sub(r'\*[^*]+\*', '', cleaned)  # *任意内容*
+        
+        # 移除各种元数据标签
+        cleaned = re.sub(r'(?i)self-correction[/\s]*refinement[^\n]*', '', cleaned)
+        cleaned = re.sub(r'(?i)final desired output[^\n]*', '', cleaned)
+        cleaned = re.sub(r'(?i)applying the rule[^\n]*', '', cleaned)
+        cleaned = re.sub(r'(?i)result\s*:', '', cleaned)
+        cleaned = re.sub(r'(?i)based on rules[^\n]*', '', cleaned)
+        cleaned = re.sub(r'(?i)following the rules[^\n]*', '', cleaned)
+        cleaned = re.sub(r'(?i)according to rules[^\n]*', '', cleaned)
+        
+        # 移除JSON格式内容（技能调用）- 保留技能调用但移除其他JSON
+        # 这里我们只移除孤立的JSON，保留作为命令的JSON
+        
+        # 清理多余的空白和换行
+        cleaned = re.sub(r'\n+', '\n', cleaned)
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+        
+        # 如果清理后为空，返回None
+        if not cleaned or cleaned.lower() in ['none', 'null', 'undefined', 'empty']:
+            return None
+        
+        # 如果回复过于简短或包含机械性词汇，返回None
+        if len(cleaned) < 5 or any(keyword in cleaned.lower() for keyword in 
+                                   ['command', 'instruction', 'next', 'execute', 'task', 'waiting', 'skill', 'json']):
+            return None
+        
+        return cleaned
 
     def _handle_gan_task(self, task, memory):
         """Handle GAN task - show internal debate process."""
+        logger.info("Handling GAN task")
         try:
             from tools.gan_iteration import GANIteration
             gan = GANIteration()
+            
+            # Set callback for real-time updates
+            gan.callback = self.on_response
+            
             is_user_topic = task.get("is_user_topic", False)
             user_topic = task.get("user_topic")
+            user_context = task.get("user_context", "")
+            
+            logger.info(f"GAN task params: is_user_topic={is_user_topic}, user_topic={user_topic[:50] if user_topic else 'None'}")
+            
+            # Set user context for topic anchoring
+            gan.user_context = user_context
+            
             debate_result = gan.self_debate(is_user_topic, user_topic)
             synthesis = debate_result.get("synthesis", "")
+            iterations = debate_result.get("iterations", 0)
+            coherent = debate_result.get("coherent", True)
+            
+            logger.info(f"GAN result: iterations={iterations}, coherent={coherent}, synthesis={synthesis[:100] if synthesis else 'None'}")
 
             if memory is not None:
                 add_thought(memory, synthesis, thought_type="gan")
@@ -407,9 +695,17 @@ Should you perform GAN thinking before answering? Answer YES or NO and briefly e
             self._save_gan_result(gan, debate_result, is_user_topic, user_topic)
 
             if self.on_response:
+                # Send final GAN complete event
                 self.on_response({
-                    "type": "internal_thought",
-                    "thought": f"[GAN Debate] {synthesis}"
+                    "type": "gan_complete",
+                    "gan_result": {
+                        "topic": gan.topic,
+                        "synthesis": synthesis,
+                        "reply_a": gan.reply_a,
+                        "reply_b": gan.reply_b,
+                        "iterations": iterations,
+                        "coherent": coherent
+                    }
                 })
         except Exception as e:
             if self.on_response:
@@ -421,10 +717,12 @@ Should you perform GAN thinking before answering? Answer YES or NO and briefly e
                 "timestamp": datetime.now().isoformat(),
                 "is_user_topic": bool(is_user_topic),
                 "user_topic": user_topic,
-                "gan_topic": getattr(gan, "topic", None),
-                "reply_a": getattr(gan, "reply_a", None),
-                "reply_b": getattr(gan, "reply_b", None),
-                "synthesis": debate_result.get("synthesis", "")
+                "gan_topic": gan.topic,
+                "reply_a": gan.reply_a,
+                "reply_b": gan.reply_b,
+                "synthesis": gan.synthesis,
+                "iterations": debate_result.get("iterations", 0),
+                "coherent": debate_result.get("coherent", True)
             }
             self.latest_gan_result = result
 
@@ -476,23 +774,11 @@ Should you perform GAN thinking before answering? Answer YES or NO and briefly e
         """
         from llm import chat
         
-        decision_prompt = f"""
-You are an AI assistant deciding whether to respond to a user input.
-User input: "{user_text}"
-
-Consider whether this input:
-- Is a question asking for information (should answer)
-- Is a greeting or acknowledgment (may not need direct answer)
-- Is a command or request (should answer)
-- Is just "ok", "yes", "no" or very brief (may not need answer)
-- Requires domain knowledge or opinion (should answer)
-
-Should you respond to this user input? Answer YES or NO and briefly explain why.
-"""
+        decision_prompt = load_should_answer_user_prompt(user_text)
         
         try:
             response = chat(decision_prompt).strip()
-            should_answer = "YES" in response.upper()
+            should_answer = "是" in response or "YES" in response.upper() or "会" in response
             return should_answer, response
         except Exception as e:
             return True, f"Error: {e}"
@@ -504,27 +790,11 @@ Should you respond to this user input? Answer YES or NO and briefly explain why.
         """
         from llm import chat
         
-        decision_prompt = f"""
-You are an AI assistant with internal GAN self-debate capability.
-You have already decided to answer the user's question. Now decide if you need deep reflection.
-
-User input: "{user_text}"
-
-{context}
-
-Consider whether this question would benefit from GAN self-debate:
-- Complex or controversial topics (needs GAN)
-- Questions requiring balanced analysis (needs GAN)
-- Philosophical or ethical questions (needs GAN)
-- Simple factual questions (no need for GAN)
-- Routine requests (no need for GAN)
-
-Should you perform GAN thinking before answering? Answer YES or NO and briefly explain why.
-"""
+        decision_prompt = load_should_use_gan_prompt(user_text, context)
         
         try:
             response = chat(decision_prompt).strip()
-            should_use_gan = "YES" in response.upper()
+            should_use_gan = "是" in response or "YES" in response.upper()
             return should_use_gan, response
         except Exception as e:
             return False, f"Error: {e}"
@@ -545,40 +815,27 @@ Should you perform GAN thinking before answering? Answer YES or NO and briefly e
         if not messages and not thoughts:
             return False, "Memory is empty", None
         
-        context = "Recent conversation:\n"
+        context = "最近对话：\n"
         for msg in messages:
             role = msg.get("role", "")
             content = msg.get("content", "")[:200]
             context += f"- {role}: {content}\n"
         
         if thoughts:
-            context += "\nRecent thoughts:\n"
+            context += "\n最近思考：\n"
             for t in thoughts:
                 content = t.get("content", "")[:200]
                 context += f"- [{t.get('type', 'unknown')}]: {content}\n"
         
-        decision_prompt = f"""
-You are an AI reviewing your memory to find topics worth reconsidering or expanding upon.
-
-{context}
-
-Analyze the above memory and determine:
-1. Is there any topic, idea, or conclusion that seems incomplete, potentially biased, or worth revisiting?
-2. Is there anything in the conversation that could benefit from deeper reflection or a different perspective?
-3. Is there an interesting question raised but not fully explored?
-
-If you find something worth reconsidering, output RECONSIDER: [brief topic description]
-If nothing needs reconsideration, output SKIP: [brief reason why nothing needs reconsideration]
-"""
+        decision_prompt = load_should_reconsider_prompt(context)
         
         try:
             response = chat(decision_prompt).strip()
-            if response.startswith("RECONSIDER:"):
-                topic = response.replace("RECONSIDER:", "").strip()
+            if "重新考虑" in response:
+                topic = response.replace("重新考虑:", "").strip()
                 return True, f"Found topic worth reconsidering: {topic}", topic
             else:
-                reason = response.replace("SKIP:", "").strip() if response.startswith("SKIP:") else response
-                return False, reason, None
+                return False, response, None
         except Exception as e:
             return False, f"Error: {e}", None
     
@@ -596,33 +853,18 @@ If nothing needs reconsideration, output SKIP: [brief reason why nothing needs r
         gan_synthesis = gan_result.get("synthesis", "")[:300]
         
         messages = memory.get("messages", [])[-6:]
-        context = "Recent conversation:\n"
+        context = "最近对话：\n"
         for msg in messages:
             role = msg.get("role", "")
             content = msg.get("content", "")[:150]
             context += f"- {role}: {content}\n"
         
-        decision_prompt = f"""
-You just completed an internal GAN self-debate on the topic: {gan_topic}
-
-Your synthesis was: {gan_synthesis}
-
-Recent conversation context:
-{context}
-
-Based on this, should you proactively share your thoughts with the user? Consider:
-1. Do you have an interesting insight worth sharing?
-2. Is there something relevant to the ongoing conversation?
-3. Would starting a new topic enrich the interaction?
-
-If yes, output: SPEAK: [brief message to share with user, keep it short and conversational]
-If no, output: WAIT: [brief reason why you should wait]
-"""
+        decision_prompt = load_should_proactively_speak_prompt(gan_topic, gan_synthesis, context)
         
         try:
             response = chat(decision_prompt).strip()
-            if response.startswith("SPEAK:"):
-                message = response.replace("SPEAK:", "").strip()
+            if "说话" in response:
+                message = response.replace("说话:", "").strip()
                 return True, message
             else:
                 return False, ""
@@ -650,45 +892,33 @@ If no, output: WAIT: [brief reason why you should wait]
         similarity = self._topic_similarity(user_topic, gan_topic)
         
         # Let AI decide through LLM
-        decision_prompt = f"""
-You are an AI assistant with internal GAN thinking capability.
-Current situation:
-- User question: {user_text}
-- User topic: {user_topic}
-- GAN topic (from internal thinking): {gan_topic}
-- GAN synthesis: {gan_synthesis[:200] if gan_synthesis else 'None'}
-- Topic similarity: {similarity:.2f}
-
-Please decide whether to:
-1. Answer the user's question directly (choose "USER")
-2. Continue the GAN thinking topic instead (choose "GAN")
-
-Consider these factors:
-- If the user asked a direct question, you should usually answer it
-- If the GAN topic is interesting and related to the conversation, you may continue it
-- If the user's input is just acknowledging or commenting on the previous GAN output, continue with GAN
-
-Answer with only one word: USER or GAN
-"""
+        decision_prompt = load_choose_response_topic_prompt(user_text, user_topic, gan_topic, gan_synthesis, similarity)
         
         try:
-            decision = chat(decision_prompt).strip().upper()
-            if decision not in ["USER", "GAN"]:
+            response = chat(decision_prompt).strip().upper()
+            if "用户" in response:
+                decision = "user"
+            elif "思考" in response:
+                decision = "gan"
+            else:
                 # Fallback to rule-based if LLM response is invalid
                 explicit_question = bool(re.search(r"\b(why|what|how|when|where|who|should|could|would|can|please|问|什么|为什么|怎么|如何|是否|能否)\b", user_text, re.I))
-                decision = "USER" if (explicit_question or similarity >= 0.35) else "GAN"
+                decision = "user" if (explicit_question or similarity >= 0.35) else "gan"
         except Exception:
             # Fallback to rule-based if LLM fails
             explicit_question = bool(re.search(r"\b(why|what|how|when|where|who|should|could|would|can|please|问|什么|为什么|怎么|如何|是否|能否)\b", user_text, re.I))
-            decision = "USER" if (explicit_question or similarity >= 0.35) else "GAN"
+            decision = "user" if (explicit_question or similarity >= 0.35) else "gan"
         
         return decision.lower(), user_topic, gan_topic, similarity
 
     def _handle_reflection_task(self, prompt, memory, emotion_monitor, exec_instr):
         """Handle reflection task - show AI reflection content."""
+        logger.info("Handling reflection task")
         reply, adaptation = generate_with_emotion_feedback(exec_instr + "\n\n" + prompt, emotion_monitor)
+        logger.info(f"Reflection reply: {reply[:200] if reply else 'Empty'}")
         thought, _ = self._extract_thought_and_response(reply)
         content = thought or reply
+        logger.info(f"Reflection content: {content[:100] if content else 'None'}")
         if memory is not None:
             add_thought(memory, content, thought_type="reflection")
             save_memory(memory)
@@ -701,26 +931,27 @@ Answer with only one word: USER or GAN
 
     def queue_chat_task(self, prompt, memory=None, emotion_monitor=None, use_gan_decision=False, user_text=None, personality=None):
         task_type = "chat_with_gan_decision" if use_gan_decision else "chat"
-        self.queue.put({
+        task = {
             "type": task_type,
             "prompt": prompt,
             "memory": memory,
             "emotion_monitor": emotion_monitor,
             "user_text": user_text,
             "personality": personality,
-        })
+        }
+        self.queue.put(task)
 
-    def queue_break_silence_task(self, prompt, memory=None, emotion_monitor=None):
+    def queue_break_silence_task(self, prompt, memory=None, emotion_monitor=None, personality=None):
         """队列打破沉默任务 - AI主动对用户说话"""
-        self.queue.put({"type": "break_silence", "prompt": prompt, "memory": memory, "emotion_monitor": emotion_monitor})
+        self.queue.put({"type": "break_silence", "prompt": prompt, "memory": memory, "emotion_monitor": emotion_monitor, "personality": personality})
 
     def queue_gan_task(self, is_user_topic=False, user_topic=None, memory=None):
         """Queue a GAN debate task - internal thinking only."""
         self.queue.put({"type": "gan", "is_user_topic": is_user_topic, "user_topic": user_topic, "memory": memory})
 
-    def queue_reflection_task(self, prompt, memory=None, emotion_monitor=None):
+    def queue_reflection_task(self, prompt, memory=None, emotion_monitor=None, personality=None):
         """Queue a reflection task - AI internal reflection."""
-        self.queue.put({"type": "reflection", "prompt": prompt, "memory": memory, "emotion_monitor": emotion_monitor})
+        self.queue.put({"type": "reflection", "prompt": prompt, "memory": memory, "emotion_monitor": emotion_monitor, "personality": personality})
 
     def stop(self):
         self.running = False
