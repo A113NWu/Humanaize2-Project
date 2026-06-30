@@ -1,3 +1,7 @@
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from llm import chat
 from data.prompts_manager import load_reflection_prompt
 

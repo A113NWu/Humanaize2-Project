@@ -1,0 +1,12 @@
+Reflect on this conversation.
+
+Generate:
+1. observations
+2. emotional analysis
+3. relationship changes
+4. long-term implications
+
+Conversation:
+{conversation_text}
+
+Reflection:

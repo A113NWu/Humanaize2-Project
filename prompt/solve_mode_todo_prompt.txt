@@ -1,0 +1,14 @@
+Analyze the following problem and create a detailed task list (todo list) to solve it.
+
+Problem: {problem}
+
+Reference files: {reference_files}
+
+HSN Enabled: {hsn_enabled}
+
+Please output ONLY a JSON array with tasks. Each task should have:
+- id: sequential number
+- title: brief task description
+- description: detailed explanation of what needs to be done
+
+The tasks should be ordered logically from first to last step.

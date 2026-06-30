@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from llm import chat
 from .gan_iteration import GANIteration
-from data.prompts_manager import load_solve_mode_todo_prompt, load_solve_mode_summary_prompt
+from data.prompts_manager import load_solve_mode_todo_prompt, load_solve_mode_summary_prompt, load_solve_mode_task_prompt
 
 
 class Task:
@@ -728,17 +728,7 @@ class SolveMode:
                     for peer_result in hsn_result["results"]:
                         hsn_context += f"- {peer_result['peer_name']}: {peer_result['contribution'][:100]}...\n"
             
-            prompt = f"""
-Solve this task: {task.title}
-
-Task description: {task.description}
-
-Problem context: {self.problem}
-
-{hsn_context}
-
-Provide a detailed solution or analysis for this task.
-"""
+            prompt = load_solve_mode_task_prompt(task.title, task.description, self.problem, hsn_context)
             
             # Try GAN iteration first
             try:

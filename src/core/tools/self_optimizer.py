@@ -8,6 +8,7 @@ AI自我进化模块 - 通过持续对话不断学习和优化
 """
 
 import os
+import sys
 import re
 import json
 import time
@@ -18,6 +19,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Callable
 from collections import defaultdict, deque
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from data.prompts_manager import (
     load_distillation_prompt,
     load_distillation_customize_prompt,

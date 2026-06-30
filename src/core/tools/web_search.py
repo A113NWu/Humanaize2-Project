@@ -48,12 +48,23 @@ class WebSearch:
             
             try:
                 import requests
-                response = requests.get(url, timeout=10)
+                
+                # 使用系统代理（如果配置了）
+                proxies = None
+                http_proxy = os.environ.get('http_proxy') or os.environ.get('HTTP_PROXY')
+                https_proxy = os.environ.get('https_proxy') or os.environ.get('HTTPS_PROXY')
+                if http_proxy or https_proxy:
+                    proxies = {
+                        'http': http_proxy,
+                        'https': https_proxy
+                    }
+                
+                response = requests.get(url, timeout=15, proxies=proxies)
                 data = response.json()
             except ImportError:
                 # Fallback to curl if requests is not available
                 result = subprocess.run(
-                    ['curl', '-s', '-L', url],
+                    ['curl', '-s', '-L', '--proxy', os.environ.get('http_proxy', ''), url],
                     capture_output=True,
                     text=True,
                     timeout=30
@@ -100,15 +111,22 @@ class WebSearch:
             return results
             
         except Exception as e:
-            print(f"[ERROR] Web search failed: {e}")
+            # 记录详细错误以便调试，但使用简化的错误信息
+            error_str = str(e)
+            if 'Network is unreachable' in error_str or 'Connection refused' in error_str:
+                print(f"[WARN] Web search unavailable (network error). Using fallback response.")
+            elif 'timed out' in error_str:
+                print(f"[WARN] Web search timeout. Using fallback response.")
+            else:
+                print(f"[ERROR] Web search failed: {e}")
             return self._get_fallback_results(query)
             
     def _get_fallback_results(self, query):
         """Get fallback results when API fails"""
         return [
             {
-                'title': f"关于 '{query}' 的搜索结果",
-                'snippet': f"搜索服务暂时不可用。建议尝试使用搜索引擎手动搜索 '{query}'。",
+                'title': f"搜索结果暂时不可用",
+                'snippet': f"由于网络原因，无法获取 '{query}' 的搜索结果。请检查网络连接，或稍后再试。",
                 'url': f"https://duckduckgo.com/?q={query}",
                 'source': 'Fallback'
             }

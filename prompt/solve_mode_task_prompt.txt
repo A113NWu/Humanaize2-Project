@@ -1,0 +1,9 @@
+Solve this task: {task_title}
+
+Task description: {task_description}
+
+Problem context: {problem}
+
+{hsn_context}
+
+Provide a detailed solution or analysis for this task.

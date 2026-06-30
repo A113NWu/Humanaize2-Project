@@ -5,8 +5,11 @@
 import os
 from typing import Optional
 
-# 提示词文件路径
-PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
+def _get_project_root():
+    """获取项目根目录"""
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+PROMPTS_DIR = os.path.join(_get_project_root(), "prompt")
 
 # 提示词文件映射
 PROMPT_FILES = {
@@ -30,6 +33,16 @@ PROMPT_FILES = {
     "self_improvement": "self_improvement_prompt.txt",
     "solve_mode_todo": "solve_mode_todo_prompt.txt",
     "solve_mode_summary": "solve_mode_summary_prompt.txt",
+    "solve_mode_task": "solve_mode_task_prompt.txt",
+    # Skill 相关
+    "skill_main": "skill_prompt_main.txt",
+    "skill_list": "skill_list_prompt.txt",
+    "skill_execution": "skill_execution_prompt.txt",
+    # Solve Prompt 相关
+    "solve_main": "solve_prompt_main.txt",
+    "solve_task_list": "solve_task_list.txt",
+    "solve_task_execution": "solve_task_execution.txt",
+    "solve_summary": "solve_summary.txt",
     # GAN 相关
     "gan_decide": "gan_decide.txt",
     "gan_topic": "gan_topic.txt",
@@ -41,7 +54,7 @@ PROMPT_FILES = {
 
 def _get_prompts_dir():
     """获取提示词目录"""
-    return os.path.join(os.path.dirname(__file__), "prompts")
+    return PROMPTS_DIR
 
 
 def _get_data_dir():
@@ -63,13 +76,7 @@ def load_prompt(prompt_name: str) -> str:
         return ""
     
     filename = PROMPT_FILES[prompt_name]
-    
-    # 判断文件路径
-    if prompt_name == "agent":
-        # agent_prompt.txt 在 data 目录下
-        filepath = os.path.join(_get_data_dir(), filename)
-    else:
-        filepath = os.path.join(_get_prompts_dir(), filename)
+    filepath = os.path.join(_get_prompts_dir(), filename)
     
     try:
         with open(filepath, "r", encoding="utf-8") as f:
@@ -244,3 +251,80 @@ def load_solve_mode_summary_prompt(problem: str, results_text: str) -> str:
     """加载Solve模式总结提示词"""
     template = load_prompt("solve_mode_summary")
     return template.format(problem=problem, results_text=results_text)
+
+
+def load_solve_mode_task_prompt(task_title: str, task_description: str, problem: str, hsn_context: str = "") -> str:
+    """加载Solve模式任务解决提示词"""
+    template = load_prompt("solve_mode_task")
+    return template.format(
+        task_title=task_title,
+        task_description=task_description,
+        problem=problem,
+        hsn_context=hsn_context
+    )
+
+
+def load_skill_main_prompt(skills_list: str, skills_list_formatted: str, skills_count: int, language: str, user_request: str = "") -> str:
+    """加载技能主提示词"""
+    template = load_prompt("skill_main")
+    return template.format(
+        skills_list=skills_list,
+        skills_list_formatted=skills_list_formatted,
+        skills_count=skills_count,
+        language=language,
+        user_request=user_request or "（未指定）"
+    )
+
+
+def load_skill_list_prompt(skills_text: str) -> str:
+    """加载技能列表提示词"""
+    template = load_prompt("skill_list")
+    return template.format(skills_text=skills_text)
+
+
+def load_skill_execution_prompt(skill_name: str, skill_description: str) -> str:
+    """加载技能执行提示词"""
+    template = load_prompt("skill_execution")
+    return template.format(
+        skill_name=skill_name,
+        skill_description=skill_description
+    )
+
+
+def load_solve_main_prompt(problem: str, reference_files: str = "无", hsn_context: str = "") -> str:
+    """加载Solve模式主提示词"""
+    template = load_prompt("solve_main")
+    return template.format(
+        problem=problem,
+        reference_files=reference_files,
+        hsn_context=hsn_context
+    )
+
+
+def load_solve_task_list_prompt(problem: str, reference_files: str = "无") -> str:
+    """加载任务列表生成提示词"""
+    template = load_prompt("solve_task_list")
+    return template.format(
+        problem=problem,
+        reference_files=reference_files
+    )
+
+
+def load_solve_task_execution_prompt(problem: str, task_title: str, task_description: str, hsn_section: str = "") -> str:
+    """加载任务执行提示词"""
+    template = load_prompt("solve_task_execution")
+    return template.format(
+        problem=problem,
+        task_title=task_title,
+        task_description=task_description,
+        hsn_section=hsn_section
+    )
+
+
+def load_solve_summary_prompt(problem: str, results_text: str) -> str:
+    """加载总结生成提示词"""
+    template = load_prompt("solve_summary")
+    return template.format(
+        problem=problem,
+        results_text=results_text
+    )

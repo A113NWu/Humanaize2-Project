@@ -16,6 +16,8 @@ import sys
 import subprocess
 import shutil
 
+PYINSTALLER_PATH = os.path.expanduser("~/.local/bin/pyinstaller")
+
 def get_platform():
     """Get current platform"""
     if sys.platform.startswith('win'):
@@ -38,22 +40,25 @@ def build_linux():
             shutil.rmtree(dir_name)
     
     cmd = [
-        "pyinstaller",
+        PYINSTALLER_PATH,
         "--name", app_name,
         "--onefile",
         "--windowed",
         "--icon=installer/windows/icon.ico",
-        "--add-data", "src/ui/ascii.txt:src/ui/",
-        "--add-data", "src/config/*.py:src/config/",
+        "--add-data", "src/core/ui/ascii.txt:src/core/ui/",
+        "--add-data", "src/core/config/*.py:src/core/config/",
         "--add-data", "src/core/*.py:src/core/",
-        "--add-data", "src/ui/*.py:src/ui/",
-        "--add-data", "src/llm/*.py:src/llm/",
-        "--add-data", "src/memory/*.py:src/memory/",
-        "--add-data", "src/tools/*.py:src/tools/",
-        "--add-data", "src/utils/*.py:src/utils/",
-        "--add-data", "src/Prompt/*.py:src/Prompt/",
+        "--add-data", "src/core/ui/*.py:src/core/ui/",
+        "--add-data", "src/core/llm/*.py:src/core/llm/",
+        "--add-data", "src/core/memory/*.py:src/core/memory/",
+        "--add-data", "src/core/tools/*.py:src/core/tools/",
+        "--add-data", "src/core/utils/*.py:src/core/utils/",
+        "--add-data", "src/core/Prompt/*.py:src/core/Prompt/",
+        "--add-data", "src/core/data/*.py:src/core/data/",
+        "--add-data", "src/core/data/prompts/*.txt:src/core/data/prompts/",
         "--add-data", "src/ai_selfdevelop:src/ai_selfdevelop/",
         "--add-data", "skills/*:skills/",
+        "--add-data", "prompt/*:prompt/",
         "--add-data", "config/version.json:config/",
         "--hidden-import", "customtkinter",
         "--hidden-import", "requests",
@@ -89,22 +94,25 @@ def build_windows():
             shutil.rmtree(dir_name)
     
     cmd = [
-        "pyinstaller",
+        PYINSTALLER_PATH,
         "--name", app_name,
         "--onefile",
         "--windowed",
         "--icon=installer/windows/icon.ico",
-        "--add-data", "src/ui/ascii.txt;src/ui/",
-        "--add-data", "src/config/*.py;src/config/",
+        "--add-data", "src/core/ui/ascii.txt;src/core/ui/",
+        "--add-data", "src/core/config/*.py;src/core/config/",
         "--add-data", "src/core/*.py;src/core/",
-        "--add-data", "src/ui/*.py;src/ui/",
-        "--add-data", "src/llm/*.py;src/llm/",
-        "--add-data", "src/memory/*.py;src/memory/",
-        "--add-data", "src/tools/*.py;src/tools/",
-        "--add-data", "src/utils/*.py;src/utils/",
-        "--add-data", "src/Prompt/*.py;src/Prompt/",
+        "--add-data", "src/core/ui/*.py;src/core/ui/",
+        "--add-data", "src/core/llm/*.py;src/core/llm/",
+        "--add-data", "src/core/memory/*.py;src/core/memory/",
+        "--add-data", "src/core/tools/*.py;src/core/tools/",
+        "--add-data", "src/core/utils/*.py;src/core/utils/",
+        "--add-data", "src/core/Prompt/*.py;src/core/Prompt/",
+        "--add-data", "src/core/data/*.py;src/core/data/",
+        "--add-data", "src/core/data/prompts/*.txt;src/core/data/prompts/",
         "--add-data", "src/ai_selfdevelop;src/ai_selfdevelop/",
         "--add-data", "skills/*;skills/",
+        "--add-data", "prompt/*;prompt/",
         "--add-data", "config/version.json;config/",
         "--hidden-import", "customtkinter",
         "--hidden-import", "requests",

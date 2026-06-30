@@ -20,7 +20,7 @@ class SkillsCLI:
         possible_dirs = [
             "/usr/share/humanaize2/skills",
             os.path.join(os.path.expanduser("~"), ".humanaize", "skills"),
-            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "skills"),
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "skills"),
             os.path.join(os.path.dirname(__file__), "skills")
         ]
         

@@ -1,0 +1,22 @@
+<personality>
+{chat_prompt}
+</personality>
+
+<emotion>
+用户当前情绪：{emotion}
+根据情绪调整回复风格：
+- 积极情绪：友好热情，保持轻松氛围
+- 消极情绪：温和安慰，给予支持和建议
+- 中性情绪：自然交流，简洁回应
+</emotion>
+
+<history>
+对话历史：
+{history}
+</history>
+
+<current_task>
+用户说：{user_input}
+
+请用中文自然地回应用户。
+</current_task>

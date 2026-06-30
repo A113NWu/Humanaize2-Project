@@ -305,6 +305,151 @@ def check_llm_server(url: str = "http://127.0.0.1:8080") -> bool:
         return False
 
 
+def stop_llm_server(port: int = 8080):
+    """
+    停止运行在指定端口的LLM服务器进程
+    
+    Args:
+        port: 服务器端口
+    """
+    import os
+    import signal
+    
+    try:
+        if os.name == 'nt':
+            # Windows 使用 taskkill
+            os.system(f'taskkill /f /im llama-server.exe')
+        else:
+            # Linux/Mac 使用 lsof 和 kill
+            import subprocess
+            result = subprocess.run(
+                ['lsof', '-ti', f':{port}'],
+                capture_output=True,
+                text=True
+            )
+            pids = result.stdout.strip().split('\n')
+            for pid in pids:
+                if pid:
+                    try:
+                        os.kill(int(pid), signal.SIGTERM)
+                        time.sleep(1)
+                        os.kill(int(pid), signal.SIGKILL)
+                    except:
+                        pass
+    except Exception as e:
+        print(f"[WARN] Error stopping server: {e}")
+
+
+def restart_llm_server(model_path: str = None):
+    """
+    重启LLM服务器
+    
+    Args:
+        model_path: 新的模型路径，如果为None则使用默认路径
+        
+    Returns:
+        bool: 是否成功
+    """
+    import os
+    import subprocess
+    import threading
+    import sys
+    
+    # 确保模型路径是绝对路径
+    if model_path and not os.path.isabs(model_path):
+        # 尝试转换为绝对路径
+        abs_path = os.path.abspath(model_path)
+        if os.path.exists(abs_path):
+            model_path = abs_path
+        else:
+            print(f"[WARN] Absolute path does not exist: {abs_path}, keeping original: {model_path}")
+    
+    # 停止现有服务器
+    print("[INFO] Stopping existing LLM server...")
+    stop_llm_server()
+    time.sleep(2)
+    
+    # 获取服务器路径
+    server_path = None
+    if sys.platform != "win32" and os.name != "nt":
+        system_paths = [
+            "/usr/bin/llama-server",
+            "/usr/local/bin/llama-server",
+            "/opt/llama.cpp/llama-server"
+        ]
+        for path in system_paths:
+            if os.path.exists(path):
+                server_path = path
+                break
+    
+    if not server_path:
+        # tools.py 在 src/core/tools/ 下，需要4次dirname才能到项目根目录
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        llama_dir = os.path.join(base_dir, "llama")
+        
+        if sys.platform == "win32" or os.name == "nt":
+            server_path = os.path.join(llama_dir, "llama-server.exe")
+        elif sys.platform == "darwin":
+            server_path = os.path.join(llama_dir, "llama-server")
+        else:
+            server_path = os.path.join(llama_dir, "llama-server")
+    
+    # 获取模型路径
+    if model_path is None:
+        model_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "model")
+        exact_path = os.path.join(model_dir, "tinyllama.gguf")
+        if os.path.exists(exact_path):
+            model_path = exact_path
+        elif os.path.exists(model_dir):
+            for f in os.listdir(model_dir):
+                if f.endswith('.gguf'):
+                    model_path = os.path.join(model_dir, f)
+                    break
+    
+    if not os.path.exists(server_path):
+        print("[ERROR] llama-server not found at:", server_path)
+        return False
+    
+    if not model_path or not os.path.exists(model_path):
+        print("[ERROR] Model file not found at:", model_path)
+        return False
+    
+    try:
+        cmd = [server_path, "-m", model_path, "-c", "4096", "-ngl", "999", "--host", "127.0.0.1", "--port", "8080", "-n", "256"]
+        print(f"[INFO] Starting llama-server with command: {' '.join(cmd)}")
+        
+        if sys.platform == "win32" or os.name == "nt":
+            subprocess.Popen(
+                cmd,
+                cwd=os.path.dirname(server_path),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+            )
+        else:
+            subprocess.Popen(
+                cmd,
+                cwd=os.path.dirname(server_path),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+
+        def _wait_for_server():
+            for i in range(30):
+                time.sleep(1)
+                if check_llm_server():
+                    print("[INFO] LLM server restarted successfully!")
+                    return
+            print("[WARN] Server process started but not responding yet.")
+
+        threading.Thread(target=_wait_for_server, daemon=True).start()
+        return True
+
+    except Exception as e:
+        print("[ERROR] Failed to restart server:", str(e))
+        return False
+
+
 def check_python_version() -> str:
     """检查Python版本"""
     import sys
