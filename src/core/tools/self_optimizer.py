@@ -18,6 +18,12 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Callable
 from collections import defaultdict, deque
 
+from data.prompts_manager import (
+    load_distillation_prompt,
+    load_distillation_customize_prompt,
+    load_self_improvement_prompt
+)
+
 
 class Experience:
     """经验数据库 - 存储问题解决经验、成功模式、解决方案"""
@@ -542,23 +548,7 @@ class PromptDistiller:
             return None
         
         # 生成蒸馏后的提示词
-        distilled_prompt = f"""
-【{topic}领域知识蒸馏】
-
-核心知识点：
-{chr(10).join(f'- {kp}' for kp in knowledge_points[:5])}
-
-最佳实践：
-- 理解用户意图后，提供简洁明确的回答
-- 如果涉及技术问题，先分析问题根源
-- 提供可行的解决方案，必要时给出示例
-- 保持友好和耐心，鼓励用户继续探索
-
-常见错误避免：
-- 不要给出过于复杂的解释
-- 不要忽略用户的实际需求
-- 不要在没有理解问题时就给出答案
-"""
+        distilled_prompt = load_distillation_prompt(topic, knowledge_points)
         
         # 存储到知识库
         self.knowledge_base[topic] = knowledge_points
@@ -621,13 +611,7 @@ class PromptDistiller:
             return ""
         
         # 根据具体问题定制提示词
-        customized = f"""
-{base_prompt}
-
-当前用户问题：{user_input}
-
-请基于以上蒸馏知识，提供最佳回答。
-"""
+        customized = load_distillation_customize_prompt(base_prompt, user_input)
         
         return customized
     
@@ -1223,23 +1207,14 @@ class SelfOptimizer:
             "skill_suggestion": self.conversation_learner.suggest_new_skill()
         }
         
-        prompt = f"""
-基于我的分析，这里是自我改进的机会：
-
-用户模式:
-- 偏好话题: {', '.join(insights['preferred_topics'])}
-- 推荐响应策略: {insights['recommended_strategy']}
-- 用户情绪: {'积极' if insights['avg_sentiment'] > 0.3 else '中性' if insights['avg_sentiment'] >= -0.3 else '消极'} ({insights['avg_sentiment']:.2f})
-
-性能问题:
-{chr(10).join(f'- {issue}' for issue in insights['performance_issues'])}
-
-技能建议:
-{insights['skill_suggestion'] or '暂无特别建议'}
-
-我可以在 ai_selfdevelop/skills 中创建新技能或修改现有技能。
-如果需要，我可以搜索相关资料来学习如何实现新功能。
-"""
+        prompt = load_self_improvement_prompt(
+            ', '.join(insights['preferred_topics']),
+            insights['recommended_strategy'],
+            '积极' if insights['avg_sentiment'] > 0.3 else '中性' if insights['avg_sentiment'] >= -0.3 else '消极',
+            insights['avg_sentiment'],
+            insights['performance_issues'],
+            insights['skill_suggestion']
+        )
         return prompt
     
     def get_status_summary(self) -> str:

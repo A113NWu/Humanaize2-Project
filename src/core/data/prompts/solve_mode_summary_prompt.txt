@@ -1,0 +1,8 @@
+Provide a comprehensive summary of the solution to this problem:
+
+Problem: {problem}
+
+Task results:
+{results_text}
+
+Please provide a clear, concise summary of the solution.

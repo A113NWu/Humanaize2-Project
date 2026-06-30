@@ -1,22 +1,7 @@
 from llm import chat
+from data.prompts_manager import load_memory_summarizer_prompt
 
 def summarize_memory(messages):
     joined = "\n".join(messages[-50:])
-
-    prompt = f"""
-Summarize the important long-term information.
-
-Focus on:
-- user personality
-- important events
-- emotional patterns
-- beliefs
-- ongoing topics
-
-Conversation:
-{joined}
-
-Summary:
-"""
-
+    prompt = load_memory_summarizer_prompt(joined)
     return chat(prompt)

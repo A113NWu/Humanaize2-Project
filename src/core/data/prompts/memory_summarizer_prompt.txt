@@ -1,0 +1,13 @@
+Summarize the important long-term information.
+
+Focus on:
+- user personality
+- important events
+- emotional patterns
+- beliefs
+- ongoing topics
+
+Conversation:
+{conversation_text}
+
+Summary:

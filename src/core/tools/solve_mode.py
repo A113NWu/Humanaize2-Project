@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from llm import chat
 from .gan_iteration import GANIteration
+from data.prompts_manager import load_solve_mode_todo_prompt, load_solve_mode_summary_prompt
 
 
 class Task:
@@ -498,22 +499,7 @@ class SolveMode:
         else:
             print("[INFO] Analyzing problem and generating task list...")
         
-        prompt = f"""
-Analyze the following problem and create a detailed task list (todo list) to solve it.
-
-Problem: {self.problem}
-
-Reference files: {', '.join(self.reference_files) if self.reference_files else 'None'}
-
-HSN Enabled: {'Yes' if self.hsn_enabled else 'No'}
-
-Please output ONLY a JSON array with tasks. Each task should have:
-- id: sequential number
-- title: brief task description
-- description: detailed explanation of what needs to be done
-
-The tasks should be ordered logically from first to last step.
-"""
+        prompt = load_solve_mode_todo_prompt(self.problem, self.reference_files, self.hsn_enabled)
         
         try:
             if self._use_color:
@@ -852,16 +838,7 @@ Provide a detailed solution or analysis for this task.
         
         results_text = "\n".join(f"Task {r['id']}: {r['title']} - {r.get('result', '')[:100]}..." for r in results)
         
-        summary_prompt = f"""
-Provide a comprehensive summary of the solution to this problem:
-
-Problem: {self.problem}
-
-Task results:
-{results_text}
-
-Please provide a clear, concise summary of the solution.
-"""
+        summary_prompt = load_solve_mode_summary_prompt(self.problem, results_text)
         
         try:
             summary = chat(summary_prompt)

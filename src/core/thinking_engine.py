@@ -27,7 +27,9 @@ from data.prompts_manager import (
     load_should_use_gan_prompt,
     load_should_reconsider_prompt,
     load_should_proactively_speak_prompt,
-    load_choose_response_topic_prompt
+    load_choose_response_topic_prompt,
+    load_followup_prompt,
+    load_web_search_prefix_prompt
 )
 
 class ThinkingEngine:
@@ -268,7 +270,8 @@ class ThinkingEngine:
                 search_summary = self.web_search.summarize_results(user_text, search_results)
                 if self.on_response:
                     self.on_response({"type": "internal_thought", "thought": f"[Web Search] Found information about: {user_text}", "thought_type": "web_search"})
-                prompt = f"Web search results for your question:\n{search_summary}\n\n{prompt}"
+                search_prefix = load_web_search_prefix_prompt(search_summary)
+                prompt = search_prefix + "\n\n" + prompt
                 logger.info(f"Web search performed for: {user_text}")
         
         logger.info("Calling generate_with_emotion_feedback")
@@ -333,17 +336,7 @@ class ThinkingEngine:
                 
                 # 将命令结果发给AI，引导她解决问题
                 try:
-                    followup_prompt = f"""
-命令执行完成！结果如下：
-{out}
-
-请分析这个结果，帮助用户解决问题。如果需要，你可以：
-1. 搜索相关资料获取更多信息
-2. 创建新的技能来解决这类问题
-3. 根据结果继续下一步操作
-
-用户的原始问题是：{user_text}
-"""
+                    followup_prompt = load_followup_prompt(out, user_text)
                     logger.info("Generating followup response after command execution")
                     freply, fadapt = generate_with_emotion_feedback(exec_instr + "\n\n" + followup_prompt, emotion_monitor)
                     logger.info(f"Followup reply: {freply[:200] if freply else 'Empty'}")

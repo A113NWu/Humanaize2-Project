@@ -18,6 +18,18 @@ PROMPT_FILES = {
     "break_silence": "break_silence.txt",
     "chat": "chat.txt",
     "agent": "agent_prompt.txt",  # 在 data 目录下
+    # 新增提示词
+    "followup": "followup_prompt.txt",
+    "web_search_prefix": "web_search_prefix.txt",
+    "chat_template": "chat_template.txt",
+    "system_prompt": "system_prompt.txt",
+    "reflection": "reflection_prompt.txt",
+    "memory_summarizer": "memory_summarizer_prompt.txt",
+    "distillation": "distillation_prompt.txt",
+    "distillation_customize": "distillation_customize_prompt.txt",
+    "self_improvement": "self_improvement_prompt.txt",
+    "solve_mode_todo": "solve_mode_todo_prompt.txt",
+    "solve_mode_summary": "solve_mode_summary_prompt.txt",
     # GAN 相关
     "gan_decide": "gan_decide.txt",
     "gan_topic": "gan_topic.txt",
@@ -150,3 +162,85 @@ def load_gan_synthesis_prompt(topic: str, argument_a: str) -> str:
     """加载 GAN 综合提示词"""
     template = load_prompt("gan_synthesis")
     return template.format(topic=topic, argument_a=argument_a)
+
+
+# ==================== 新增提示词加载函数 ====================
+
+def load_followup_prompt(command_output: str, user_text: str) -> str:
+    """加载命令执行后的跟进提示词"""
+    template = load_prompt("followup")
+    return template.format(command_output=command_output, user_text=user_text)
+
+
+def load_web_search_prefix_prompt(search_summary: str) -> str:
+    """加载网络搜索结果前缀提示词"""
+    template = load_prompt("web_search_prefix")
+    return template.format(search_summary=search_summary)
+
+
+def load_chat_template_prompt() -> str:
+    """加载聊天模板提示词"""
+    return load_prompt("chat_template")
+
+
+def load_system_prompt() -> str:
+    """加载系统提示词"""
+    return load_prompt("system_prompt")
+
+
+def load_reflection_prompt(conversation_text: str) -> str:
+    """加载对话反思提示词"""
+    template = load_prompt("reflection")
+    return template.format(conversation_text=conversation_text)
+
+
+def load_memory_summarizer_prompt(conversation_text: str) -> str:
+    """加载记忆摘要提示词"""
+    template = load_prompt("memory_summarizer")
+    return template.format(conversation_text=conversation_text)
+
+
+def load_distillation_prompt(topic: str, knowledge_points: list) -> str:
+    """加载知识蒸馏提示词"""
+    template = load_prompt("distillation")
+    return template.format(
+        topic=topic,
+        knowledge_points='\n'.join(f'- {kp}' for kp in knowledge_points[:5])
+    )
+
+
+def load_distillation_customize_prompt(base_prompt: str, user_input: str) -> str:
+    """加载知识蒸馏定制提示词"""
+    template = load_prompt("distillation_customize")
+    return template.format(base_prompt=base_prompt, user_input=user_input)
+
+
+def load_self_improvement_prompt(preferred_topics: str, recommended_strategy: str, 
+                                  sentiment: str, sentiment_score: float, 
+                                  performance_issues: list, skill_suggestion: str) -> str:
+    """加载自我改进提示词"""
+    template = load_prompt("self_improvement")
+    return template.format(
+        preferred_topics=preferred_topics,
+        recommended_strategy=recommended_strategy,
+        sentiment=sentiment,
+        sentiment_score=f"{sentiment_score:.2f}",
+        performance_issues='\n'.join(f'- {issue}' for issue in performance_issues),
+        skill_suggestion=skill_suggestion or '暂无特别建议'
+    )
+
+
+def load_solve_mode_todo_prompt(problem: str, reference_files: list, hsn_enabled: bool) -> str:
+    """加载Solve模式任务列表提示词"""
+    template = load_prompt("solve_mode_todo")
+    return template.format(
+        problem=problem,
+        reference_files=', '.join(reference_files) if reference_files else 'None',
+        hsn_enabled='Yes' if hsn_enabled else 'No'
+    )
+
+
+def load_solve_mode_summary_prompt(problem: str, results_text: str) -> str:
+    """加载Solve模式总结提示词"""
+    template = load_prompt("solve_mode_summary")
+    return template.format(problem=problem, results_text=results_text)

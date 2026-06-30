@@ -1,19 +1,6 @@
 from llm import chat
+from data.prompts_manager import load_reflection_prompt
 
 def reflect_on_conversation(conversation_text):
-    prompt = f"""
-Reflect on this conversation.
-
-Generate:
-1. observations
-2. emotional analysis
-3. relationship changes
-4. long-term implications
-
-Conversation:
-{conversation_text}
-
-Reflection:
-"""
-
+    prompt = load_reflection_prompt(conversation_text)
     return chat(prompt)

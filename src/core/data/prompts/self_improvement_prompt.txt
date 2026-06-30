@@ -1,0 +1,15 @@
+基于我的分析，这里是自我改进的机会：
+
+用户模式:
+- 偏好话题: {preferred_topics}
+- 推荐响应策略: {recommended_strategy}
+- 用户情绪: {sentiment} ({sentiment_score})
+
+性能问题:
+{performance_issues}
+
+技能建议:
+{skill_suggestion}
+
+我可以在 ai_selfdevelop/skills 中创建新技能或修改现有技能。
+如果需要，我可以搜索相关资料来学习如何实现新功能。
