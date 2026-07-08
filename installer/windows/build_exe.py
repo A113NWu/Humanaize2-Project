@@ -32,9 +32,16 @@ def build_exe(arch="x86_64"):
     # Windows 专用入口脚本，默认启动现代化 GUI
     main_script = "src/core/windows_main.py"
 
-    # 动态获取当前脚本所在的绝对路径，确保精准找到同目录下的 icon.ico
+    # 获取项目的根目录 (即 installer 目录的上一级)
     current_script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.abspath(os.path.join(current_script_dir, "..", ".."))
+    
     icon_path = os.path.join(current_script_dir, "icon.ico")
+    main_script_path = os.path.join(project_root, main_script)
+
+    # 辅助函数：安全地将相对路径转换为项目根目录下的绝对路径
+    def get_abs_data(rel_path):
+        return os.path.join(project_root, rel_path)
 
     # Output directory based on architecture
     output_dir = f"dist/{arch}"
@@ -50,19 +57,19 @@ def build_exe(arch="x86_64"):
         "--onefile",
         "--windowed",
         f"--icon={icon_path}",
-        # 添加数据文件
-        "--add-data", f"src/ui/ascii.txt{DATA_SEP}src/ui/",
-        "--add-data", f"src/config{DATA_SEP}src/config/",
-        "--add-data", f"src/core{DATA_SEP}src/core/",
-        "--add-data", f"src/ui{DATA_SEP}src/ui/",
-        "--add-data", f"src/llm{DATA_SEP}src/llm/",
-        "--add-data", f"src/memory{DATA_SEP}src/memory/",
-        "--add-data", f"src/tools{DATA_SEP}src/tools/",
-        "--add-data", f"src/utils{DATA_SEP}src/utils/",
-        "--add-data", f"src/ai_selfdevelop{DATA_SEP}src/ai_selfdevelop/",
-        "--add-data", f"skills{DATA_SEP}skills/",
-        "--add-data", f"config/version.json{DATA_SEP}config/",
-        "--add-data", f"requirements.txt{DATA_SEP}.",
+        # 使用绝对路径添加数据文件，彻底杜绝路径找不到的问题
+        "--add-data", f"{get_abs_data('src/ui/ascii.txt')}{DATA_SEP}src/ui/",
+        "--add-data", f"{get_abs_data('src/config')}{DATA_SEP}src/config/",
+        "--add-data", f"{get_abs_data('src/core')}{DATA_SEP}src/core/",
+        "--add-data", f"{get_abs_data('src/ui')}{DATA_SEP}src/ui/",
+        "--add-data", f"{get_abs_data('src/llm')}{DATA_SEP}src/llm/",
+        "--add-data", f"{get_abs_data('src/memory')}{DATA_SEP}src/memory/",
+        "--add-data", f"{get_abs_data('src/tools')}{DATA_SEP}src/tools/",
+        "--add-data", f"{get_abs_data('src/utils')}{DATA_SEP}src/utils/",
+        "--add-data", f"{get_abs_data('src/ai_selfdevelop')}{DATA_SEP}src/ai_selfdevelop/",
+        "--add-data", f"{get_abs_data('skills')}{DATA_SEP}skills/",
+        "--add-data", f"{get_abs_data('config/version.json')}{DATA_SEP}config/",
+        "--add-data", f"{get_abs_data('requirements.txt')}{DATA_SEP}.",
         # Hidden imports
         "--hidden-import", "customtkinter",
         "--hidden-import", "requests",
@@ -82,7 +89,7 @@ def build_exe(arch="x86_64"):
         "--workpath", f"build/{arch}",
         # Windows GUI mode by default
         "--add-binary", f"{icon_path}{DATA_SEP}.",
-        main_script
+        main_script_path
     ]
 
     print("=" * 50)
@@ -91,7 +98,6 @@ def build_exe(arch="x86_64"):
     print("\nPyInstaller command:", " ".join(cmd[:8]) + " ...")
 
     try:
-        # 去掉了 capture_output=True，这样 PyInstaller 的实时报错信息就能直接在 GitHub Actions 中显示
         result = subprocess.run(cmd, check=True)
         print("\n[SUCCESS] Build succeeded!")
 
@@ -111,7 +117,6 @@ def build_exe(arch="x86_64"):
             print(f"[ERROR] Executable not found at {exe_path}")
 
     except subprocess.CalledProcessError as e:
-        # 移除了会导致 Windows (cp1252 编码) 闪退的特殊字符 ✗
         print("\n[ERROR] Build failed!")
         if hasattr(e, 'stderr') and e.stderr:
             print("Error details:", e.stderr[:500])
