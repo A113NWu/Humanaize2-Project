@@ -31,22 +31,25 @@ def build_exe(arch="x86_64"):
     version = "2.2.4"
     # Windows 专用入口脚本，默认启动现代化 GUI
     main_script = "src/core/windows_main.py"
-    
+
+    # 动态获取当前脚本所在的绝对路径，确保精准找到同目录下的 icon.ico
+    current_script_dir = os.path.dirname(os.path.abspath(__file__))
+    icon_path = os.path.join(current_script_dir, "icon.ico")
+
     # Output directory based on architecture
     output_dir = f"dist/{arch}"
-    
+
     # Clean previous builds
     if os.path.exists(output_dir):
         shutil.rmtree(output_dir)
-    
+
     # PyInstaller command with architecture-specific options
-    # 注意：Windows 环境下不支持 *.py 这样的通配符，已直接改为指定整个文件夹
     cmd = [
         "pyinstaller",
         "--name", app_name,
         "--onefile",
         "--windowed",
-        "--icon=./icon.ico",
+        f"--icon={icon_path}",
         # 添加数据文件
         "--add-data", f"src/ui/ascii.txt{DATA_SEP}src/ui/",
         "--add-data", f"src/config{DATA_SEP}src/config/",
@@ -78,25 +81,25 @@ def build_exe(arch="x86_64"):
         "--distpath", output_dir,
         "--workpath", f"build/{arch}",
         # Windows GUI mode by default
-        "--add-binary", f"icon.ico{DATA_SEP}.",
+        "--add-binary", f"{icon_path}{DATA_SEP}.",
         main_script
     ]
-    
+
     print("=" * 50)
     print(f"Building Humanaize 2.0 v{version} for {arch}")
     print("=" * 50)
     print("\nPyInstaller command:", " ".join(cmd[:8]) + " ...")
-    
+
     try:
         # 去掉了 capture_output=True，这样 PyInstaller 的实时报错信息就能直接在 GitHub Actions 中显示
         result = subprocess.run(cmd, check=True)
         print("\n[SUCCESS] Build succeeded!")
-        
+
         # Create installer directory
         installer_dir = f"installer_output/{arch}"
         if not os.path.exists(installer_dir):
             os.makedirs(installer_dir)
-        
+
         # Copy exe to installer directory with architecture suffix
         exe_path = os.path.join(output_dir, app_name + ".exe")
         if os.path.exists(exe_path):
@@ -106,7 +109,7 @@ def build_exe(arch="x86_64"):
             print(f"  Size: {os.path.getsize(exe_path) / 1024 / 1024:.2f} MB")
         else:
             print(f"[ERROR] Executable not found at {exe_path}")
-            
+
     except subprocess.CalledProcessError as e:
         # 移除了会导致 Windows (cp1252 编码) 闪退的特殊字符 ✗
         print("\n[ERROR] Build failed!")
@@ -121,7 +124,7 @@ def build_exe(arch="x86_64"):
 def build_all():
     """Build executables for all supported architectures"""
     architectures = ["x86_64", "arm64"]
-    
+
     for arch in architectures:
         print(f"\n=== Building {arch} version ===")
         build_exe(arch)
