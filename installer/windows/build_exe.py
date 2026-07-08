@@ -40,6 +40,7 @@ def build_exe(arch="x86_64"):
         shutil.rmtree(output_dir)
     
     # PyInstaller command with architecture-specific options
+    # 注意：Windows 环境下不支持 *.py 这样的通配符，已直接改为指定整个文件夹
     cmd = [
         "pyinstaller",
         "--name", app_name,
@@ -48,15 +49,15 @@ def build_exe(arch="x86_64"):
         "--icon=icon.ico",
         # 添加数据文件
         "--add-data", f"src/ui/ascii.txt{DATA_SEP}src/ui/",
-        "--add-data", f"src/config/*.py{DATA_SEP}src/config/",
-        "--add-data", f"src/core/*.py{DATA_SEP}src/core/",
-        "--add-data", f"src/ui/*.py{DATA_SEP}src/ui/",
-        "--add-data", f"src/llm/*.py{DATA_SEP}src/llm/",
-        "--add-data", f"src/memory/*.py{DATA_SEP}src/memory/",
-        "--add-data", f"src/tools/*.py{DATA_SEP}src/tools/",
-        "--add-data", f"src/utils/*.py{DATA_SEP}src/utils/",
+        "--add-data", f"src/config{DATA_SEP}src/config/",
+        "--add-data", f"src/core{DATA_SEP}src/core/",
+        "--add-data", f"src/ui{DATA_SEP}src/ui/",
+        "--add-data", f"src/llm{DATA_SEP}src/llm/",
+        "--add-data", f"src/memory{DATA_SEP}src/memory/",
+        "--add-data", f"src/tools{DATA_SEP}src/tools/",
+        "--add-data", f"src/utils{DATA_SEP}src/utils/",
         "--add-data", f"src/ai_selfdevelop{DATA_SEP}src/ai_selfdevelop/",
-        "--add-data", f"skills/*{DATA_SEP}skills/",
+        "--add-data", f"skills{DATA_SEP}skills/",
         "--add-data", f"config/version.json{DATA_SEP}config/",
         "--add-data", f"requirements.txt{DATA_SEP}.",
         # Hidden imports
@@ -87,8 +88,9 @@ def build_exe(arch="x86_64"):
     print("\nPyInstaller command:", " ".join(cmd[:8]) + " ...")
     
     try:
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        print("\n✓ Build succeeded!")
+        # 去掉了 capture_output=True，这样 PyInstaller 的实时报错信息就能直接在 GitHub Actions 中显示
+        result = subprocess.run(cmd, check=True)
+        print("\n[SUCCESS] Build succeeded!")
         
         # Create installer directory
         installer_dir = f"installer_output/{arch}"
@@ -100,18 +102,19 @@ def build_exe(arch="x86_64"):
         if os.path.exists(exe_path):
             dest_exe = f"{app_name}-{arch}.exe"
             shutil.copy(exe_path, os.path.join(installer_dir, dest_exe))
-            print(f"✓ Executable copied to {installer_dir}/{dest_exe}")
+            print(f"[SUCCESS] Executable copied to {installer_dir}/{dest_exe}")
             print(f"  Size: {os.path.getsize(exe_path) / 1024 / 1024:.2f} MB")
         else:
-            print(f"✗ Error: Executable not found at {exe_path}")
+            print(f"[ERROR] Executable not found at {exe_path}")
             
     except subprocess.CalledProcessError as e:
-        print("\n✗ Build failed!")
-        if e.stderr:
-            print("Error:", e.stderr[:500])
+        # 移除了会导致 Windows (cp1252 编码) 闪退的特殊字符 ✗
+        print("\n[ERROR] Build failed!")
+        if hasattr(e, 'stderr') and e.stderr:
+            print("Error details:", e.stderr[:500])
         sys.exit(1)
     except FileNotFoundError:
-        print("\n✗ Error: pyinstaller not found.")
+        print("\n[ERROR] pyinstaller not found.")
         print("  Please install pyinstaller: pip install pyinstaller")
         sys.exit(1)
 
