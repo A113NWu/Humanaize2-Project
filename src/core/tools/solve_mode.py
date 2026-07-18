@@ -10,13 +10,16 @@ import time
 import json
 import re
 import threading
+import platform
 from typing import List, Dict, Optional, Any
 
 # Add core to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from llm import chat
+from llm import chat, chat_stream
 from .gan_iteration import GANIteration
+from .enhanced_gan import EnhancedGAN
+from .skills_manager import SkillsManager
 from data.prompts_manager import load_solve_mode_todo_prompt, load_solve_mode_summary_prompt, load_solve_mode_task_prompt
 
 
@@ -237,22 +240,8 @@ class SolveModeStatusBar:
         return ansi_escape.sub('', text)
     
     def print_update(self):
-        """打印状态栏更新（原地刷新）"""
-        import sys
-        if self.first_render:
-            # 第一次渲染，直接打印
-            print(self.render())
-            self.first_render = False
-        else:
-            # 使用 ANSI 转义序列原地刷新
-            # 向上移动4行到状态栏顶部
-            print("\033[4A", end='')
-            # 清除从当前位置到屏幕末尾（会清除状态栏和下方内容）
-            print("\033[0J", end='')
-            # 打印新的状态栏
-            print(self.render(), end='')
-            # 强制刷新输出缓冲区
-            sys.stdout.flush()
+        """打印状态栏更新"""
+        print(self.render())
 
 
 class HSNetwork:
@@ -331,7 +320,12 @@ class SolveMode:
         self.problem = ""
         self.reference_files = []
         self.hsn_enabled = False
+        self.enhanced_gan_enabled = False
+        self.skills_enabled = True
+        self.sandbox_enabled = False
+        self.sandbox_dir = ""
         self.hsn = HSNetwork()
+        self.skills_manager = SkillsManager()
         self.todo_list: List[Task] = []
         self.current_task = None
         self._running = False
@@ -340,6 +334,32 @@ class SolveMode:
         self._start_time = None
         self.status_bar = SolveModeStatusBar(self._use_color)
         
+    def _get_system_info(self) -> str:
+        """获取当前系统环境信息"""
+        info = []
+        info.append("=== SYSTEM INFORMATION ===")
+        info.append(f"Operating System: {platform.system()} {platform.release()}")
+        info.append(f"Architecture: {platform.machine()}")
+        info.append(f"Python Version: {platform.python_version()}")
+        info.append(f"Hostname: {platform.node()}")
+        info.append(f"Working Directory: {os.getcwd()}")
+        info.append(f"Platform: {platform.platform()}")
+        
+        try:
+            info.append(f"CPU: {platform.processor()}")
+        except:
+            pass
+        
+        try:
+            import psutil
+            mem = psutil.virtual_memory()
+            info.append(f"Memory: {mem.total // (1024**3)} GB total, {mem.available // (1024**3)} GB available")
+        except:
+            pass
+        
+        info.append("==========================")
+        return "\n".join(info)
+    
     def parse_args(self, args: List[str]):
         """Parse command line arguments"""
         i = 0
@@ -349,11 +369,22 @@ class SolveMode:
                     self.reference_files.append(args[i + 1])
                     i += 2
                     continue
-            elif args[i] == "-enable" or args[i] == "--enable":
-                if i + 1 < len(args) and args[i + 1].upper() == "HSN":
-                    self.hsn_enabled = True
+            elif args[i] == "--hsn":
+                self.hsn_enabled = True
+                i += 1
+                continue
+            elif args[i] == "-gan" or args[i] == "--enhanced-gan":
+                self.enhanced_gan_enabled = True
+                i += 1
+                continue
+            elif args[i] == "--sandbox":
+                if i + 1 < len(args):
+                    self.sandbox_enabled = True
+                    self.sandbox_dir = args[i + 1]
                     i += 2
                     continue
+                i += 1
+                continue
             i += 1
     
     def set_problem(self, problem: str):
@@ -370,12 +401,19 @@ class SolveMode:
         
         self._print_header()
         
+        if not self._check_llm_server():
+            return {"status": "failed", "error": "LLM server is not available"}
+        
         # Load reference files
         self._load_references()
         
         # Enable HSN if requested
         if self.hsn_enabled:
             self._setup_hsn()
+        
+        # Check if enhanced GAN mode is enabled
+        if self.enhanced_gan_enabled:
+            return self._run_enhanced_gan_mode()
         
         # Generate todo list
         self._generate_todo_list()
@@ -399,6 +437,56 @@ class SolveMode:
         summary = self._generate_summary(results)
         
         return summary
+    
+    def _run_enhanced_gan_mode(self) -> Dict:
+        """Execute solve mode with enhanced GAN two-phase execution"""
+        if self._use_color:
+            print(f"{Colors.BLUE}[INFO]{Colors.RESET} Running in Enhanced GAN mode...")
+        else:
+            print("[INFO] Running in Enhanced GAN mode...")
+        
+        enhanced_gan = EnhancedGAN()
+        enhanced_gan.set_color_mode(self._use_color)
+        
+        result = enhanced_gan.run(self.problem)
+        
+        if self._use_color:
+            print(f"\n{Colors.BOLD}{Colors.CYAN}" + "=" * 70 + f"{Colors.RESET}")
+            print(f"{Colors.BOLD}{Colors.CYAN}              ENHANCED GAN MODE COMPLETE{Colors.RESET}")
+            print(f"{Colors.BOLD}{Colors.CYAN}" + "=" * 70 + f"{Colors.RESET}")
+        else:
+            print("\n" + "=" * 70)
+            print("              ENHANCED GAN MODE COMPLETE")
+            print("=" * 70)
+        
+        if self._use_color:
+            print(f"\n{Colors.BLUE}Status:{Colors.RESET} {result.status}")
+            print(f"{Colors.BLUE}Plan Approved:{Colors.RESET} {result.plan_approved}")
+            print(f"{Colors.BLUE}Plan Score:{Colors.RESET} {result.plan_score:.2f}/1.0")
+            print(f"{Colors.BLUE}Plan Iterations:{Colors.RESET} {result.plan_iterations}")
+            print(f"{Colors.BLUE}Execution Iterations:{Colors.RESET} {result.total_execution_iterations}")
+            print(f"{Colors.BLUE}Tasks:{Colors.RESET} {len(result.task_results)}")
+        else:
+            print(f"\nStatus: {result.status}")
+            print(f"Plan Approved: {result.plan_approved}")
+            print(f"Plan Score: {result.plan_score:.2f}/1.0")
+            print(f"Plan Iterations: {result.plan_iterations}")
+            print(f"Execution Iterations: {result.total_execution_iterations}")
+            print(f"Tasks: {len(result.task_results)}")
+        
+        completed_count = sum(1 for r in result.task_results if r.get("validation_score", 0) > 0)
+        
+        return {
+            "status": result.status,
+            "plan_approved": result.plan_approved,
+            "plan_score": result.plan_score,
+            "plan_iterations": result.plan_iterations,
+            "execution_iterations": result.total_execution_iterations,
+            "tasks_completed": completed_count,
+            "tasks_total": len(result.task_list),
+            "problem": self.problem,
+            "final_summary": result.final_summary
+        }
     
     def _update_status_bar(self, progress=None):
         """更新状态栏"""
@@ -499,7 +587,8 @@ class SolveMode:
         else:
             print("[INFO] Analyzing problem and generating task list...")
         
-        prompt = load_solve_mode_todo_prompt(self.problem, self.reference_files, self.hsn_enabled)
+        system_info = self._get_system_info()
+        prompt = system_info + "\n\n" + load_solve_mode_todo_prompt(self.problem, self.reference_files, self.hsn_enabled)
         
         try:
             if self._use_color:
@@ -625,9 +714,8 @@ class SolveMode:
             result = self._execute_task(task)
             results.append(result)
             
-            # 更新状态栏
+            # 更新状态栏但不重复打印
             self._update_status_bar()
-            self.status_bar.print_update()
             
             # Validate task completion
             if task.status != Task.STATUS_COMPLETED:
@@ -636,17 +724,12 @@ class SolveMode:
                 else:
                     print(f"[WARN] Task {task.id} did not complete successfully")
             
-            # 清除当前任务输出，为下一个任务做准备（不是最后一个任务时）
+            # 添加分隔线，为下一个任务做准备（不是最后一个任务时）
             if idx < len(self.todo_list) - 1:
-                # 向上移动到状态栏下方的分割线
-                print("\033[10A", end='')  # 向上移动10行
-                print("\033[0J", end='')   # 清除从当前位置到屏幕末尾
-                # 重新打印分割线
                 if self._use_color:
-                    print(f"{Colors.DIM}{'─' * 70}{Colors.RESET}")
+                    print(f"\n{Colors.DIM}{'─' * 70}{Colors.RESET}\n")
                 else:
-                    print(f"{'─' * 70}")
-                print()
+                    print(f"\n{'─' * 70}\n")
         
         return results
     
@@ -659,27 +742,11 @@ class SolveMode:
         else:
             print(f"--- Executing Task {task.id}: {task.title} ---")
         
-        # Simulate progress
-        for i in range(1, 11):
-            if self._stop_event.is_set():
-                task.status = Task.STATUS_FAILED
-                task.result = "Task interrupted"
-                break
-            
-            task.progress = i * 0.1
-            progress_bar = self._format_progress(task.progress)
-            
-            if self._use_color:
-                print(f"\r{Colors.CYAN}[PROGRESS]{Colors.RESET} {progress_bar} {int(task.progress * 100)}%", end="")
-            else:
-                print(f"\r[PROGRESS] {progress_bar} {int(task.progress * 100)}%", end="")
-            
-            sys.stdout.flush()
-            time.sleep(0.2)
+        if self._use_color:
+            print(f"{Colors.YELLOW}[WAIT]{Colors.RESET}  AI is thinking...")
+        else:
+            print("[WAIT]  AI is thinking...")
         
-        print()
-        
-        # Execute actual task logic
         task.result = self._process_task(task)
         
         # Validate task
@@ -728,33 +795,316 @@ class SolveMode:
                     for peer_result in hsn_result["results"]:
                         hsn_context += f"- {peer_result['peer_name']}: {peer_result['contribution'][:100]}...\n"
             
-            prompt = load_solve_mode_task_prompt(task.title, task.description, self.problem, hsn_context)
+            # Build skills context if skills are enabled
+            skills_context = ""
+            if self.skills_enabled:
+                skills_context = self._build_skills_context()
             
-            # Try GAN iteration first
-            try:
-                gan = GANIteration()
-                result = gan.self_debate(is_user_topic=True, user_topic=prompt)
+            system_info = self._get_system_info()
+            prompt = system_info + "\n\n" + load_solve_mode_task_prompt(task.title, task.description, self.problem, hsn_context + skills_context)
+            
+            # Process with skill invocation capability
+            max_skill_calls = 5
+            max_retries_without_skill = 3
+            skill_calls_made = 0
+            retries_without_skill = 0
+            previous_results = ""
+            
+            while skill_calls_made < max_skill_calls:
+                prompt_with_history = prompt + "\n\nPrevious Skill Results:\n" + previous_results
                 
-                if result and "synthesis" in result:
+                if retries_without_skill > 0:
+                    prompt_with_history += f"\n\nWARNING: You have failed to invoke a skill {retries_without_skill} time(s). "
+                    prompt_with_history += "You MUST invoke a skill now. Output JSON format: {\"skill\": \"skill-name\", \"input\": {...}}"
+                
+                if self._use_color:
+                    print(f"\n{Colors.BOLD}{Colors.GREEN}[AI OUTPUT]{Colors.RESET}")
+                else:
+                    print("\n[AI OUTPUT]")
+                
+                response = ""
+                sys.stdout.flush()
+                
+                try:
+                    response = chat(prompt_with_history)
+                    if self._use_color:
+                        print(f"{Colors.GREEN}{response}{Colors.RESET}")
+                    else:
+                        print(response)
+                except Exception as e:
+                    if self._use_color:
+                        print(f"\n{Colors.YELLOW}[CHAT ERROR]{Colors.RESET} {str(e)}")
+                    else:
+                        print(f"\n[CHAT ERROR] {str(e)}")
+                
+                print()
+                sys.stdout.flush()
+                
+                if not response:
+                    if self._use_color:
+                        print(f"{Colors.RED}[WARN]{Colors.RESET} AI returned empty response")
+                    else:
+                        print("[WARN] AI returned empty response")
                     task.status = Task.STATUS_COMPLETED
-                    return result["synthesis"][:500]
-            except Exception:
-                # GAN failed, fall back to direct LLM call
-                pass
+                    return self._generate_fallback_result(task)
+                
+                # Check for skill invocation
+                skill_call = self._parse_skill_call(response)
+                
+                if skill_call:
+                    skill_name = skill_call.get('skill', '')
+                    skill_input = skill_call.get('input', '')
+                    
+                    if self._use_color:
+                        print(f"\n{Colors.BOLD}{Colors.MAGENTA}[SKILL CALL]{Colors.RESET} Invoking skill: {skill_name}")
+                    else:
+                        print(f"\n[SKILL CALL] Invoking skill: {skill_name}")
+                    
+                    try:
+                        skill_result = self.skills_manager.execute_skill(skill_name, skill_input)
+                        
+                        if self._use_color:
+                            print(f"{Colors.GREEN}[SKILL RESULT]{Colors.RESET} Status: {skill_result.get('status', 'unknown')}")
+                        else:
+                            print(f"[SKILL RESULT] Status: {skill_result.get('status', 'unknown')}")
+                        
+                        previous_results += f"\nSkill '{skill_name}' executed:\n"
+                        previous_results += f"Input: {json.dumps(skill_input)[:200]}\n"
+                        previous_results += f"Result: {json.dumps(skill_result)[:500]}\n"
+                        
+                        supervisor_feedback = self._supervisor_check(task, response, skill_result)
+                        if supervisor_feedback == "REDO":
+                            if self._use_color:
+                                print(f"\n{Colors.BOLD}{Colors.RED}[SUPERVISOR]{Colors.RESET} REDO - Result rejected, regenerating...")
+                            else:
+                                print("\n[SUPERVISOR] REDO - Result rejected, regenerating...")
+                            continue
+                        
+                        skill_calls_made += 1
+                        retries_without_skill = 0
+                        continue
+                    except Exception as e:
+                        if self._use_color:
+                            print(f"{Colors.RED}[SKILL ERROR]{Colors.RESET} {str(e)}")
+                        else:
+                            print(f"[SKILL ERROR] {str(e)}")
+                        previous_results += f"\nSkill '{skill_name}' failed: {str(e)}\n"
+                        skill_calls_made += 1
+                        continue
+                
+                # No skill call - check with supervisor
+                supervisor_feedback = self._supervisor_check(task, response, None)
+                if supervisor_feedback == "REDO":
+                    if self._use_color:
+                        print(f"\n{Colors.BOLD}{Colors.RED}[SUPERVISOR]{Colors.RESET} REDO - Result rejected, regenerating...")
+                    else:
+                        print("\n[SUPERVISOR] REDO - Result rejected, regenerating...")
+                    continue
+                
+                if self.skills_enabled:
+                    retries_without_skill += 1
+                    
+                    if self._use_color:
+                        print(f"\n{Colors.YELLOW}[INFO]{Colors.RESET} AI did not invoke a skill, using direct response")
+                    else:
+                        print(f"\n[INFO] AI did not invoke a skill, using direct response")
+                    
+                    task.status = Task.STATUS_COMPLETED
+                    return response[:500]
+                else:
+                    task.status = Task.STATUS_COMPLETED
+                    return response[:500]
             
-            # Fallback to direct LLM call
-            response = chat(prompt)
-            if response:
-                task.status = Task.STATUS_COMPLETED
-                return response[:500]
-            else:
-                task.status = Task.STATUS_COMPLETED
-                return self._generate_fallback_result(task)
+            # Max skill calls reached
+            task.status = Task.STATUS_COMPLETED
+            return f"Task completed with {skill_calls_made} skill invocations.\n\nFinal result: {response[:300]}"
         
         except Exception as e:
-            # AI completely unavailable, return fallback result
+            if self._use_color:
+                print(f"\n{Colors.RED}[ERROR]{Colors.RESET} Exception in _process_task: {str(e)}")
+            else:
+                print(f"\n[ERROR] Exception in _process_task: {str(e)}")
             task.status = Task.STATUS_COMPLETED
             return self._generate_fallback_result(task)
+    
+    def _build_skills_context(self) -> str:
+        """Build context string with available skills"""
+        enabled_skills = self.skills_manager.get_enabled_skills()
+        
+        if not enabled_skills:
+            return ""
+        
+        context = "\n\n=== AVAILABLE SKILLS ===\n"
+        context += "You can use the following skills to help solve this problem.\n"
+        context += "Skills can provide specialized capabilities. You may choose to invoke a skill or provide a direct answer.\n"
+        
+        if self.sandbox_enabled and self.sandbox_dir:
+            context += f"\n=== SANDBOX MODE ACTIVE ===\n"
+            context += f"You are operating in sandbox mode.\n"
+            context += f"All file operations should be within this directory: {self.sandbox_dir}\n"
+        
+        context += "\nAvailable Skills:\n"
+        context += "----------------\n"
+        
+        for skill in enabled_skills:
+            context += f"- {skill.name}: {skill.description}\n"
+        
+        context += "\nTo invoke a skill, output JSON in this format:\n"
+        context += '{"skill": "skill-name", "input": {"key": "value"}}\n'
+        context += "\nIf you do not invoke a skill, your direct answer will also be accepted.\n"
+        
+        return context
+    
+    def _validate_sandbox_path(self, path: str) -> bool:
+        """Validate that path is within sandbox directory"""
+        if not self.sandbox_enabled or not self.sandbox_dir:
+            return True
+        
+        import os
+        sandbox_abs = os.path.abspath(self.sandbox_dir)
+        path_abs = os.path.abspath(path)
+        
+        return path_abs.startswith(sandbox_abs + os.sep) or path_abs == sandbox_abs
+    
+    def _check_llm_server(self, max_wait: int = 60) -> bool:
+        """Check if LLM server is available, wait if needed"""
+        try:
+            from tools.tools import check_llm_server
+            import time
+            
+            if check_llm_server():
+                if self._use_color:
+                    print(f"{Colors.GREEN}[OK]{Colors.RESET} LLM server is available")
+                else:
+                    print("[OK] LLM server is available")
+                return True
+            
+            if self._use_color:
+                print(f"{Colors.YELLOW}[WAIT]{Colors.RESET} LLM server not available, waiting...")
+            else:
+                print("[WAIT] LLM server not available, waiting...")
+            
+            for attempt in range(max_wait):
+                time.sleep(1)
+                if check_llm_server():
+                    if self._use_color:
+                        print(f"{Colors.GREEN}[OK]{Colors.RESET} LLM server started successfully")
+                    else:
+                        print("[OK] LLM server started successfully")
+                    return True
+                
+                if (attempt + 1) % 10 == 0:
+                    if self._use_color:
+                        print(f"{Colors.YELLOW}[WAIT]{Colors.RESET} Waiting for LLM server... ({attempt + 1}/{max_wait}s)")
+                    else:
+                        print(f"[WAIT] Waiting for LLM server... ({attempt + 1}/{max_wait}s)")
+            
+            if self._use_color:
+                print(f"{Colors.RED}[ERROR]{Colors.RESET} LLM server failed to start within {max_wait} seconds")
+            else:
+                print(f"[ERROR] LLM server failed to start within {max_wait} seconds")
+            return False
+            
+        except Exception as e:
+            if self._use_color:
+                print(f"{Colors.RED}[ERROR]{Colors.RESET} Failed to check LLM server: {str(e)}")
+            else:
+                print(f"[ERROR] Failed to check LLM server: {str(e)}")
+            return False
+    
+    def _parse_skill_call(self, response: str) -> Optional[Dict]:
+        """Parse skill invocation from LLM response"""
+        try:
+            skill_pattern = r'\{\s*"skill"\s*:\s*"([^"]+)"\s*,\s*"input"\s*:\s*(.*?)\s*\}'
+            match = re.search(skill_pattern, response, re.DOTALL)
+            if match:
+                skill_name = match.group(1)
+                input_json_str = match.group(2)
+                
+                try:
+                    input_data = json.loads(input_json_str)
+                    return {"skill": skill_name, "input": input_data}
+                except json.JSONDecodeError:
+                    pass
+        except (json.JSONDecodeError, ValueError):
+            pass
+        
+        try:
+            json_match = re.search(r'\{\s*"skill"\s*:\s*"[^"]+"[\s\S]*?\}', response)
+            if json_match:
+                json_str = json_match.group().replace('\n', '\\n').replace('\r', '\\r')
+                skill_call = json.loads(json_str)
+                if 'skill' in skill_call and 'input' in skill_call:
+                    return skill_call
+        except (json.JSONDecodeError, ValueError):
+            pass
+        
+        try:
+            json_start = response.find('{"skill"')
+            if json_start != -1:
+                depth = 0
+                json_end = json_start
+                for i in range(json_start, len(response)):
+                    if response[i] == '{':
+                        depth += 1
+                    elif response[i] == '}':
+                        depth -= 1
+                        if depth == 0:
+                            json_end = i + 1
+                            break
+                
+                if json_end > json_start:
+                    json_str = response[json_start:json_end]
+                    json_str = json_str.replace('\n', '\\n').replace('\r', '\\r')
+                    skill_call = json.loads(json_str)
+                    if 'skill' in skill_call:
+                        return skill_call
+        except (json.JSONDecodeError, ValueError):
+            pass
+        
+        return None
+    
+    def _supervisor_check(self, task: Task, response: str, skill_result: Optional[Dict] = None) -> str:
+        """Supervisor AI checks if the result is acceptable"""
+        try:
+            supervisor_prompt = f"""
+You are a supervisor AI. Your task is to evaluate if the following solution is acceptable.
+
+Task: {task.title}
+Description: {task.description}
+
+AI Response: {response[:300]}
+
+Skill Result: {json.dumps(skill_result)[:200] if skill_result else 'None'}
+
+Evaluation Criteria:
+1. Does the solution directly address the problem?
+2. Is the code/file content complete (no "...", no "(and so on)")?
+3. Is the solution practical and executable?
+
+You MUST output ONLY one of these words:
+- "ACCEPT" if the solution is acceptable
+- "REDO" if the solution is incomplete, uses placeholders, or doesn't solve the problem
+
+Output your decision now.
+"""
+            
+            result = chat(supervisor_prompt)
+            
+            if self._use_color:
+                print(f"\n{Colors.BOLD}{Colors.CYAN}[SUPERVISOR]{Colors.RESET} {result.strip()}")
+            else:
+                print(f"\n[SUPERVISOR] {result.strip()}")
+            
+            if "REDO" in result.upper():
+                return "REDO"
+            return "ACCEPT"
+        except Exception as e:
+            if self._use_color:
+                print(f"\n{Colors.YELLOW}[SUPERVISOR]{Colors.RESET} Check skipped: {str(e)}")
+            else:
+                print(f"\n[SUPERVISOR] Check skipped: {str(e)}")
+            return "ACCEPT"
     
     def _generate_fallback_result(self, task: Task) -> str:
         """Generate fallback result when AI is unavailable"""

@@ -1,0 +1,34 @@
+[Unit]
+Description=Humanaize 2.1 Guard Mode - Security Monitoring Service
+Documentation=https://github.com/A113NWu/Humanaize2-Project
+After=network.target
+
+[Service]
+Type=simple
+User=@@USER_NAME@@
+Group=@@USER_GROUP@@
+WorkingDirectory=@@INSTALL_DIR@@
+ExecStart=python3 src/core/main.py boot -m guard --background
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=humanaize-guard
+
+Environment=HOME=@@HOME_DIR@@
+Environment=PYTHONUNBUFFERED=1
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:~/.local/bin
+
+NoNewPrivileges=false
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=@@DATA_DIR@@
+ReadWritePaths=@@LOG_DIR@@
+ReadWritePaths=@@CONFIG_DIR@@
+
+MemoryMax=512M
+CPUQuota=20%
+
+[Install]
+WantedBy=multi-user.target
+Alias=humanaize-guard.service

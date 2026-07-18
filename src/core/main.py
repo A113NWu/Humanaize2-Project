@@ -4,7 +4,9 @@ Humanaize v2.0 - 主要進入點
 命令:
     python main.py boot         - 啟動 CLI 聊天介面
     python main.py boot -m gui  - 啟動 GUI 介面
+    python main.py boot -m win-gui  - 啟動 Windows 現代化 GUI 介面
     python main.py boot -m solve -r <file> -enable HSN - 啟動解決模式
+    python main.py boot -m guard [--background] [--start-when-boot] - 啟動守護模式
     python main.py settings     - 開啟設定介面
     python main.py update       - 檢查並安裝更新
 """
@@ -15,8 +17,10 @@ import random
 import subprocess
 import threading
 
-# 添加 src 目录到 Python 路径
+# 添加项目根目录和 src 目录到 Python 路径
 src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+project_root = os.path.dirname(src_dir)
+sys.path.insert(0, project_root)
 sys.path.insert(0, src_dir)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -79,14 +83,78 @@ def _get_model_path():
     return exact_path
 
 
-def _check_and_start_server():
-    """檢查LLM伺服器是否執行，若未執行則自動啟動"""
+def _is_port_in_use(port: int = 8080) -> bool:
+    """检查端口是否被占用"""
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(('127.0.0.1', port)) == 0
+
+
+def _kill_process_on_port(port: int = 8080) -> bool:
+    """终止占用指定端口的进程"""
+    try:
+        result = subprocess.run(
+            ['lsof', '-ti', f':{port}'],
+            capture_output=True,
+            text=True
+        )
+        if result.stdout:
+            pids = result.stdout.strip().split('\n')
+            for pid in pids:
+                try:
+                    subprocess.run(['kill', '-9', pid], check=True)
+                    print(f"[INFO] Killed process {pid} on port {port}")
+                except:
+                    pass
+            return True
+    except:
+        pass
+    
+    try:
+        result = subprocess.run(
+            ['ss', '-tlnp', f'sport = :{port}'],
+            capture_output=True,
+            text=True
+        )
+        if result.stdout:
+            lines = result.stdout.strip().split('\n')
+            for line in lines[1:]:
+                parts = line.split()
+                if len(parts) > 5:
+                    pid_info = parts[5]
+                    if '=' in pid_info:
+                        pid = pid_info.split('=')[1].split(',')[0]
+                        try:
+                            subprocess.run(['kill', '-9', pid], check=True)
+                            print(f"[INFO] Killed process {pid} on port {port}")
+                        except:
+                            pass
+            return True
+    except:
+        pass
+    
+    return False
+
+
+def _check_and_start_server(max_wait: int = 120) -> bool:
+    """檢查LLM伺服器是否執行，若未執行則自動啟動，並等待伺服器完全啟動"""
     from tools.tools import check_llm_server
+    import time
 
     print("[INFO] Checking LLM server...")
+    
     if check_llm_server():
         print("[INFO] LLM server is already running.")
         return True
+
+    if _is_port_in_use(8080):
+        print("[WARN] Port 8080 is occupied but server not responding properly")
+        print("[INFO] Attempting to clear port and restart...")
+        if _kill_process_on_port(8080):
+            time.sleep(2)
+        else:
+            print("[ERROR] Failed to clear port 8080")
+            return False
 
     print("[INFO] LLM server not detected. Starting server...")
 
@@ -103,34 +171,43 @@ def _check_and_start_server():
 
     try:
         if sys.platform == "win32" or os.name == "nt":
-            subprocess.Popen(
+            process = subprocess.Popen(
                 [server_path, "-m", model_path, "-c", "4096", "-ngl", "999", "--host", "127.0.0.1", "--port", "8080", "-n", "256"],
                 cwd=os.path.dirname(server_path),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
             )
         else:
-            import time
-
-            subprocess.Popen(
+            process = subprocess.Popen(
                 [server_path, "-m", model_path, "-c", "4096", "-ngl", "999", "--host", "127.0.0.1", "--port", "8080", "-n", "256"],
                 cwd=os.path.dirname(server_path),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
             )
 
-            def _wait_for_server():
-                from tools.tools import check_llm_server
-                for _ in range(30):
-                    time.sleep(1)
-                    if check_llm_server():
-                        print("[INFO] LLM server started successfully!")
-                        return
-                print("[WARN] Server process started but not responding yet.")
+        print("[INFO] Waiting for LLM server to start...")
+        for attempt in range(max_wait):
+            time.sleep(1)
+            
+            if process.poll() is not None:
+                stdout, stderr = process.communicate(timeout=5)
+                print("[ERROR] LLM server crashed on startup")
+                if stdout:
+                    print("[ERROR] STDOUT:", stdout.decode('utf-8', errors='ignore'))
+                if stderr:
+                    print("[ERROR] STDERR:", stderr.decode('utf-8', errors='ignore'))
+                return False
+                
+            if check_llm_server():
+                print("[INFO] LLM server started successfully!")
+                return True
+            if (attempt + 1) % 10 == 0:
+                print(f"[INFO] Waiting for LLM server... ({attempt + 1}/{max_wait}s)")
 
-            threading.Thread(target=_wait_for_server, daemon=True).start()
-        return True
+        print("[ERROR] LLM server failed to start within timeout.")
+        process.terminate()
+        return False
 
     except Exception as e:
         print("[ERROR] Failed to start server:", str(e))
@@ -231,20 +308,36 @@ def boot_windows_gui():
 
 def boot_solve(args):
     """啟動問題解決模式"""
-    _check_and_start_server()
-    
-    # 等待服务器完全启动
-    import time
-    time.sleep(1)
+    if not _check_and_start_server():
+        print("[ERROR] Failed to start LLM server. Exiting...")
+        return
 
     from tools.solve_mode import SolveMode
     
     solver = SolveMode()
-    solver.parse_args(args)
     
-    # Get problem from user
-    print("Enter the problem you want to solve:")
-    problem = input("> ")
+    problem = ""
+    mode_args = []
+    
+    i = 0
+    while i < len(args):
+        if args[i].startswith("-"):
+            mode_args.append(args[i])
+            if i + 1 < len(args) and not args[i + 1].startswith("-"):
+                mode_args.append(args[i + 1])
+                i += 2
+                continue
+            i += 1
+            continue
+        if not problem:
+            problem = " ".join(args[i:])
+        break
+    
+    solver.parse_args(mode_args)
+    
+    if not problem.strip():
+        print("Enter the problem you want to solve:")
+        problem = input("> ")
     
     if not problem.strip():
         print("[ERROR] No problem specified")
@@ -257,6 +350,34 @@ def boot_solve(args):
     except KeyboardInterrupt:
         print("\n[INFO] Solve mode interrupted")
         solver.stop()
+
+
+def boot_guard(args):
+    """啟動守護模式"""
+    background = "--background" in args or "-b" in args
+    start_on_boot = "--start-when-boot" in args or "-s" in args
+    
+    print("[INFO] Starting Guard mode...")
+    
+    try:
+        from tools.guard_mode import GuardMode, guard_mode_api
+        
+        if background:
+            print("[INFO] Running in background mode")
+            result = guard_mode_api.start(background=True, start_on_boot=start_on_boot)
+            if result.get("status") == "success":
+                print("[INFO] Guard mode started successfully in background")
+            else:
+                print(f"[ERROR] Failed to start Guard mode: {result.get('message')}")
+        else:
+            print("[INFO] Running in foreground mode (press Ctrl+C to stop)")
+            guard = GuardMode(background=False, start_on_boot=start_on_boot)
+            guard.start()
+                
+    except ImportError as e:
+        print(f"[ERROR] Failed to import guard_mode module: {e}")
+    except Exception as e:
+        print(f"[ERROR] Failed to start Guard mode: {e}")
 
 
 def open_settings():
@@ -348,13 +469,22 @@ def main():
         print("  humanaize2 boot         - Start CLI chat interface")
         print("  humanaize2 boot -m gui  - Start GUI interface")
         print("  humanaize2 boot -m win-gui  - Start Windows modern GUI interface")
-        print("  humanaize2 boot -m solve [-r <file>] [-enable HSN] - Start problem solving mode")
+        print("  humanaize2 boot -m solve [--hsn] [--sandbox <dir>] [-gan] - Start problem solving mode")
+        print("  humanaize2 boot -m guard [--background] [--start-when-boot] - Start guard mode")
         print("  humanaize2 settings     - Open settings interface")
+        print("\nOptions for solve mode:")
+        print("  --hsn          Enable HSN (Human Swarm Network)")
+        print("  --sandbox <dir>  Enable sandbox mode, restrict AI to specified directory")
+        print("  -gan           Enable enhanced GAN mode")
+        print("\nOptions for guard mode:")
+        print("  --background          Run in background mode")
+        print("  --start-when-boot     Enable auto-start on system boot")
         print("\nOr use directly:")
         print("  python main.py boot")
         print("  python main.py boot -m gui")
         print("  python main.py boot -m win-gui")
         print("  python main.py boot -m solve")
+        print("  python main.py boot -m guard")
         print("  python main.py settings")
         return
     
@@ -408,6 +538,9 @@ def main():
             print("Starting CLI chat interface...")
             print("Starting SOLVE mode...")
             boot_solve(mode_args)
+        elif mode == "guard":
+            print("Starting Guard mode...")
+            boot_guard(mode_args)
         else:
             choice = random.randint(0, 4)
             if choice == 3 and ascii_art:
@@ -438,7 +571,7 @@ def main():
         print("Usage:")
         print("  humanaize2 boot         - Start CLI chat interface")
         print("  humanaize2 boot -m gui  - Start GUI interface")
-        print("  humanaize2 boot -m solve [-r <file>] [-enable HSN] - Start problem solving mode")
+        print("  humanaize2 boot -m solve [--hsn] [--sandbox <dir>] [-gan] - Start problem solving mode")
         print("  humanaize2 settings     - Open settings interface")
         print("  humanaize2 skills      - Manage skills")
         print("  humanaize2 update      - Check for and install updates")

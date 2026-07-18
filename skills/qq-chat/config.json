@@ -1,0 +1,14 @@
+{
+  "host": "127.0.0.1",
+  "port": 6185,
+  "qq": null,
+  "enabled": true,
+  "mock_mode": false,
+  "protocol": "astrbot",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFzdHJib3QiLCJleHAiOjE3ODQ4Njc1MDV9.-Qz2ZDFCb3m_DF1qc_1PE41pTN4pDLSsHmpjpnc02hQ",
+  "username": "astrbot",
+  "password": "Astrbot123",
+  "astrbot_path": "/home/allenwu/\u684c\u9762/Humanaize_2_1/skills/qq-chat/astrbot",
+  "appid": "1905213281",
+  "platform_id": "qq_official_1905213281"
+}

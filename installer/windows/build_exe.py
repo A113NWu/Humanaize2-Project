@@ -28,48 +28,37 @@ def build_exe(arch="x86_64"):
     """
     # Configuration
     app_name = "Humanaize2"
-    version = "2.2.4"
+    version = "2.2.3"
     # Windows 专用入口脚本，默认启动现代化 GUI
     main_script = "src/core/windows_main.py"
-
-    # 获取项目的根目录 (即 installer 目录的上一级)
-    current_script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.abspath(os.path.join(current_script_dir, "..", ".."))
     
-    icon_path = os.path.join(current_script_dir, "icon.ico")
-    main_script_path = os.path.join(project_root, main_script)
-
-    # 辅助函数：安全地将相对路径转换为项目根目录下的绝对路径
-    def get_abs_data(rel_path):
-        return os.path.join(project_root, rel_path)
-
     # Output directory based on architecture
     output_dir = f"dist/{arch}"
-
+    
     # Clean previous builds
     if os.path.exists(output_dir):
         shutil.rmtree(output_dir)
-
+    
     # PyInstaller command with architecture-specific options
     cmd = [
         "pyinstaller",
         "--name", app_name,
         "--onefile",
         "--windowed",
-        f"--icon={icon_path}",
-        # 使用绝对路径添加数据文件，彻底杜绝路径找不到的问题
-        "--add-data", f"{get_abs_data('src/ui/ascii.txt')}{DATA_SEP}src/ui/",
-        "--add-data", f"{get_abs_data('src/config')}{DATA_SEP}src/config/",
-        "--add-data", f"{get_abs_data('src/core')}{DATA_SEP}src/core/",
-        "--add-data", f"{get_abs_data('src/ui')}{DATA_SEP}src/ui/",
-        "--add-data", f"{get_abs_data('src/llm')}{DATA_SEP}src/llm/",
-        "--add-data", f"{get_abs_data('src/memory')}{DATA_SEP}src/memory/",
-        "--add-data", f"{get_abs_data('src/tools')}{DATA_SEP}src/tools/",
-        "--add-data", f"{get_abs_data('src/utils')}{DATA_SEP}src/utils/",
-        "--add-data", f"{get_abs_data('src/ai_selfdevelop')}{DATA_SEP}src/ai_selfdevelop/",
-        "--add-data", f"{get_abs_data('skills')}{DATA_SEP}skills/",
-        "--add-data", f"{get_abs_data('config/version.json')}{DATA_SEP}config/",
-        "--add-data", f"{get_abs_data('requirements.txt')}{DATA_SEP}.",
+        "--icon=icon.ico",
+        # 添加数据文件
+        "--add-data", f"src/ui/ascii.txt{DATA_SEP}src/ui/",
+        "--add-data", f"src/config/*.py{DATA_SEP}src/config/",
+        "--add-data", f"src/core/*.py{DATA_SEP}src/core/",
+        "--add-data", f"src/ui/*.py{DATA_SEP}src/ui/",
+        "--add-data", f"src/llm/*.py{DATA_SEP}src/llm/",
+        "--add-data", f"src/memory/*.py{DATA_SEP}src/memory/",
+        "--add-data", f"src/tools/*.py{DATA_SEP}src/tools/",
+        "--add-data", f"src/utils/*.py{DATA_SEP}src/utils/",
+        "--add-data", f"src/core/tools/ai_selfdevelop{DATA_SEP}src/core/tools/ai_selfdevelop/",
+        "--add-data", f"skills/*{DATA_SEP}skills/",
+        "--add-data", f"config/version.json{DATA_SEP}config/",
+        "--add-data", f"requirements.txt{DATA_SEP}.",
         # Hidden imports
         "--hidden-import", "customtkinter",
         "--hidden-import", "requests",
@@ -88,48 +77,48 @@ def build_exe(arch="x86_64"):
         "--distpath", output_dir,
         "--workpath", f"build/{arch}",
         # Windows GUI mode by default
-        "--add-binary", f"{icon_path}{DATA_SEP}.",
-        main_script_path
+        "--add-binary", f"icon.ico{DATA_SEP}.",
+        main_script
     ]
-
+    
     print("=" * 50)
     print(f"Building Humanaize 2.0 v{version} for {arch}")
     print("=" * 50)
     print("\nPyInstaller command:", " ".join(cmd[:8]) + " ...")
-
+    
     try:
-        result = subprocess.run(cmd, check=True)
-        print("\n[SUCCESS] Build succeeded!")
-
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        print("\n✓ Build succeeded!")
+        
         # Create installer directory
         installer_dir = f"installer_output/{arch}"
         if not os.path.exists(installer_dir):
             os.makedirs(installer_dir)
-
+        
         # Copy exe to installer directory with architecture suffix
         exe_path = os.path.join(output_dir, app_name + ".exe")
         if os.path.exists(exe_path):
             dest_exe = f"{app_name}-{arch}.exe"
             shutil.copy(exe_path, os.path.join(installer_dir, dest_exe))
-            print(f"[SUCCESS] Executable copied to {installer_dir}/{dest_exe}")
+            print(f"✓ Executable copied to {installer_dir}/{dest_exe}")
             print(f"  Size: {os.path.getsize(exe_path) / 1024 / 1024:.2f} MB")
         else:
-            print(f"[ERROR] Executable not found at {exe_path}")
-
+            print(f"✗ Error: Executable not found at {exe_path}")
+            
     except subprocess.CalledProcessError as e:
-        print("\n[ERROR] Build failed!")
-        if hasattr(e, 'stderr') and e.stderr:
-            print("Error details:", e.stderr[:500])
+        print("\n✗ Build failed!")
+        if e.stderr:
+            print("Error:", e.stderr[:500])
         sys.exit(1)
     except FileNotFoundError:
-        print("\n[ERROR] pyinstaller not found.")
+        print("\n✗ Error: pyinstaller not found.")
         print("  Please install pyinstaller: pip install pyinstaller")
         sys.exit(1)
 
 def build_all():
     """Build executables for all supported architectures"""
     architectures = ["x86_64", "arm64"]
-
+    
     for arch in architectures:
         print(f"\n=== Building {arch} version ===")
         build_exe(arch)

@@ -26,6 +26,7 @@ THOUGHT: 你心里想的分析过程
 RESPONSE: 你对用户说的自然回复
 
 重要: RESPONSE里只能有你对用户说的话，不要出现分析、计划、自我修正等内容。
+重要: 只输出一个 THOUGHT/RESPONSE 结构，不要在回复中重复 RESPONSE: 标签。只有最后一个 RESPONSE: 之后的内容会作为你的最终回答。
 
 ## 使用技能
 当你需要执行命令时，在RESPONSE中用JSON格式调用：

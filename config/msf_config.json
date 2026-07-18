@@ -1,0 +1,15 @@
+{
+    "host": "127.0.0.1",
+    "port": 5432,
+    "database": "msf",
+    "username": "msf",
+    "password": "",
+    "ssl_mode": "disable",
+    "connect_timeout": 10,
+    "pool_size": 5,
+    "max_overflow": 10,
+    "retry_attempts": 3,
+    "retry_delay": 2,
+    "query_timeout": 30,
+    "encoding": "utf-8"
+}

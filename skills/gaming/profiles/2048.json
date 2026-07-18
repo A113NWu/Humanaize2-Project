@@ -1,0 +1,42 @@
+{
+    "game_name": "2048",
+    "description": "2048益智游戏配置",
+    "trigger": {
+        "window_title": "2048",
+        "match_mode": "contains"
+    },
+    "controls": [
+        {"name": "向上移动", "action": "move_up", "type": "key", "keys": ["arrowup", "w"], "description": "所有方块向上移动"},
+        {"name": "向下移动", "action": "move_down", "type": "key", "keys": ["arrowdown", "s"], "description": "所有方块向下移动"},
+        {"name": "向左移动", "action": "move_left", "type": "key", "keys": ["arrowleft", "a"], "description": "所有方块向左移动"},
+        {"name": "向右移动", "action": "move_right", "type": "key", "keys": ["arrowright", "d"], "description": "所有方块向右移动"},
+        {"name": "重新开始", "action": "restart", "type": "key", "keys": ["r"], "description": "重新开始游戏"},
+        {"name": "什么都不做", "action": "do_nothing", "type": "key", "keys": [], "description": "保持当前状态"}
+    ],
+    "death_detection": {
+        "enabled_methods": ["text", "visual_cues"],
+        "text": {
+            "keywords": ["game over", "no more moves", "gameover", "游戏结束", "无法移动", "没有可用移动"],
+            "enabled": true
+        },
+        "health_bar": {
+            "enabled": false
+        },
+        "scene_change": {
+            "enabled": false,
+            "threshold": 30
+        },
+        "visual_cues": {
+            "enabled": true,
+            "confidence_threshold": 0.75
+        }
+    },
+    "ui_regions": {},
+    "tips": [
+        "2048是一个益智游戏，使用方向键移动方块",
+        "相同数字的方块碰撞会合并",
+        "目标是合成2048方块",
+        "保持最大数字在角落",
+        "按R键重新开始"
+    ]
+}

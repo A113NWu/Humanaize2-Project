@@ -1,8 +1,8 @@
 {
   "language": "中文",
   "theme": "Light",
-  "model_name": "tinyllama",
-  "model_path": "",
+  "model_name": "gemma-4-E4B-it-ultra-uncensored-heretic-Q8_0",
+  "model_path": "/home/allenwu/桌面/Humanaize_2_1/model/gemma-4-E4B-it-ultra-uncensored-heretic-Q8_0.gguf",
   "skills_prompt": "",
   "auto_break_silence": true,
   "gan_enabled": true

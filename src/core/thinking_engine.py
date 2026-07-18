@@ -16,7 +16,7 @@ except ImportError:
     logger = logging.getLogger(__name__)
 
 from memory import add, add_thought, save_memory
-from llm.llm_enhanced import generate_with_emotion_feedback
+from llm.llm_enhanced import generate_with_emotion_feedback, generate_with_emotion_feedback_stream
 from Agent import Agent
 from tools.notify import notify_ai_decision, notify_ai_response
 from tools.web_search import WebSearch
@@ -33,6 +33,8 @@ from data.prompts_manager import (
 )
 
 class ThinkingEngine:
+    _game_mode = False
+    
     def __init__(self, on_response_callback=None):
         logger.info("Initializing ThinkingEngine")
         self.on_response = on_response_callback
@@ -54,6 +56,31 @@ class ThinkingEngine:
         self.web_search = WebSearch()
         logger.info("ThinkingEngine initialized successfully")
         self.search_enabled = True  # Enable web search by default
+        
+        self._stream_callbacks = []
+    
+    def register_stream_callback(self, callback):
+        """注册流式输出回调函数，用于实时发送消息（如QQ）"""
+        if callback not in self._stream_callbacks:
+            self._stream_callbacks.append(callback)
+    
+    def unregister_stream_callback(self, callback):
+        """注销流式输出回调函数"""
+        if callback in self._stream_callbacks:
+            self._stream_callbacks.remove(callback)
+    
+    def _notify_stream_callbacks(self, sentence, target_info=None):
+        """通知所有注册的流式回调函数"""
+        for callback in self._stream_callbacks:
+            try:
+                callback(sentence, target_info)
+            except Exception as e:
+                logger.error(f"Stream callback error: {e}")
+    
+    @classmethod
+    def set_game_mode(cls, enabled: bool):
+        cls._game_mode = enabled
+        logger.info(f"Game mode {'enabled' if enabled else 'disabled'}")
     
     def set_language(self, language: str):
         """Set the current language for the engine"""
@@ -184,10 +211,32 @@ class ThinkingEngine:
         if not text:
             return None, ""
 
-        match = re.search(r"(?si)THOUGHT\s*:\s*(.*?)\s*RESPONSE\s*:\s*(.*)", text)
-        if match:
-            return match.group(1).strip(), match.group(2).strip()
+        pattern = re.compile(r"(?si)(THOUGHT|RESPONSE)\s*:\s*")
+        segments = []
+        last_label = None
+        last_end = 0
 
+        for match in pattern.finditer(text):
+            if last_label is not None:
+                segments.append((last_label, text[last_end:match.start()].strip()))
+            last_label = match.group(1).upper()
+            last_end = match.end()
+
+        if last_label is not None:
+            segments.append((last_label, text[last_end:].strip()))
+
+        thought = None
+        response = None
+        for label, content in segments:
+            if not content:
+                continue
+            if label == "THOUGHT":
+                thought = content
+            elif label == "RESPONSE":
+                response = content
+
+        if response is not None:
+            return thought, response
         return None, text.strip()
 
     def _process(self):
@@ -222,6 +271,10 @@ class ThinkingEngine:
                 self._handle_reflection_task(prompt, memory, emotion_monitor, exec_instr)
             elif task_type == "chat_with_gan_decision":
                 self._handle_chat_with_gan_decision_task(prompt, memory, emotion_monitor, exec_instr, user_text)
+            elif task_type == "chat_stream":
+                # 流式聊天任务 - 实时发送句子（包含GAN决策）
+                target_info = task.get("target_info")
+                self._handle_chat_with_gan_decision_stream_task(prompt, memory, emotion_monitor, exec_instr, user_text, target_info)
             else:  # chat
                 # 普通聊天任务
                 self._handle_chat_task(prompt, memory, emotion_monitor, exec_instr)
@@ -245,7 +298,7 @@ class ThinkingEngine:
             self.optimizer.record_solve_interaction(user_text, quick_solution, success=True)
             
             if memory is not None:
-                add(memory, "assistant", quick_solution)
+                add(memory, "assistant", quick_solution, source="ai_response")
                 save_memory(memory)
             if self.on_response:
                 self.on_response({"type": "chat_response", "reply": quick_solution})
@@ -263,8 +316,8 @@ class ThinkingEngine:
             prompt = distilled_prompt + "\n\n" + prompt
         
         # Check if we should perform a web search
-        if self.search_enabled and user_text:
-            search_results = self._check_and_perform_search(user_text)
+        if self.search_enabled and user_text and self.web_search.needs_search(user_text):
+            search_results = self.web_search.search(user_text)
             if search_results:
                 # Add search results to prompt
                 search_summary = self.web_search.summarize_results(user_text, search_results)
@@ -289,7 +342,7 @@ class ThinkingEngine:
                 save_memory(memory)
 
         if memory is not None:
-            add(memory, "assistant", reply)
+            add(memory, "assistant", reply, source="ai_response")
             save_memory(memory)
 
         actual_reply = target_reply or reply
@@ -322,12 +375,15 @@ class ThinkingEngine:
                         final_reply = "[Command executed; see command output]"
                     else:
                         final_reply = cleaned
+                
+                # 幻觉检测
+                final_reply = self._hallucination_check(final_reply, user_text)
                         
                 logger.info(f"AI final reply (with command): {final_reply}")
                 
                 if memory is not None:
-                    add(memory, "assistant", final_reply)
-                    add(memory, "system", f"Command output:\n{out}")
+                    add(memory, "assistant", final_reply, source="ai_response")
+                    add(memory, "system", f"Command output:\n{out}", source="system")
                     save_memory(memory)
                 if self.on_response:
                     self.on_response({"type": "chat_response", "reply": final_reply})
@@ -341,7 +397,7 @@ class ThinkingEngine:
                     freply, fadapt = generate_with_emotion_feedback(exec_instr + "\n\n" + followup_prompt, emotion_monitor)
                     logger.info(f"Followup reply: {freply[:200] if freply else 'Empty'}")
                     if memory is not None:
-                        add(memory, "assistant", freply)
+                        add(memory, "assistant", freply, source="ai_response")
                         save_memory(memory)
                     if self.on_response:
                         self.on_response({"type": "chat_response", "reply": freply})
@@ -356,6 +412,9 @@ class ThinkingEngine:
                 
                 # 清理并人性化回复
                 final_reply = self._clean_and_humanize_reply(final_reply)
+                
+                # 幻觉检测
+                final_reply = self._hallucination_check(final_reply, user_text)
                 
                 # 如果清理后返回None，不发送回复（让AI重新生成）
                 if final_reply:
@@ -374,6 +433,274 @@ class ThinkingEngine:
         finally:
             # 记录交互并进行学习
             self._record_and_learn(user_text, final_reply)
+    
+    def _handle_chat_with_gan_decision_stream_task(self, prompt, memory, emotion_monitor, exec_instr, user_text, target_info=None):
+        """Handle a streaming chat task with GAN decision - send sentences as they are generated."""
+        logger.info(f"Handling chat_with_gan_decision_stream task, user_text: {user_text[:50] if user_text else 'None'}")
+        
+        try:
+            from tools.gan_iteration import GANIteration
+            gan = GANIteration()
+            should_use_gan, decision_text = gan.decide_use_gan(user_text, exec_instr)
+            logger.info(f"GAN decision: should_use_gan={should_use_gan}, decision_text={decision_text[:100] if decision_text else 'None'}")
+        except Exception as e:
+            logger.error(f"GAN decision error: {e}")
+            should_use_gan, decision_text = False, f"GAN decision failed: {e}"
+
+        if self.on_response and decision_text:
+            self.on_response({"type": "internal_thought", "thought": f"[GAN Decision] {decision_text}"})
+
+        ui_settings = self._load_ui_settings()
+        gan_enabled = ui_settings.get("gan_enabled", True)
+
+        if ThinkingEngine._game_mode:
+            logger.info("Game mode active, skipping GAN to save computational resources")
+            should_use_gan = False
+
+        if should_use_gan and gan_enabled:
+            logger.info("GAN enabled, performing GAN debate")
+            if self.on_response:
+                self.on_response({"type": "internal_thought", "thought": "[GAN Decision] AI chose to perform GAN thinking before answering.", "thought_type": "gan_decision"})
+            debate_result = gan.self_debate(True, user_text)
+            synthesis = debate_result.get("synthesis", "")
+            logger.info(f"GAN synthesis: {synthesis[:100] if synthesis else 'None'}")
+            if memory is not None:
+                add_thought(memory, synthesis, thought_type="gan")
+                save_memory(memory)
+            self._save_gan_result(gan, debate_result, True, user_text)
+            gan_topic = getattr(gan, "topic", None)
+            augmentation = ""
+            if gan_topic:
+                augmentation += f"\n[GAN topic: {gan_topic}]"
+            if synthesis:
+                augmentation += f"\n[GAN synthesis: {synthesis}]"
+            enhanced_prompt = prompt + "\n\n" + augmentation + "\n\nAssistant: Please answer the user's question using the GAN debate synthesis above."
+            logger.info(f"Enhanced prompt with GAN augmentation")
+            self._handle_chat_stream_task(enhanced_prompt, memory, emotion_monitor, exec_instr, user_text, target_info)
+        else:
+            logger.info("GAN skipped, answering directly")
+            if self.on_response:
+                self.on_response({"type": "internal_thought", "thought": "[GAN Decision] AI chose to answer directly without GAN thinking.", "thought_type": "gan_decision"})
+            self._handle_chat_stream_task(prompt, memory, emotion_monitor, exec_instr, user_text, target_info)
+
+    def _handle_chat_stream_task(self, prompt, memory, emotion_monitor, exec_instr, user_text, target_info=None):
+        """Handle a streaming chat task - send sentences as they are generated."""
+        logger.info(f"Handling streaming chat task, prompt length: {len(prompt) if prompt else 0}")
+        
+        user_text = user_text or self._extract_user_text_from_prompt(prompt)
+        
+        quick_solution = self.optimizer.solve_problem(user_text)
+        if quick_solution:
+            logger.info(f"Solve mode: Found quick solution for '{user_text[:30]}'")
+            if self.on_response:
+                self.on_response({"type": "internal_thought", "thought": "[Solve Mode] 使用经验数据库快速解决问题", "thought_type": "solve_mode"})
+            self.optimizer.record_solve_interaction(user_text, quick_solution, success=True)
+            if memory is not None:
+                add(memory, "assistant", quick_solution, source="ai_response")
+                save_memory(memory)
+            
+            sentences = self._split_sentences(quick_solution)
+            for sentence in sentences:
+                if self.on_response:
+                    self.on_response({"type": "chat_response", "reply": sentence})
+                self._notify_stream_callbacks(sentence, target_info)
+            
+            notify_ai_response(quick_solution)
+            self._record_and_learn(user_text, quick_solution)
+            return
+        
+        distilled_prompt = self.optimizer.conversation_learner.prompt_distiller.generate_training_prompt(user_text)
+        if distilled_prompt:
+            prompt = distilled_prompt + "\n\n" + prompt
+        
+        if self.search_enabled and user_text and self.web_search.needs_search(user_text):
+            search_results = self.web_search.search(user_text)
+            if search_results:
+                search_summary = self.web_search.summarize_results(user_text, search_results)
+                if self.on_response:
+                    self.on_response({"type": "internal_thought", "thought": f"[Web Search] Found information about: {user_text}", "thought_type": "web_search"})
+                search_prefix = load_web_search_prefix_prompt(search_summary)
+                prompt = search_prefix + "\n\n" + prompt
+        
+        logger.info("Calling generate_with_emotion_feedback_stream")
+        
+        full_reply = ""
+        current_buffer = ""
+        sent_sentences = []
+        
+        try:
+            for token in generate_with_emotion_feedback_stream(exec_instr + "\n\n" + prompt, emotion_monitor):
+                if token:
+                    full_reply += token
+                    current_buffer += token
+                    
+                    completed_sentences = self._extract_completed_sentences(current_buffer)
+                    for sentence in completed_sentences:
+                        sentence = sentence.strip()
+                        if sentence and sentence not in sent_sentences:
+                            sent_sentences.append(sentence)
+                            cleaned = self._clean_and_humanize_reply(sentence)
+                            if cleaned:
+                                cleaned = self._hallucination_check(cleaned, user_text)
+                                logger.info(f"Streaming sentence: {cleaned[:50]}...")
+                                if self.on_response:
+                                    self.on_response({"type": "chat_response", "reply": cleaned})
+                                self._notify_stream_callbacks(cleaned, target_info)
+                            
+                    current_buffer = self._get_remaining_buffer(current_buffer)
+            
+            if current_buffer.strip():
+                cleaned = self._clean_and_humanize_reply(current_buffer.strip())
+                if cleaned and cleaned not in sent_sentences:
+                    cleaned = self._hallucination_check(cleaned, user_text)
+                    sent_sentences.append(cleaned)
+                    logger.info(f"Final streaming sentence: {cleaned[:50]}...")
+                    if self.on_response:
+                        self.on_response({"type": "chat_response", "reply": cleaned})
+                    self._notify_stream_callbacks(cleaned, target_info)
+            
+            thought, target_reply = self._extract_thought_and_response(full_reply)
+            if thought:
+                if self.on_response:
+                    self.on_response({"type": "internal_thought", "thought": thought, "thought_type": "internal"})
+                if memory is not None:
+                    add_thought(memory, thought, thought_type="internal")
+                    save_memory(memory)
+            
+            if memory is not None:
+                add(memory, "assistant", full_reply, source="ai_response")
+                save_memory(memory)
+            
+            try:
+                agent = Agent('!')
+                agent.set_language(self.language)
+                if agent.has_actions(full_reply):
+                    logger.info("Agent has actions to execute")
+                    if self.on_response:
+                        self.on_response({"type": "command_start", "message": "AI is executing a command...\n"})
+                    
+                    out = agent.agent('!', full_reply)
+                    logger.info(f"Agent output: {out[:200] if out else 'Empty'}")
+                    
+                    if self.on_response:
+                        self.on_response({"type": "command_result", "output": out})
+                    
+                    self._learn_from_command_result(full_reply, out, success=True)
+                    
+                    response_content = self._extract_response_content(full_reply)
+                    if response_content:
+                        final_reply = response_content
+                    else:
+                        cleaned = re.sub(r'!.*?!', '', full_reply, flags=re.S).strip()
+                        if not cleaned or (cleaned.startswith('{') and cleaned.endswith('}')):
+                            final_reply = "[Command executed; see command output]"
+                        else:
+                            final_reply = cleaned
+                    
+                    sentences = self._split_sentences(final_reply)
+                    for sentence in sentences:
+                        if sentence and sentence not in sent_sentences:
+                            sent_sentences.append(sentence)
+                            cleaned_sentence = self._clean_and_humanize_reply(sentence)
+                            if cleaned_sentence:
+                                logger.info(f"Command result sentence: {cleaned_sentence[:50]}...")
+                                if self.on_response:
+                                    self.on_response({"type": "chat_response", "reply": cleaned_sentence})
+                                self._notify_stream_callbacks(cleaned_sentence, target_info)
+                    
+                    try:
+                        followup_prompt = load_followup_prompt(out, user_text)
+                        logger.info("Generating followup response after command execution")
+                        freply, fadapt = generate_with_emotion_feedback(exec_instr + "\n\n" + followup_prompt, emotion_monitor)
+                        logger.info(f"Followup reply: {freply[:200] if freply else 'Empty'}")
+                        
+                        if memory is not None:
+                            add(memory, "assistant", freply, source="ai_response")
+                            save_memory(memory)
+                        
+                        fthought, ftarget_reply = self._extract_thought_and_response(freply)
+                        fresponse_content = self._extract_response_content(ftarget_reply or freply)
+                        ffinal_reply = fresponse_content or (ftarget_reply or freply)
+                        
+                        fsentences = self._split_sentences(ffinal_reply)
+                        for sentence in fsentences:
+                            if sentence and sentence not in sent_sentences:
+                                sent_sentences.append(sentence)
+                                cleaned_sentence = self._clean_and_humanize_reply(sentence)
+                                if cleaned_sentence:
+                                    if self.on_response:
+                                        self.on_response({"type": "chat_response", "reply": cleaned_sentence})
+                                    self._notify_stream_callbacks(cleaned_sentence, target_info)
+                    except Exception as e:
+                        logger.error(f"Followup generation error: {e}")
+            except Exception as e:
+                logger.error(f"Error checking for agent actions: {e}")
+            
+            notify_ai_response(full_reply)
+            
+        except Exception as e:
+            logger.error(f"Error in _handle_chat_stream_task: {e}")
+            if self.on_response:
+                self.on_response({"type": "error", "error": str(e)})
+        
+        finally:
+            self._record_and_learn(user_text, full_reply)
+    
+    def _split_sentences(self, text):
+        """按标点符号分割句子"""
+        if not text:
+            return []
+        
+        main_separators = r'([。！？…….!?])'
+        parts = re.split(main_separators, text)
+        
+        sentences = []
+        for i in range(0, len(parts), 2):
+            sentence = parts[i].strip()
+            if i + 1 < len(parts):
+                sentence += parts[i + 1]
+            if sentence:
+                sentences.append(sentence)
+        
+        for i in range(len(sentences)):
+            if len(sentences[i]) > 80:
+                comma_parts = sentences[i].split('，')
+                sub_segments = []
+                current = ""
+                for j, cp in enumerate(comma_parts):
+                    if j > 0:
+                        cp = '，' + cp
+                    if len(current) + len(cp) <= 80:
+                        current += cp
+                    else:
+                        if current:
+                            sub_segments.append(current)
+                        current = cp
+                if current:
+                    sub_segments.append(current)
+                sentences[i:i+1] = sub_segments
+        
+        return sentences
+    
+    def _extract_completed_sentences(self, text):
+        """从文本中提取已完成的句子（以标点结尾）"""
+        if not text:
+            return []
+        
+        sentence_end_pattern = r'[^。！？…….!?]*[。！？…….!?]'
+        matches = re.findall(sentence_end_pattern, text)
+        return [m.strip() for m in matches if m.strip()]
+    
+    def _get_remaining_buffer(self, text):
+        """获取剩余未完成的句子缓冲"""
+        if not text:
+            return ""
+        
+        main_separators = r'[。！？…….!?]'
+        parts = re.split(main_separators, text)
+        if parts:
+            return parts[-1].strip()
+        return text.strip()
                 
     def _record_and_learn(self, user_input, ai_response, command_result=None, command_success=True):
         """Record interaction and run continuous learning"""
@@ -464,58 +791,24 @@ class ThinkingEngine:
         """
         if not text:
             return None
-        
-        # 查找RESPONSE:标签
-        match = re.search(r'RESPONSE:\s*', text)
-        if not match:
+
+        matches = list(re.finditer(r'RESPONSE:\s*', text, flags=re.IGNORECASE))
+        if not matches:
             return None
-        
-        # 从RESPONSE:后面开始提取内容
-        start_pos = match.end()
-        
-        # 查找下一个标签（THOUGHT:、RESPONSE:等）或文本结束
-        # 这样可以避免提取到THOUGHT部分
-        end_patterns = [
-            r'\n\s*THOUGHT:',
-            r'\n\s*RESPONSE:',
-            r'\n\s*```',
-            r'\n\s*---',
-        ]
-        
-        end_pos = len(text)
-        for pattern in end_patterns:
-            next_match = re.search(pattern, text[start_pos:])
-            if next_match:
-                potential_end = start_pos + next_match.start()
-                if potential_end < end_pos:
-                    end_pos = potential_end
-        
-        content = text[start_pos:end_pos].strip()
-        
-        # 移除可能残留的代码块标记和多余空白
-        content = re.sub(r'^```(?:json)?\s*\n?', '', content)
-        content = re.sub(r'\s*```$', '', content)
-        content = content.strip()
-        
+
+        start_pos = matches[-1].end()
+        tail = text[start_pos:]
+
+        next_label = re.search(r'(?i)\b(?:THOUGHT|RESPONSE)\s*:', tail)
+        if next_label:
+            content = tail[:next_label.start()].strip()
+        else:
+            content = tail.strip()
+
+        content = re.sub(r'^```(?:json)?\s*\n?', '', content, flags=re.IGNORECASE)
+        content = re.sub(r'\s*```$', '', content, flags=re.IGNORECASE).strip()
+
         return content if content else None
-                
-    def _check_and_perform_search(self, user_text):
-        """Check if search is needed and perform it"""
-        if not self.search_enabled:
-            return None
-            
-        # Check if the message indicates a need for search
-        if self.web_search.needs_search(user_text):
-            if self.on_response:
-                self.on_response({"type": "internal_thought", "thought": f"[Web Search] Searching for: {user_text}", "thought_type": "web_search"})
-            
-            # Perform search
-            results = self.web_search.search(user_text)
-            
-            if results:
-                return results
-                
-        return None
 
     def _run_gan_debate(self, user_topic, memory):
         try:
@@ -536,7 +829,7 @@ class ThinkingEngine:
         try:
             from tools.gan_iteration import GANIteration
             gan = GANIteration()
-            should_use_gan, decision_text = gan.decide_use_gan(user_text, exec_instr, emotion_monitor)
+            should_use_gan, decision_text = gan.decide_use_gan(user_text, exec_instr)
             logger.info(f"GAN decision: should_use_gan={should_use_gan}, decision_text={decision_text[:100] if decision_text else 'None'}")
         except Exception as e:
             logger.error(f"GAN decision error: {e}")
@@ -547,6 +840,10 @@ class ThinkingEngine:
 
         ui_settings = self._load_ui_settings()
         gan_enabled = ui_settings.get("gan_enabled", True)
+
+        if ThinkingEngine._game_mode:
+            logger.info("Game mode active, skipping GAN to save computational resources")
+            should_use_gan = False
 
         if should_use_gan and gan_enabled:
             logger.info("GAN enabled, performing GAN debate")
@@ -593,7 +890,7 @@ class ThinkingEngine:
                 save_memory(memory)
 
         if memory is not None:
-            add(memory, "assistant", reply)
+            add(memory, "assistant", reply, source="ai_autonomous")
             save_memory(memory)
 
         actual_reply = target_reply or reply
@@ -614,45 +911,19 @@ class ThinkingEngine:
     
     def _clean_and_humanize_reply(self, reply):
         """清理并人性化回复内容（只处理RESPONSE部分，THOUGHT已在提取阶段分离）"""
+        from utils.reply_cleaner import clean_reply
+        
         if not reply:
             return None
-        
-        cleaned = str(reply)
-        
-        # 移除代码块标记
-        cleaned = re.sub(r'```[\s\S]*?```', '', cleaned)
-        cleaned = re.sub(r'`[^`]+`', '', cleaned)
-        
-        # 移除元数据和自我修正内容（更全面的模式）
-        cleaned = re.sub(r'\*\([^)]*\)', '', cleaned)  # *(任意内容)
-        cleaned = re.sub(r'\*\*[^*]+\*\*', '', cleaned)  # **任意内容**
-        cleaned = re.sub(r'\*[^*]+\*', '', cleaned)  # *任意内容*
-        
-        # 移除各种元数据标签
-        cleaned = re.sub(r'(?i)self-correction[/\s]*refinement[^\n]*', '', cleaned)
-        cleaned = re.sub(r'(?i)final desired output[^\n]*', '', cleaned)
-        cleaned = re.sub(r'(?i)applying the rule[^\n]*', '', cleaned)
-        cleaned = re.sub(r'(?i)result\s*:', '', cleaned)
-        cleaned = re.sub(r'(?i)based on rules[^\n]*', '', cleaned)
-        cleaned = re.sub(r'(?i)following the rules[^\n]*', '', cleaned)
-        cleaned = re.sub(r'(?i)according to rules[^\n]*', '', cleaned)
-        
-        # 移除JSON格式内容（技能调用）- 保留技能调用但移除其他JSON
-        # 这里我们只移除孤立的JSON，保留作为命令的JSON
-        
-        # 清理多余的空白和换行
-        cleaned = re.sub(r'\n+', '\n', cleaned)
-        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
-        
-        # 如果清理后为空，返回None
+
+        cleaned = clean_reply(reply)
+
         if not cleaned or cleaned.lower() in ['none', 'null', 'undefined', 'empty']:
             return None
-        
-        # 如果回复过于简短或包含机械性词汇，返回None
-        if len(cleaned) < 5 or any(keyword in cleaned.lower() for keyword in 
-                                   ['command', 'instruction', 'next', 'execute', 'task', 'waiting', 'skill', 'json']):
+
+        if re.match(r'(?i)^(command|instruction|next|execute|task|waiting|skill|json)\b', cleaned):
             return None
-        
+
         return cleaned
 
     def _handle_gan_task(self, task, memory):
@@ -760,6 +1031,16 @@ class ThinkingEngine:
         shared = tokens_a & tokens_b
         return len(shared) / max(len(tokens_a), len(tokens_b))
 
+    def pause_idle(self):
+        """暂停空闲引擎（用于外部API调用时优先处理用户消息）"""
+        try:
+            from ui.idle import IdleEngine
+            global _idle_engine_instance
+            if _idle_engine_instance:
+                _idle_engine_instance.signal_user_activity()
+        except Exception:
+            pass
+
     def should_answer_user(self, user_text):
         """
         Let AI decide whether to answer the user's question at all.
@@ -857,7 +1138,9 @@ class ThinkingEngine:
         try:
             response = chat(decision_prompt).strip()
             if "说话" in response:
-                message = response.replace("说话:", "").strip()
+                message = response.replace("说话:", "").replace("说话：", "").strip()
+                if not message.endswith("让我们开始工作吧"):
+                    message = message + " 让我们开始工作吧"
                 return True, message
             else:
                 return False, ""
@@ -934,6 +1217,19 @@ class ThinkingEngine:
         }
         self.queue.put(task)
 
+    def queue_chat_stream_task(self, prompt, memory=None, emotion_monitor=None, user_text=None, personality=None, target_info=None):
+        """队列流式聊天任务 - 实时发送句子"""
+        task = {
+            "type": "chat_stream",
+            "prompt": prompt,
+            "memory": memory,
+            "emotion_monitor": emotion_monitor,
+            "user_text": user_text,
+            "personality": personality,
+            "target_info": target_info,
+        }
+        self.queue.put(task)
+
     def queue_break_silence_task(self, prompt, memory=None, emotion_monitor=None, personality=None):
         """队列打破沉默任务 - AI主动对用户说话"""
         self.queue.put({"type": "break_silence", "prompt": prompt, "memory": memory, "emotion_monitor": emotion_monitor, "personality": personality})
@@ -945,6 +1241,45 @@ class ThinkingEngine:
     def queue_reflection_task(self, prompt, memory=None, emotion_monitor=None, personality=None):
         """Queue a reflection task - AI internal reflection."""
         self.queue.put({"type": "reflection", "prompt": prompt, "memory": memory, "emotion_monitor": emotion_monitor, "personality": personality})
+
+    def _hallucination_check(self, reply: str, user_text: str = "") -> str:
+        """
+        检测回复中可能的幻觉内容，并添加适当的限定语
+        识别高风险内容：具体数字、URL、日期、人名、专业术语等
+        如果检测到高风险内容且没有明确的信息来源标注，添加"我不太确定"等限定语
+        """
+        if not reply:
+            return reply
+
+        risk_patterns = [
+            r'https?://[^\s]+',
+            r'\d{4}年\d{1,2}月\d{1,2}日',
+            r'\d{4}-\d{2}-\d{2}',
+            r'\d{1,3}(?:,\d{3})*(?:\.\d+)?\s*(?:亿|万|千|元|美元|欧元|%|人|个|次)',
+            r'根据(?:《[^》]+》|[\u4e00-\u9fff]+的报道|[\u4e00-\u9fff]+的研究)',
+            r'(?:博士|教授|专家|研究员)\s+[\u4e00-\u9fff]{2,4}',
+            r'(?:发现|证明|表明|显示)\s+[\u4e00-\u9fff]+',
+            r'(?:获得|赢得|荣获)\s+[\u4e00-\u9fff]+奖',
+        ]
+
+        source_indicators = [
+            '根据搜索结果', '搜索到的信息', '我查了一下', '据报道',
+            '根据资料', '我记得', '我了解到', '据说', '听说'
+        ]
+
+        has_risk_content = False
+        for pattern in risk_patterns:
+            if re.search(pattern, reply):
+                has_risk_content = True
+                break
+
+        has_source = any(indicator in reply for indicator in source_indicators)
+
+        if has_risk_content and not has_source:
+            logger.info(f"Hallucination check: detected risk content without source in reply: {reply[:100]}")
+            reply = reply.replace('。', '。(我不太确定这个信息是否准确，建议你自己核实一下～)', 1)
+
+        return reply
 
     def stop(self):
         self.running = False

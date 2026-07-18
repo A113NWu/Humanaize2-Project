@@ -45,7 +45,7 @@ def execute(input_data: Any) -> Dict:
         }
 
     try:
-        shell = os.name == 'nt'
+        shell = os.name == 'nt' or True
         result = subprocess.run(
             command,
             shell=shell,

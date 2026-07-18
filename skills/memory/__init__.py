@@ -40,7 +40,7 @@ def execute(input_data: Any) -> Dict:
 
     Args:
         input_data: Either a string action or dict with 'action' key
-            Actions: search, add, list, clear, stats
+            Actions: search, add, list, clear, stats, recall, status, thoughts
 
     Returns:
         Dict with operation result
@@ -49,10 +49,12 @@ def execute(input_data: Any) -> Dict:
         action = input_data.get("action", "search")
         query = input_data.get("query", "")
         data = input_data.get("data", {})
+        limit = input_data.get("limit", 10)
     else:
         action = "search"
         query = str(input_data)
         data = {}
+        limit = 10
 
     memory = _load_memory()
 
@@ -66,6 +68,19 @@ def execute(input_data: Any) -> Dict:
         return _clear_memory(memory)
     elif action == "stats":
         return _get_stats(memory)
+    elif action == "recall":
+        msgs = memory.get("conversations", [])[-limit:]
+        return {"status": "success", "messages": msgs, "count": len(msgs)}
+    elif action == "status":
+        return {
+            "status": "success",
+            "messages": len(memory.get("conversations", [])),
+            "thoughts": len(memory.get("facts", [])),
+            "decisions": len(memory.get("preferences", {}))
+        }
+    elif action == "thoughts":
+        thoughts = memory.get("facts", [])[-limit:]
+        return {"status": "success", "thoughts": thoughts, "count": len(thoughts)}
     else:
         return {
             "success": False,

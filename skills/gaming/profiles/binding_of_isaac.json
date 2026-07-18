@@ -1,0 +1,59 @@
+{
+    "game_name": "The Binding of Isaac",
+    "description": "以撒的结合游戏配置 - 这类游戏死亡时没有明显文字提示，主要通过画面切换和血条变化来判断",
+    "trigger": {
+        "window_title": "Binding of Isaac",
+        "match_mode": "contains"
+    },
+    "controls": [
+        {"name": "向左移动", "action": "move_left", "type": "key", "keys": ["a", "arrowleft"], "description": "向左移动角色"},
+        {"name": "向右移动", "action": "move_right", "type": "key", "keys": ["d", "arrowright"], "description": "向右移动角色"},
+        {"name": "向上移动", "action": "move_up", "type": "key", "keys": ["w", "arrowup"], "description": "向上移动角色"},
+        {"name": "向下移动", "action": "move_down", "type": "key", "keys": ["s", "arrowdown"], "description": "向下移动角色"},
+        {"name": "射击/攻击", "action": "shoot", "type": "key", "keys": ["arrowup"], "description": "向当前方向射击"},
+        {"name": "使用主动道具", "action": "use_item", "type": "key", "keys": ["space"], "description": "使用主动道具"},
+        {"name": "切换道具", "action": "switch_item", "type": "key", "keys": ["q"], "description": "切换主动道具"},
+        {"name": "暂停", "action": "pause", "type": "key", "keys": ["escape"], "description": "暂停游戏"}
+    ],
+    "death_detection": {
+        "enabled_methods": ["scene_change", "health_bar", "visual_cues"],
+        "text": {
+            "keywords": ["continue?", "restart", "you died", "game over", "你死了", "失败"],
+            "enabled": true
+        },
+        "health_bar": {
+            "enabled": true,
+            "region": {
+                "x": 5,
+                "y": 90,
+                "width": 15,
+                "height": 8
+            },
+            "empty_color": [0, 0, 0],
+            "threshold": 40
+        },
+        "scene_change": {
+            "enabled": true,
+            "threshold": 35
+        },
+        "visual_cues": {
+            "enabled": true,
+            "confidence_threshold": 0.75
+        }
+    },
+    "ui_regions": {
+        "health_bar": {
+            "x": 5,
+            "y": 90,
+            "width": 15,
+            "height": 8
+        }
+    },
+    "tips": [
+        "以撒的结合使用WASD移动，方向键射击",
+        "空格键使用主动道具",
+        "死亡时会有画面切换到结算界面",
+        "血条在屏幕顶部，红心表示生命值",
+        "死亡后会显示角色解锁和进度统计画面"
+    ]
+}

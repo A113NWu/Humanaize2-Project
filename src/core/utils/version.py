@@ -3,7 +3,7 @@
 版本管理模块导出
 """
 
-from .version import (
+from core.version import (
     get_version,
     get_version_info,
     get_user_agent,

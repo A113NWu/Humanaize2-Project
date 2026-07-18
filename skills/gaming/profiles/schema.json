@@ -1,0 +1,222 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Game Profile Schema",
+    "description": "游戏配置文件格式定义",
+    "type": "object",
+    "properties": {
+        "game_name": {
+            "type": "string",
+            "description": "游戏名称"
+        },
+        "description": {
+            "type": "string",
+            "description": "游戏描述"
+        },
+        "trigger": {
+            "type": "object",
+            "description": "激活触发配置",
+            "properties": {
+                "window_title": {
+                    "type": "string",
+                    "description": "窗口标题匹配字符串"
+                },
+                "match_mode": {
+                    "type": "string",
+                    "enum": ["contains", "equals", "regex"],
+                    "description": "匹配模式",
+                    "default": "contains"
+                }
+            }
+        },
+        "controls": {
+            "type": "array",
+            "description": "操作列表",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "操作名称（用于显示）"
+                    },
+                    "action": {
+                        "type": "string",
+                        "description": "操作标识符（唯一）"
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": ["key", "mouse_click", "mouse_move", "mouse_drag"],
+                        "description": "操作类型"
+                    },
+                    "keys": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "按键列表（key类型）"
+                    },
+                    "button": {
+                        "type": "string",
+                        "enum": ["left", "right", "middle"],
+                        "description": "鼠标按钮（mouse_click类型）"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "操作说明"
+                    }
+                },
+                "required": ["name", "action", "type"]
+            }
+        },
+        "time_limit": {
+            "type": "object",
+            "description": "时间限制检测配置",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "是否启用时间限制检测",
+                    "default": false
+                },
+                "timer_region": {
+                    "type": "object",
+                    "description": "计时器显示区域坐标",
+                    "properties": {
+                        "x": {"type": "number"},
+                        "y": {"type": "number"},
+                        "width": {"type": "number"},
+                        "height": {"type": "number"}
+                    },
+                    "required": ["x", "y", "width", "height"]
+                },
+                "total_time": {
+                    "type": "number",
+                    "description": "关卡总时间（秒），用于计算剩余时间百分比"
+                },
+                "urgency_threshold": {
+                    "type": "number",
+                    "description": "紧急阈值（0-100），剩余时间百分比低于此值时触发紧急状态",
+                    "default": 30
+                },
+                "action_on_timeout": {
+                    "type": "string",
+                    "description": "超时时执行的动作（如restart）",
+                    "default": "restart"
+                },
+                "warning_messages": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "时间警告关键词（OCR检测）"
+                }
+            }
+        },
+        "death_detection": {
+            "type": "object",
+            "description": "死亡检测策略",
+            "properties": {
+                "enabled_methods": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": ["text", "health_bar", "scene_change", "visual_cues"]
+                    },
+                    "description": "启用的检测方法列表"
+                },
+                "text": {
+                    "type": "object",
+                    "description": "文字检测配置",
+                    "properties": {
+                        "keywords": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "死亡/失败关键词列表"
+                        },
+                        "enabled": {"type": "boolean", "default": true}
+                    }
+                },
+                "health_bar": {
+                    "type": "object",
+                    "description": "血条检测配置",
+                    "properties": {
+                        "region": {
+                            "type": "object",
+                            "properties": {
+                                "x": {"type": "number"},
+                                "y": {"type": "number"},
+                                "width": {"type": "number"},
+                                "height": {"type": "number"}
+                            },
+                            "required": ["x", "y", "width", "height"]
+                        },
+                        "health_color": {
+                            "type": "array",
+                            "items": {"type": "number"},
+                            "description": "健康状态的主色调（RGB）"
+                        },
+                        "empty_color": {
+                            "type": "array",
+                            "items": {"type": "number"},
+                            "description": "空血条的颜色（RGB）"
+                        },
+                        "threshold": {
+                            "type": "number",
+                            "description": "颜色差异阈值",
+                            "default": 50
+                        },
+                        "enabled": {"type": "boolean", "default": false}
+                    }
+                },
+                "scene_change": {
+                    "type": "object",
+                    "description": "画面突变检测配置",
+                    "properties": {
+                        "threshold": {
+                            "type": "number",
+                            "description": "像素差异百分比阈值（0-100）",
+                            "default": 30
+                        },
+                        "enabled": {"type": "boolean", "default": false}
+                    }
+                },
+                "visual_cues": {
+                    "type": "object",
+                    "description": "视觉线索检测配置（LLM兜底）",
+                    "properties": {
+                        "enabled": {"type": "boolean", "default": true},
+                        "confidence_threshold": {
+                            "type": "number",
+                            "description": "LLM判断置信度阈值",
+                            "default": 0.7
+                        }
+                    }
+                }
+            }
+        },
+        "ui_regions": {
+            "type": "object",
+            "description": "UI区域坐标",
+            "properties": {
+                "health_bar": {
+                    "type": "object",
+                    "properties": {
+                        "x": {"type": "number"},
+                        "y": {"type": "number"},
+                        "width": {"type": "number"},
+                        "height": {"type": "number"}
+                    }
+                },
+                "score": {
+                    "type": "object",
+                    "properties": {
+                        "x": {"type": "number"},
+                        "y": {"type": "number"},
+                        "width": {"type": "number"},
+                        "height": {"type": "number"}
+                    }
+                }
+            }
+        },
+        "tips": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "游戏提示"
+        }
+    },
+    "required": ["game_name", "controls"]
+}

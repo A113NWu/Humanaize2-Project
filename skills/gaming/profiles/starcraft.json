@@ -1,0 +1,49 @@
+{
+    "game_name": "StarCraft",
+    "description": "星际争霸游戏配置",
+    "trigger": {
+        "window_title": "StarCraft",
+        "match_mode": "contains"
+    },
+    "controls": [
+        {"name": "选择单位", "action": "select_unit", "type": "mouse_click", "button": "left", "description": "左键点击选择单位"},
+        {"name": "移动单位", "action": "move_unit", "type": "mouse_click", "button": "right", "description": "右键点击移动单位"},
+        {"name": "攻击目标", "action": "attack", "type": "mouse_click", "button": "right", "description": "右键点击攻击目标"},
+        {"name": "选择所有单位", "action": "select_all", "type": "key", "keys": ["ctrl", "a"], "description": "选择所有单位"},
+        {"name": "编组", "action": "group", "type": "key", "keys": ["ctrl", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0"], "description": "将选中单位编组"},
+        {"name": "选择编组", "action": "select_group", "type": "key", "keys": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"], "description": "选择已编组的单位"},
+        {"name": "建造建筑", "action": "build", "type": "key", "keys": ["b"], "description": "打开建造菜单"},
+        {"name": "生产单位", "action": "train", "type": "key", "keys": ["c"], "description": "打开生产菜单"},
+        {"name": "升级", "action": "upgrade", "type": "key", "keys": ["u"], "description": "打开升级菜单"},
+        {"name": "基地视角", "action": "home", "type": "key", "keys": ["space"], "description": "快速回到基地"},
+        {"name": "取消", "action": "cancel", "type": "key", "keys": ["escape"], "description": "取消当前操作"},
+        {"name": "暂停", "action": "pause", "type": "key", "keys": ["f10"], "description": "暂停游戏"},
+        {"name": "什么都不做", "action": "do_nothing", "type": "key", "keys": [], "description": "保持当前状态"}
+    ],
+    "death_detection": {
+        "enabled_methods": ["text", "scene_change", "visual_cues"],
+        "text": {
+            "keywords": ["defeat", "victory", "game over", "mission failed", "失败", "胜利", "游戏结束", "任务失败", "you have been defeated", "you have won"],
+            "enabled": true
+        },
+        "health_bar": {
+            "enabled": false
+        },
+        "scene_change": {
+            "enabled": true,
+            "threshold": 35
+        },
+        "visual_cues": {
+            "enabled": true,
+            "confidence_threshold": 0.7
+        }
+    },
+    "ui_regions": {},
+    "tips": [
+        "星际争霸是RTS游戏，主要使用鼠标操作",
+        "左键选择单位，右键移动/攻击",
+        "Ctrl+数字键编组单位",
+        "按空格快速回到基地",
+        "注意资源管理和科技发展"
+    ]
+}

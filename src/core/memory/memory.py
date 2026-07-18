@@ -27,11 +27,17 @@ def save_memory(mem):
     with open(MEMORY_FILE, "w", encoding="utf-8") as f:
         json.dump(mem, f, ensure_ascii=False, indent=2)
 
-def add(mem, role, content):
-    entry = {"role": role, "content": content, "time": datetime.now().isoformat()}
+def add(mem, role, content, source=None):
+    entry = {
+        "role": role, 
+        "content": content, 
+        "time": datetime.now().isoformat(),
+        "source": source or ("user" if role == "user" else "ai_response")
+    }
     mem.setdefault("messages", []).append(entry)
     if len(mem["messages"]) > MAX_MEMORY:
         mem["messages"] = mem["messages"][-MAX_MEMORY:]
+    return mem  # 返回更新后的memory对象
 
 def add_message(mem, role, content):
     return add(mem, role, content)

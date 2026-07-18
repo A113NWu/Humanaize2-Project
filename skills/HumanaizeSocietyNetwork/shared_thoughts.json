@@ -1,0 +1,14 @@
+[
+  {
+    "thought_package": {
+      "thought": "Testing thought sharing in HSN",
+      "thought_type": "test",
+      "context": {},
+      "timestamp": "2026-07-17T14:44:43.027836",
+      "importance_score": 0.5
+    },
+    "friend_id": "test_friend_123",
+    "shared_at": "2026-07-17T14:44:43.028364",
+    "status": "shared"
+  }
+]

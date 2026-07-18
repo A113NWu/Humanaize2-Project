@@ -1,8 +1,16 @@
-Provide a comprehensive summary of the solution to this problem:
+Summarize the solution to this problem concisely.
 
 Problem: {problem}
 
 Task results:
 {results_text}
 
-Please provide a clear, concise summary of the solution.
+RESPONSE GUIDELINES:
+- Maximum 200 characters: Keep summary very brief
+- Focus on key findings and solutions only
+- No Markdown formatting
+- No fluff or filler content
+- Use bullet points only if absolutely necessary
+- Provide the most valuable information upfront
+
+Give your concise summary now.

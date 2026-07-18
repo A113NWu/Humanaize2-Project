@@ -6,4 +6,20 @@ Problem context: {problem}
 
 {hsn_context}
 
-Provide a detailed solution or analysis for this task.
+YOU MUST:
+- Provide concrete solutions with REAL code and file content
+- NEVER write placeholder code like "..." or "(and so on)"
+- If writing files, include the COMPLETE actual content
+- Use skill invocation for file operations and tool calls
+- Keep your response under 500 characters
+
+SKILL INVOCATION FORMAT:
+{"skill": "skill-name", "input": {"key": "value"}}
+
+DO NOT:
+- Use Markdown formatting (#, *, -, 1.)
+- Write introductions or explanations
+- Include placeholder content like "..."
+- Use filler phrases
+
+Output your solution now.

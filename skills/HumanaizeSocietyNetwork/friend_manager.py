@@ -177,6 +177,8 @@ class FriendManager:
             }
         
         friend = self.friends[ai_id]
+        if 'interaction_count' not in friend:
+            friend['interaction_count'] = 0
         friend['interaction_count'] += 1
         
         current_score = friend.get('compatibility_score', 0.5)

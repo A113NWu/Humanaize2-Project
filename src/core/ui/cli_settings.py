@@ -43,6 +43,16 @@ class SettingsCLI:
         print("│  8. LLM Server URL         (当前: {})".format(self.settings.get("llm_server_url", "http://127.0.0.1:8080")[:20].ljust(20)))
         print("│  9. Max Tokens             (当前: {})".format(str(self.settings.get("max_tokens", 256))[:20].ljust(20)))
         print("│  10. Temperature           (当前: {})".format(str(self.settings.get("temperature", 0.7))[:20].ljust(20)))
+        print("│  11. Guard Mode Enabled    (当前: {})".format(str(self.settings.get("guard_enabled", False))[:20].ljust(20)))
+        print("│  12. Guard Auto Start      (当前: {})".format(str(self.settings.get("guard_auto_start", False))[:20].ljust(20)))
+        print("│  13. Guard Monitor Interval(当前: {}s)".format(str(self.settings.get("guard_interval", 5))[:18].ljust(18)))
+        print("│  14. Guard Firewall        (当前: {})".format(str(self.settings.get("guard_firewall", True))[:20].ljust(20)))
+        print("│  15. Guard Network Monitor (当前: {})".format(str(self.settings.get("guard_network_monitor", True))[:20].ljust(20)))
+        print("│  16. Guard System Monitor  (当前: {})".format(str(self.settings.get("guard_system_monitor", True))[:20].ljust(20)))
+        print("│  17. Counter Measure        (当前: {})".format(str(self.settings.get("counter_measure_enabled", True))[:20].ljust(20)))
+        print("│  18. Counter Lab Mode       (当前: {})".format(str(self.settings.get("counter_lab_mode", False))[:20].ljust(20)))
+        print("│  19. Counter Max Warnings   (当前: {})".format(str(self.settings.get("counter_max_warnings", 2))[:20].ljust(20)))
+        print("│  20. Counter Cooldown       (当前: {}s)".format(str(self.settings.get("counter_cooldown", 300))[:18].ljust(18)))
         print("├─────────────────────────────────────────────┤")
         print("│  S. Save & Exit                             │")
         print("│  Q. Quit Without Saving                     │")
@@ -146,12 +156,100 @@ class SettingsCLI:
         except ValueError:
             print("Invalid number, keeping previous value.")
 
+    def _edit_guard_enabled(self):
+        print("\n是否启用Guard模式?")
+        print("  1. Yes (启用)")
+        print("  2. No (禁用)")
+        choice = self._get_input("Enter choice (1-2, default: 2): ", "2")
+        self.settings["guard_enabled"] = (choice == "1")
+
+    def _edit_guard_auto_start(self):
+        print("\n是否启用Guard模式开机自启?")
+        print("  1. Yes (启用)")
+        print("  2. No (禁用)")
+        choice = self._get_input("Enter choice (1-2, default: 2): ", "2")
+        self.settings["guard_auto_start"] = (choice == "1")
+
+    def _edit_guard_interval(self):
+        print("\n输入Guard模式监控间隔(秒):")
+        default = self.settings.get("guard_interval", 5)
+        value = self._get_input(f"Monitor interval (default: {default}): ", str(default))
+        try:
+            interval = int(value)
+            if interval >= 1 and interval <= 60:
+                self.settings["guard_interval"] = interval
+            else:
+                print("Interval must be between 1 and 60 seconds")
+        except ValueError:
+            print("Invalid number, keeping previous value.")
+
+    def _edit_guard_firewall(self):
+        print("\n是否启用Guard模式防火墙?")
+        print("  1. Yes (启用)")
+        print("  2. No (禁用)")
+        choice = self._get_input("Enter choice (1-2, default: 1): ", "1")
+        self.settings["guard_firewall"] = (choice == "1")
+
+    def _edit_guard_network_monitor(self):
+        print("\n是否启用Guard模式网络监控?")
+        print("  1. Yes (启用)")
+        print("  2. No (禁用)")
+        choice = self._get_input("Enter choice (1-2, default: 1): ", "1")
+        self.settings["guard_network_monitor"] = (choice == "1")
+
+    def _edit_guard_system_monitor(self):
+        print("\n是否启用Guard模式系统监控?")
+        print("  1. Yes (启用)")
+        print("  2. No (禁用)")
+        choice = self._get_input("Enter choice (1-2, default: 1): ", "1")
+        self.settings["guard_system_monitor"] = (choice == "1")
+
+    def _edit_counter_measure_enabled(self):
+        print("\n是否启用反制措施?")
+        print("  1. Yes (启用)")
+        print("  2. No (禁用)")
+        choice = self._get_input("Enter choice (1-2, default: 1): ", "1")
+        self.settings["counter_measure_enabled"] = (choice == "1")
+
+    def _edit_counter_lab_mode(self):
+        print("\n是否启用实验室模式?")
+        print("  1. Yes (启用 - 仅用于测试环境)")
+        print("  2. No (禁用 - 默认生产环境)")
+        choice = self._get_input("Enter choice (1-2, default: 2): ", "2")
+        self.settings["counter_lab_mode"] = (choice == "1")
+
+    def _edit_counter_max_warnings(self):
+        print("\n输入最大警告次数:")
+        default = self.settings.get("counter_max_warnings", 2)
+        value = self._get_input(f"Max warnings (default: {default}): ", str(default))
+        try:
+            max_warnings = int(value)
+            if max_warnings >= 1 and max_warnings <= 10:
+                self.settings["counter_max_warnings"] = max_warnings
+            else:
+                print("Max warnings must be between 1 and 10")
+        except ValueError:
+            print("Invalid number, keeping previous value.")
+
+    def _edit_counter_cooldown(self):
+        print("\n输入冷却时间(秒):")
+        default = self.settings.get("counter_cooldown", 300)
+        value = self._get_input(f"Cooldown seconds (default: {default}): ", str(default))
+        try:
+            cooldown = int(value)
+            if cooldown >= 60 and cooldown <= 3600:
+                self.settings["counter_cooldown"] = cooldown
+            else:
+                print("Cooldown must be between 60 and 3600 seconds")
+        except ValueError:
+            print("Invalid number, keeping previous value.")
+
     def run(self):
         self._print_header()
         
         while True:
             self._print_menu()
-            choice = self._get_input("\nEnter choice (1-10, S to save, Q to quit): ").upper()
+            choice = self._get_input("\nEnter choice (1-20, S to save, Q to quit): ").upper()
             
             if choice == "Q":
                 print("\n[Settings] Quit without saving.")
@@ -180,6 +278,26 @@ class SettingsCLI:
                 self._edit_max_tokens()
             elif choice == "10":
                 self._edit_temperature()
+            elif choice == "11":
+                self._edit_guard_enabled()
+            elif choice == "12":
+                self._edit_guard_auto_start()
+            elif choice == "13":
+                self._edit_guard_interval()
+            elif choice == "14":
+                self._edit_guard_firewall()
+            elif choice == "15":
+                self._edit_guard_network_monitor()
+            elif choice == "16":
+                self._edit_guard_system_monitor()
+            elif choice == "17":
+                self._edit_counter_measure_enabled()
+            elif choice == "18":
+                self._edit_counter_lab_mode()
+            elif choice == "19":
+                self._edit_counter_max_warnings()
+            elif choice == "20":
+                self._edit_counter_cooldown()
             else:
                 print("\n[Settings] Invalid choice. Please try again.")
 

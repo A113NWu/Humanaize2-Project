@@ -1,0 +1,53 @@
+{
+    "sql_injection": {
+        "block_duration": 3600,
+        "response_level": "high",
+        "actions": [
+            "block_ip",
+            "log_attack",
+            "notify_admin"
+        ]
+    },
+    "xss_attack": {
+        "block_duration": 3600,
+        "response_level": "high",
+        "actions": [
+            "block_ip",
+            "log_attack"
+        ]
+    },
+    "command_injection": {
+        "block_duration": 7200,
+        "response_level": "critical",
+        "actions": [
+            "block_ip",
+            "block_port",
+            "log_attack",
+            "notify_admin"
+        ]
+    },
+    "brute_force": {
+        "block_duration": 1800,
+        "response_level": "medium",
+        "actions": [
+            "block_ip",
+            "log_attack"
+        ]
+    },
+    "port_scan": {
+        "block_duration": 1800,
+        "response_level": "medium",
+        "actions": [
+            "block_ip",
+            "log_attack"
+        ]
+    },
+    "default": {
+        "block_duration": 1800,
+        "response_level": "medium",
+        "actions": [
+            "block_ip",
+            "log_attack"
+        ]
+    }
+}

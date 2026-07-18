@@ -89,13 +89,6 @@ class SkillsManager:
             else:
                 self.skills_dir = "/usr/share/humanaize2/skills"
         
-        # AI Selfdevelop skills directory (NOT overwritten during updates)
-        self.selfdevelop_skills_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-            "ai_selfdevelop",
-            "skills"
-        )
-        
         # Try multiple possible config paths
         self.skills_config_path = os.path.join(os.path.dirname(__file__), "data", "skills_config.json")
         if not os.path.exists(self.skills_config_path):
@@ -152,10 +145,17 @@ class SkillsManager:
             "web-fetch": self._execute_web_fetch,
             "humanaize-society-network": self._execute_society_network,
             "detect-emotion": self._execute_detect_emotion,
+            "firewall": self._execute_firewall,
+            "msf": self._execute_msf,
+            "mode-manager": self._execute_mode_manager,
+            "network": self._execute_network,
+            "message-bus": self._execute_message_bus,
+            "multisensory": self._execute_multisensory,
+            "platform": self._execute_platform,
         }
     
     def load_skills(self):
-        """Load all skills from skills directory and AI selfdevelop directory"""
+        """Load all skills from skills directory"""
         self.skills = {}
 
         # Load skills from main skills directory (Core)
@@ -166,40 +166,6 @@ class SkillsManager:
                     skill_file = os.path.join(skill_path, "SKILL.md")
                     if os.path.exists(skill_file):
                         self._load_skill_from_path(skill_path, skill_file)
-
-        # Load skills from AI selfdevelop directory (NOT overwritten during updates)
-        if os.path.exists(self.selfdevelop_skills_dir):
-            for skill_name in os.listdir(self.selfdevelop_skills_dir):
-                skill_path = os.path.join(self.selfdevelop_skills_dir, skill_name)
-                if os.path.isdir(skill_path):
-                    skill_file = os.path.join(skill_path, "SKILL.md")
-                    if os.path.exists(skill_file):
-                        skill = self._parse_skill_file(skill_file)
-                        if skill:
-                            skill.skill_dir = skill_path
-                            # AI selfdevelop skills are always enabled by default
-                            skill.enabled = True
-                            
-                            # Mark as self-developed skill
-                            if 'metadata' not in skill.metadata:
-                                skill.metadata = {}
-                            skill.metadata['self_developed'] = True
-                            
-                            # Check for duplicate skills to avoid conflicts
-                            if skill.name in self.skills:
-                                # If existing skill is not self-developed, overwrite it
-                                existing_skill = self.skills[skill.name]
-                                if not existing_skill.metadata.get('self_developed'):
-                                    # Self-developed skills have higher priority
-                                    self.skills[skill.name] = skill
-                                    self._setup_skill_executor(skill)
-                                # If existing skill is also self-developed, skip to avoid duplicates
-                                else:
-                                    print(f"[WARN] Duplicate self-developed skill '{skill.name}' found, skipping")
-                            else:
-                                # New skill, add directly
-                                self.skills[skill.name] = skill
-                                self._setup_skill_executor(skill)
     
     def _setup_skill_executor(self, skill: Skill):
         """Setup executor for a skill - try loading from module first, then use default executors"""
@@ -284,10 +250,16 @@ class SkillsManager:
                 return False
 
             folder_name = os.path.basename(skill.skill_dir)
-            module_name = f"skills.{folder_name}"
+            module_name = f"skills.{folder_name}".replace('-', '_')
 
             importlib.invalidate_caches()
-            module = importlib.import_module(module_name)
+            try:
+                module = importlib.import_module(module_name)
+            except ImportError:
+                spec = importlib.util.spec_from_file_location(f"skills_{folder_name}", init_file)
+                if spec and spec.loader:
+                    module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(module)
 
             if hasattr(module, 'execute'):
                 skill.executor = module.execute
@@ -785,6 +757,312 @@ class SkillsManager:
             return {"dominant": dominant, "confidence": float(confidence), "status": "success"}
         except Exception as e:
             return {"error": str(e), "dominant": "unknown", "confidence": 0.0}
+
+    def _execute_firewall(self, input_data: Any) -> Dict:
+        """Execute firewall skill"""
+        try:
+            from .ai_firewall import ai_firewall
+            
+            if isinstance(input_data, dict):
+                action = input_data.get('action', '')
+                params = input_data.get('params', {})
+            else:
+                return {"error": "firewall requires action and params"}
+            
+            if action == 'start':
+                return ai_firewall.firewall_api.start_firewall()
+            elif action == 'stop':
+                return ai_firewall.firewall_api.stop_firewall()
+            elif action == 'status':
+                return ai_firewall.get_status()
+            elif action == 'block_ip':
+                ip = params.get('ip', '')
+                duration = params.get('duration', 3600)
+                return ai_firewall.firewall_api.block_ip(ip, duration)
+            elif action == 'unblock_ip':
+                ip = params.get('ip', '')
+                return ai_firewall.firewall_api.unblock_ip(ip)
+            elif action == 'block_port':
+                port = params.get('port', 0)
+                return ai_firewall.firewall_api.block_port(port)
+            elif action == 'unblock_port':
+                port = params.get('port', 0)
+                return ai_firewall.firewall_api.unblock_port(port)
+            elif action == 'detect_attack':
+                data = params.get('data', '')
+                source_ip = params.get('source_ip', '')
+                return ai_firewall.firewall_api.detect_attack(data, source_ip)
+            elif action == 'scan_packet':
+                return ai_firewall.firewall_api.scan_packet(params)
+            elif action == 'get_attack_history':
+                limit = params.get('limit', 20)
+                return ai_firewall.firewall_api.get_attack_history(limit)
+            elif action == 'analyze_attack':
+                return ai_firewall.ai_analyze_attack(params)
+            elif action == 'execute_command':
+                command = params.get('command', '')
+                return ai_firewall.execute_ai_command(command)
+            else:
+                return {"error": f"Unknown firewall action: {action}"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def _execute_msf(self, input_data: Any) -> Dict:
+        """Execute MSF database skill"""
+        try:
+            from .msf_db import msf_db
+            from .msf_operations import msf_ops
+            
+            if isinstance(input_data, dict):
+                action = input_data.get('action', '')
+                params = input_data.get('params', {})
+            else:
+                return {"error": "msf requires action and params"}
+            
+            if action == 'connect':
+                return msf_db.connect()
+            elif action == 'disconnect':
+                return msf_db.disconnect()
+            elif action == 'test_connection':
+                return msf_db.test_connection()
+            elif action == 'get_status':
+                return msf_db.get_status()
+            elif action == 'get_hosts':
+                filters = params.get('filters', {})
+                return msf_ops.get_hosts(filters)
+            elif action == 'get_host_details':
+                host_id = params.get('host_id', 0)
+                return msf_ops.get_host_details(host_id)
+            elif action == 'add_host':
+                return msf_ops.add_host(params)
+            elif action == 'update_host':
+                host_id = params.get('host_id', 0)
+                host_data = {k: v for k, v in params.items() if k != 'host_id'}
+                return msf_ops.update_host(host_id, host_data)
+            elif action == 'delete_host':
+                host_id = params.get('host_id', 0)
+                return msf_ops.delete_host(host_id)
+            elif action == 'get_services':
+                filters = params.get('filters', {})
+                return msf_ops.get_services(filters)
+            elif action == 'add_service':
+                return msf_ops.add_service(params)
+            elif action == 'get_vulnerabilities':
+                filters = params.get('filters', {})
+                return msf_ops.get_vulnerabilities(filters)
+            elif action == 'add_vulnerability':
+                return msf_ops.add_vulnerability(params)
+            elif action == 'get_credentials':
+                filters = params.get('filters', {})
+                return msf_ops.get_credentials(filters)
+            elif action == 'add_credential':
+                return msf_ops.add_credential(params)
+            elif action == 'get_sessions':
+                filters = params.get('filters', {})
+                return msf_ops.get_sessions(filters)
+            elif action == 'get_workspaces':
+                return msf_ops.get_workspaces()
+            elif action == 'get_notes':
+                filters = params.get('filters', {})
+                return msf_ops.get_notes(filters)
+            elif action == 'get_loots':
+                filters = params.get('filters', {})
+                return msf_ops.get_loots(filters)
+            elif action == 'execute_query':
+                query = params.get('query', '')
+                query_params = params.get('params', {})
+                return msf_ops.execute_raw_query(query, query_params)
+            elif action == 'execute_command':
+                query = params.get('query', '')
+                query_params = params.get('params', {})
+                return msf_ops.execute_raw_command(query, query_params)
+            elif action == 'get_summary':
+                return msf_ops.get_summary()
+            else:
+                return {"error": f"Unknown MSF action: {action}"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def _execute_mode_manager(self, input_data: Any) -> Dict:
+        """Execute mode manager skill"""
+        try:
+            from .mode_manager import mode_manager
+            
+            if isinstance(input_data, dict):
+                action = input_data.get('action', '')
+                params = input_data.get('params', {})
+            else:
+                return {"error": "mode-manager requires action and params"}
+            
+            if action == 'analyze':
+                context = params.get('context', '')
+                return mode_manager.analyze_context(context)
+            elif action == 'suggest':
+                context = params.get('context', '')
+                return mode_manager.suggest_mode(context)
+            elif action == 'start':
+                mode = params.get('mode', '')
+                mode_params = params.get('mode_params', {})
+                return mode_manager.start_mode(mode, mode_params)
+            elif action == 'stop':
+                mode = params.get('mode', '')
+                return mode_manager.stop_mode(mode)
+            elif action == 'status':
+                return mode_manager.get_status()
+            else:
+                return {"error": f"Unknown mode-manager action: {action}"}
+        except Exception as e:
+            return {"error": str(e)}
+    
+    def _execute_network(self, input_data: Any) -> Dict:
+        """Execute network layer skill"""
+        try:
+            from .network_layer import NetworkLayerAPI
+            
+            if isinstance(input_data, dict):
+                action = input_data.get('action', '')
+                params = input_data.get('params', {})
+            else:
+                return {"error": "network requires action and params"}
+            
+            if action == 'connect':
+                return NetworkLayerAPI.connect(params)
+            elif action == 'disconnect':
+                return NetworkLayerAPI.disconnect()
+            elif action == 'get':
+                return NetworkLayerAPI.get(params.get('url', ''), params.get('params'), params.get('headers'))
+            elif action == 'post':
+                return NetworkLayerAPI.post(params.get('url', ''), params.get('data'), params.get('headers'))
+            elif action == 'status':
+                return NetworkLayerAPI.get_status()
+            elif action == 'is_connected':
+                return {"connected": NetworkLayerAPI.is_connected()}
+            else:
+                return {"error": f"Unknown network action: {action}"}
+        except Exception as e:
+            return {"error": str(e)}
+    
+    def _execute_message_bus(self, input_data: Any) -> Dict:
+        """Execute message bus skill"""
+        try:
+            from .message_bus import MessageBusAPI
+            
+            if isinstance(input_data, dict):
+                action = input_data.get('action', '')
+                params = input_data.get('params', {})
+            else:
+                return {"error": "message-bus requires action and params"}
+            
+            if action == 'publish':
+                MessageBusAPI.publish(params.get('topic', ''), params.get('message', {}))
+                return {"status": "success", "message": "Message published"}
+            elif action == 'send':
+                return MessageBusAPI.send_message(
+                    params.get('platform', 'local'),
+                    params.get('content', ''),
+                    metadata=params.get('metadata'),
+                    attachments=params.get('attachments')
+                )
+            elif action == 'start':
+                MessageBusAPI.start()
+                return {"status": "success", "message": "Message bus started"}
+            elif action == 'stop':
+                MessageBusAPI.stop()
+                return {"status": "success", "message": "Message bus stopped"}
+            elif action == 'status':
+                return MessageBusAPI.get_status()
+            elif action == 'history':
+                return {"history": MessageBusAPI.get_history(params.get('limit', 100))}
+            else:
+                return {"error": f"Unknown message-bus action: {action}"}
+        except Exception as e:
+            return {"error": str(e)}
+    
+    def _execute_multisensory(self, input_data: Any) -> Dict:
+        """Execute multisensory system skill"""
+        try:
+            from .multisensory_system import MultisensoryAPI
+            
+            if isinstance(input_data, dict):
+                action = input_data.get('action', '')
+                params = input_data.get('params', {})
+            else:
+                return {"error": "multisensory requires action and params"}
+            
+            if action == 'perceive':
+                return MultisensoryAPI.perceive(
+                    params.get('type', 'text'),
+                    params.get('data', ''),
+                    params.get('source', 'unknown')
+                )
+            elif action == 'vision':
+                image_path = params.get('image_path')
+                if image_path:
+                    return MultisensoryAPI.vision_analyze(image_path)
+                base64_data = params.get('base64')
+                if base64_data:
+                    return MultisensoryAPI.vision_analyze_base64(base64_data)
+                return {"error": "image_path or base64 required"}
+            elif action == 'hearing':
+                audio_path = params.get('audio_path')
+                if audio_path:
+                    return MultisensoryAPI.hearing_process(audio_path)
+                return MultisensoryAPI.hearing_listen(params.get('duration', 5))
+            elif action == 'speech':
+                return MultisensoryAPI.speech_speak(params.get('text', ''))
+            elif action == 'environment':
+                return MultisensoryAPI.environment_info()
+            elif action == 'network_status':
+                return MultisensoryAPI.network_status()
+            elif action == 'status':
+                return MultisensoryAPI.get_status()
+            elif action == 'history':
+                return {"history": MultisensoryAPI.get_history(params.get('limit', 20))}
+            elif action == 'start':
+                MultisensoryAPI.start()
+                return {"status": "success", "message": "Multisensory system started"}
+            elif action == 'stop':
+                MultisensoryAPI.stop()
+                return {"status": "success", "message": "Multisensory system stopped"}
+            else:
+                return {"error": f"Unknown multisensory action: {action}"}
+        except Exception as e:
+            return {"error": str(e)}
+    
+    def _execute_platform(self, input_data: Any) -> Dict:
+        """Execute platform adapters skill"""
+        try:
+            from .platform_adapters import PlatformAdaptersAPI
+            
+            if isinstance(input_data, dict):
+                action = input_data.get('action', '')
+                params = input_data.get('params', {})
+            else:
+                return {"error": "platform requires action and params"}
+            
+            if action == 'configure':
+                return PlatformAdaptersAPI.configure(params.get('platform', ''), **params.get('config', {}))
+            elif action == 'connect':
+                return PlatformAdaptersAPI.connect(params.get('platform', ''))
+            elif action == 'disconnect':
+                return PlatformAdaptersAPI.disconnect(params.get('platform', ''))
+            elif action == 'send':
+                return PlatformAdaptersAPI.send_message(
+                    params.get('platform', ''),
+                    params.get('content', ''),
+                    metadata=params.get('metadata'),
+                    attachments=params.get('attachments')
+                )
+            elif action == 'start_all':
+                return PlatformAdaptersAPI.start_all()
+            elif action == 'stop_all':
+                return PlatformAdaptersAPI.stop_all()
+            elif action == 'status':
+                return PlatformAdaptersAPI.get_status()
+            else:
+                return {"error": f"Unknown platform action: {action}"}
+        except Exception as e:
+            return {"error": str(e)}
 
     def set_language_adapter(self, adapter):
         """Set custom language adapter"""

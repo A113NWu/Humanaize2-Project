@@ -1,0 +1,46 @@
+[
+  {
+    "ai_id": "test_friend_123",
+    "type": "friend_added",
+    "details": {
+      "name": "TestFriend",
+      "compatibility_score": 0.7
+    },
+    "timestamp": "2026-07-17T14:44:43.027332"
+  },
+  {
+    "ai_id": "test_friend_123",
+    "type": "friend_removed",
+    "details": {
+      "name": "TestFriend"
+    },
+    "timestamp": "2026-07-17T14:45:15.628876"
+  },
+  {
+    "ai_id": "test_friend_456",
+    "type": "friend_added",
+    "details": {
+      "name": "TestFriend2",
+      "compatibility_score": 0.6
+    },
+    "timestamp": "2026-07-17T14:46:26.404410"
+  },
+  {
+    "ai_id": "test_friend_456",
+    "type": "friendship_evaluated",
+    "details": {
+      "interaction_quality": 0.8,
+      "new_score": 0.56,
+      "relationship": "friend"
+    },
+    "timestamp": "2026-07-17T14:46:26.407973"
+  },
+  {
+    "ai_id": "test_friend_456",
+    "type": "friend_removed",
+    "details": {
+      "name": "TestFriend2"
+    },
+    "timestamp": "2026-07-17T14:46:26.410156"
+  }
+]

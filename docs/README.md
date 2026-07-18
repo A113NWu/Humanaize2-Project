@@ -16,16 +16,20 @@ Humanaize v2.2 是一款**本地自治 AI 代理**，具有现代化的图形界
 - ✨ 用户行为模式分析
 - ✨ 性能监控和优化建议
 - ✨ CLI/Solve 模式日志修复
+- ✨ AI 视觉交互技能（屏幕捕获、摄像头调用、图像识别）
+- ✨ Skill 安装器（支持从压缩包安装自定义技能）
+- ✨ 集中式提示词管理（所有提示词存储在 prompt/ 文件夹中）
 
 ## 🎯 核心特性
 
 | 类别 | 功能 |
 |------|------|
 | **核心 AI** | 本地聊天界面、记忆系统、人格引擎、GAN 风格自我辩论 |
-| **技能框架** | OpenClaw 兼容的技能系统，包含 9 个内置技能 |
+| **技能框架** | OpenClaw 兼容的技能系统，包含 10 个内置技能 |
 | **用户界面** | 基于 CustomTkinter 的现代 GUI、CLI 支持、深色/浅色主题 |
 | **多语言** | 支持英语和中文，自动检测语言 |
 | **自治能力** | 线程安全架构、后台任务处理、空闲思考 |
+| **视觉能力** | 屏幕捕获、摄像头调用、图像分析、文本识别 |
 | **维护** | GitHub 自动更新、systemd 服务支持（Linux） |
 
 ---
@@ -65,9 +69,9 @@ Humanaize v2.2 是一款**本地自治 AI 代理**，具有现代化的图形界
 - 可配置的内存限制（默认：100 条消息）
 
 ### 3. 人格引擎
-- 可定制的 AI 人格特质（好奇心、同理心、创造力）
+- 最小化身份定义，让 AI 自主发展人格
 - 基于交互的动态人格适应
-- 可自定义初始提示词
+- 可自定义初始提示词（存储在 prompt/ 文件夹中）
 
 ### 4. GAN 风格自我辩论
 - 内部论证以提升回复质量
@@ -79,6 +83,13 @@ Humanaize v2.2 是一款**本地自治 AI 代理**，具有现代化的图形界
 - 支持自定义技能开发
 - 技能启用/禁用管理
 - 基于 JSON 的技能调用
+- 支持从压缩包安装技能
+
+### 6. AI 视觉交互
+- 屏幕捕获功能，AI 可按需查看当前屏幕内容
+- 摄像头调用机制，支持用户指向提问和自动触发
+- 图像识别能力，包含物体识别、场景理解和文本识别
+- 视觉分析窗口，实时显示识别结果和解决方案
 
 ---
 
@@ -95,6 +106,7 @@ Humanaize v2.2 是一款**本地自治 AI 代理**，具有现代化的图形界
 | `web-fetch` | 获取 URL 内容 | 低 |
 | `detect-emotion` | 通过摄像头分析用户面部表情 | 中 |
 | `humanaize-society-network` | 连接其他 Humanaize AI | 中 |
+| `vision` | 屏幕捕获、摄像头调用、图像识别和分析 | 中 |
 
 ---
 
@@ -116,14 +128,15 @@ Humanaize_2_1/
 │       ├── personality.py
 │       ├── autonomous.py
 │       ├── internal_state.py
-│       ├── Prompt/        # 提示词模板
+│       ├── Prompt/        # 提示词加载模块
 │       ├── config/        # 配置管理
 │       ├── llm/           # LLM集成
 │       ├── memory/        # 记忆系统
-│       ├── tools/         # 实用工具
+│       ├── tools/         # 实用工具（含skill_installer）
 │       ├── ui/            # UI组件
 │       └── utils/         # 工具（自动更新器）
 ├── skills/                # 内置技能（OpenClaw兼容）
+├── prompt/                # 集中式提示词文件（所有提示词）
 ├── config/                # 全局配置
 ├── docs/                  # 文档
 └── installer/             # 构建脚本和安装程序
@@ -340,8 +353,20 @@ python src/core/main.py skills -enable shell
 # 禁用技能
 python src/core/main.py skills -disable shell
 
-# 从文件安装技能
+# 从压缩包安装技能
 python src/core/main.py skills -install skill.zip
+```
+
+### 安装自定义技能
+
+将技能压缩包解包后，代码会自动放入 `skills/<name>/` 文件夹，提示词文件会放入 `prompt/` 文件夹：
+
+```bash
+# 安装技能压缩包
+python src/core/main.py skills -install my-skill.zip
+
+# 或使用技能安装器
+python -m src.core.tools.skill_installer --install my-skill.zip
 ```
 
 ### 自动更新
@@ -375,6 +400,20 @@ python src/core/main.py settings
 "今天天气怎么样？"
 "5分钟后设置一个提醒。"
 "执行：ls -la"
+"这张图片里有什么？"
+"帮我看看屏幕上显示的内容"
+```
+
+### 使用视觉技能
+```
+# 屏幕捕获分析
+"帮我分析一下当前屏幕显示的内容"
+
+# 摄像头调用
+"打开摄像头，看看我手里拿的是什么"
+
+# 图像识别
+"分析这张图片中的文字内容"
 ```
 
 ### 配置设置
@@ -403,7 +442,7 @@ python src/core/main.py boot -m solve
 |------|--------|------|
 | `LLAMA_SERVER_URL` | `http://127.0.0.1:8080/completion` | LLM 服务器端点 |
 
-### 配置文件（`src/config/config.py`）
+### 配置文件（`src/core/config/config.py`）
 
 ```python
 # LLM 配置
@@ -424,8 +463,8 @@ MAX_MEMORY = 100
 
 # 人格配置
 DEFAULT_PERSONALITY = {
-    "traits": {"curiosity": 0.7, "empathy": 0.5, "creativity": 0.6},
-    "initial_prompt": "You are a friendly helpful AI."
+    "name": "Aize",
+    "description": "一个真实的女孩"
 }
 
 # 自治行为
@@ -433,6 +472,21 @@ SCREENSHOT_INTERVAL = 300  # 秒
 REFLECTION_INTERVAL = 1800
 AUTONOMOUS_CHECK_INTERVAL = 300
 ```
+
+### 提示词配置
+
+所有提示词文件存储在 `prompt/` 文件夹中，便于修改和管理：
+
+| 文件 | 用途 |
+|------|------|
+| `chat.txt` | 聊天提示词 |
+| `chat_template.txt` | 聊天模板 |
+| `system_prompt.txt` | 系统提示词 |
+| `agent_prompt.txt` | Agent 提示词 |
+| `should_answer_user.txt` | 回复决策提示词 |
+| `should_use_gan.txt` | GAN 使用决策提示词 |
+| `vision_prompt.txt` | 视觉分析提示词 |
+| `solve_prompt.txt` | 解决模式提示词 |
 
 ---
 
@@ -479,6 +533,19 @@ def execute(input_data):
     return {"status": "success", "result": "output"}
 ```
 
+### 技能安装包格式
+
+创建技能压缩包时，代码文件放在根目录，提示词文件放在 `prompts/` 子目录：
+
+```
+my-skill.zip/
+├── SKILL.md
+├── __init__.py
+├── prompts/
+│   └── my_skill_prompt.txt
+└── other_resource.py
+```
+
 ---
 
 ## 🧠 架构
@@ -488,9 +555,11 @@ def execute(input_data):
 1. **ThinkingEngine** - 用于聊天、GAN 和反思的线程安全异步任务处理器
 2. **Agent** - 执行技能和 shell 命令
 3. **SkillsManager** - 加载和管理技能生命周期
-4. **Memory** - 持久化对话历史和思考
-5. **Personality** - 管理 AI 角色特质
-6. **AutoUpdater** - 管理 GitHub 软件更新
+4. **SkillInstaller** - 从压缩包安装技能，自动分离代码和提示词
+5. **Memory** - 持久化对话历史和思考
+6. **Personality** - 管理 AI 角色身份（最小化定义，支持自主发展）
+7. **VisionEngine** - 处理视觉相关操作（屏幕捕获、摄像头、图像识别）
+8. **AutoUpdater** - 管理 GitHub 软件更新
 
 ### 线程架构
 
@@ -580,7 +649,7 @@ dist/humanaize2-*.rpm
 
 ### LLM 服务器无响应
 - 确保 llama.cpp 服务器正在运行
-- 检查 `src/config/config.py` 中的服务器 URL
+- 检查 `src/core/config/config.py` 中的服务器 URL
 - 验证模型文件路径是否正确
 - 确保防火墙未阻止 8080 端口
 
@@ -589,10 +658,15 @@ dist/humanaize2-*.rpm
 - 检查 `data/skills_config.json` 中的技能配置
 - 确保技能执行器模块具有正确的 `execute` 函数
 
-### 摄像头访问错误（detect-emotion）
+### 摄像头访问错误（detect-emotion / vision）
 - 确保没有其他应用程序正在使用摄像头
 - 授予 Python 摄像头权限
 - 检查 OpenCV 安装：`pip install opencv-python`
+
+### 视觉技能问题
+- 检查 Tkinter 安装：`python -c "import tkinter"`
+- 确保屏幕捕获工具可用（PIL/Pillow）
+- 检查摄像头驱动是否正常
 
 ### GUI 问题
 - 更新 CustomTkinter：`pip install --upgrade customtkinter`
@@ -644,6 +718,8 @@ Linux 特定故障排除，请参阅 [docs/TROUBLESHOOTING_LINUX.md](docs/TROUBL
 - [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) - 现代 Python UI
 - [DeepFace](https://github.com/serengil/deepface) - 人脸分析
 - [OpenClaw](https://github.com/secondself/openclaw) - 技能框架灵感
+- [Pillow](https://github.com/python-pillow/Pillow) - 图像处理
+- [pytesseract](https://github.com/madmaze/pytesseract) - 光学字符识别
 
 ---
 

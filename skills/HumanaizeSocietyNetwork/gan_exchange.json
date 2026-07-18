@@ -1,0 +1,38 @@
+[
+  {
+    "gan_package": {
+      "topic": "Test Topic",
+      "synthesis": "Testing GAN debate sharing",
+      "argument_a": "Argument A",
+      "argument_b": "Argument B",
+      "gan_result": {
+        "synthesis": "Testing GAN debate sharing",
+        "reply_a": "Argument A",
+        "reply_b": "Argument B"
+      },
+      "timestamp": "2026-07-17T14:45:15.627558",
+      "debate_quality": 0.6
+    },
+    "friend_id": "test_friend_123",
+    "shared_at": "2026-07-17T14:45:15.628145",
+    "status": "shared"
+  },
+  {
+    "gan_package": {
+      "topic": "AI Consciousness",
+      "synthesis": "Testing GAN debate sharing after fix",
+      "argument_a": "Argument A",
+      "argument_b": "Argument B",
+      "gan_result": {
+        "synthesis": "Testing GAN debate sharing after fix",
+        "reply_a": "Argument A",
+        "reply_b": "Argument B"
+      },
+      "timestamp": "2026-07-17T14:46:26.408585",
+      "debate_quality": 0.6
+    },
+    "friend_id": "test_friend_456",
+    "shared_at": "2026-07-17T14:46:26.409460",
+    "status": "shared"
+  }
+]

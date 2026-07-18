@@ -43,12 +43,16 @@ PROMPT_FILES = {
     "solve_task_list": "solve_task_list.txt",
     "solve_task_execution": "solve_task_execution.txt",
     "solve_summary": "solve_summary.txt",
+    "idle_activity_choice": "idle_activity_choice.txt",
     # GAN 相关
     "gan_decide": "gan_decide.txt",
     "gan_topic": "gan_topic.txt",
     "gan_argument_a": "gan_argument_a.txt",
     "gan_argument_b": "gan_argument_b.txt",
     "gan_synthesis": "gan_synthesis.txt",
+    # GAN Supervisor 相关
+    "gan_supervisor_review": "gan_supervisor_review_prompt.txt",
+    "gan_supervisor_validate": "gan_supervisor_validate_prompt.txt",
 }
 
 
@@ -256,12 +260,11 @@ def load_solve_mode_summary_prompt(problem: str, results_text: str) -> str:
 def load_solve_mode_task_prompt(task_title: str, task_description: str, problem: str, hsn_context: str = "") -> str:
     """加载Solve模式任务解决提示词"""
     template = load_prompt("solve_mode_task")
-    return template.format(
-        task_title=task_title,
-        task_description=task_description,
-        problem=problem,
-        hsn_context=hsn_context
-    )
+    template = template.replace("{task_title}", task_title)
+    template = template.replace("{task_description}", task_description)
+    template = template.replace("{problem}", problem)
+    template = template.replace("{hsn_context}", hsn_context)
+    return template
 
 
 def load_skill_main_prompt(skills_list: str, skills_list_formatted: str, skills_count: int, language: str, user_request: str = "") -> str:
@@ -327,4 +330,30 @@ def load_solve_summary_prompt(problem: str, results_text: str) -> str:
     return template.format(
         problem=problem,
         results_text=results_text
+    )
+
+
+# ==================== GAN Supervisor 相关提示词加载函数 ====================
+
+def load_gan_supervisor_review_prompt(problem: str, task_list: str) -> str:
+    """加载监督AI审查任务列表的提示词"""
+    template = load_prompt("gan_supervisor_review")
+    return template.format(
+        problem=problem,
+        task_list=task_list
+    )
+
+
+def load_gan_supervisor_validate_prompt(problem: str, task_id: int, task_title: str, 
+                                        task_description: str, previous_tasks: str, 
+                                        execution_result: str) -> str:
+    """加载监督AI验证任务执行结果的提示词"""
+    template = load_prompt("gan_supervisor_validate")
+    return template.format(
+        problem=problem,
+        task_id=task_id,
+        task_title=task_title,
+        task_description=task_description,
+        previous_tasks=previous_tasks,
+        execution_result=execution_result
     )

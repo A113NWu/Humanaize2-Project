@@ -39,7 +39,16 @@ from core.personality import load_personality, save_personality
 from core.autonomous import check_silence_and_decide
 from ui.idle import IdleEngine
 from tools.tools import SimpleLogger, check_llm_server
+from core.voice.voice_service import VoiceService
 import config
+
+try:
+    import importlib
+    qq_module = importlib.import_module('skills.qq-chat')
+    _qq_skill = qq_module._qq_skill
+    QQ_SKILL_AVAILABLE = True
+except ImportError:
+    QQ_SKILL_AVAILABLE = False
 
 
 class HumanaizeUI:
@@ -86,8 +95,35 @@ class HumanaizeUI:
             "zh-TW": "zh-TW"
         }
 
+        self.voice_service = VoiceService(
+            on_partial_text=self._handle_partial_voice_text,
+            on_final_text=self._handle_final_voice_text,
+            on_speech_chunk=self._handle_speech_chunk,
+            tts_settings=self._get_tts_settings()
+        )
+
         self.thinking_engine = ThinkingEngine(on_response_callback=self.on_engine_response)
         self.thinking_engine.set_language(self.get_language_code())
+
+        # 启动ThinkingEngine API服务器（供AstrBot等外部服务调用）
+        try:
+            from core.thinking_engine_api import ThinkingEngineState, start_api_server
+            state = ThinkingEngineState()
+            state.set_thinking_engine(self.thinking_engine)
+            state.set_memory(self.memory)
+            state.set_personality(self.personality)
+            state.set_qq_ui_callback(self._handle_qq_message)
+            start_api_server(host='127.0.0.1', port=8082)
+            logger.info("ThinkingEngine API server started on port 8082")
+        except Exception as e:
+            logger.error(f"Failed to start ThinkingEngine API server: {e}")
+
+        if QQ_SKILL_AVAILABLE:
+            _qq_skill.set_thinking_engine(self.thinking_engine)
+            _qq_skill.set_memory(self.memory)
+            _qq_skill.set_ui_callback(self._handle_qq_message)
+            _qq_skill.start_listener()
+            logger.info("QQ skill initialized and listener started")
 
         # 从外部文件加载翻译
         self.translations = self._load_translations()
@@ -184,6 +220,18 @@ class HumanaizeUI:
                 return json.load(f)
         except Exception:
             return {}
+
+    def _get_tts_settings(self) -> dict:
+        return {
+            "backend": self.settings.get("tts_backend", "pyttsx3"),
+            "model_path": self.settings.get("tts_model_path", ""),
+            "voice": self.settings.get("tts_voice", ""),
+            "speed": self.settings.get("tts_speed", 1.0),
+            "api_key": self.settings.get("tts_api_key", ""),
+            "api_base_url": self.settings.get("tts_api_base_url", "https://api.openai.com/v1/audio/speech"),
+            "api_model": self.settings.get("tts_model", "gpt-4o-mini-tts"),
+            "language": self.settings.get("tts_language", "auto"),
+        }
 
     def _save_settings(self, settings: dict):
         settings_path = os.path.join(os.path.dirname(__file__), "data", "ui_settings.json")
@@ -630,6 +678,9 @@ class HumanaizeUI:
         # 当前活动面板
         self.active_panel = "chat"
 
+        # QQ消息列表
+        self.qq_messages = []
+
         # 左侧导航栏（侧拉栏入口）
         self._create_sidebar()
 
@@ -649,6 +700,9 @@ class HumanaizeUI:
         
         # 思考面板
         self._create_thoughts_panel()
+        
+        # QQ消息面板
+        self._create_qq_panel()
         
         # 命令输出面板
         self._create_command_panel()
@@ -672,7 +726,8 @@ class HumanaizeUI:
         sidebar.grid_rowconfigure(0, weight=0)
         sidebar.grid_rowconfigure(1, weight=0)
         sidebar.grid_rowconfigure(2, weight=0)
-        sidebar.grid_rowconfigure(3, weight=1)
+        sidebar.grid_rowconfigure(3, weight=0)
+        sidebar.grid_rowconfigure(4, weight=1)
         sidebar.grid_columnconfigure(0, weight=1)
         
         # 导航按钮样式
@@ -704,6 +759,15 @@ class HumanaizeUI:
         )
         self.thought_btn.grid(row=1, column=0, padx=10, pady=8)
         
+        # QQ消息按钮
+        self.qq_btn = ctk.CTkButton(
+            sidebar,
+            text="💬",
+            command=lambda: self._switch_panel("qq"),
+            **btn_style
+        )
+        self.qq_btn.grid(row=2, column=0, padx=10, pady=8)
+        
         # 命令按钮
         self.command_btn = ctk.CTkButton(
             sidebar,
@@ -711,7 +775,7 @@ class HumanaizeUI:
             command=lambda: self._switch_panel("command"),
             **btn_style
         )
-        self.command_btn.grid(row=2, column=0, padx=10, pady=8)
+        self.command_btn.grid(row=3, column=0, padx=10, pady=8)
         
         # 状态按钮
         self.status_btn = ctk.CTkButton(
@@ -720,7 +784,7 @@ class HumanaizeUI:
             command=lambda: self._switch_panel("status"),
             **btn_style
         )
-        self.status_btn.grid(row=3, column=0, padx=10, pady=(0, 16), sticky="s")
+        self.status_btn.grid(row=4, column=0, padx=10, pady=(0, 16), sticky="s")
         
         # 更新按钮状态
         self._update_sidebar_buttons()
@@ -730,6 +794,7 @@ class HumanaizeUI:
         buttons = {
             "chat": self.chat_btn,
             "thoughts": self.thought_btn,
+            "qq": self.qq_btn,
             "command": self.command_btn,
             "status": self.status_btn
         }
@@ -755,6 +820,7 @@ class HumanaizeUI:
         # 隐藏所有面板
         self.chat_frame.grid_remove()
         self.thoughts_frame.grid_remove()
+        self.qq_frame.grid_remove()
         self.command_frame.grid_remove()
         self.status_frame.grid_remove()
         
@@ -763,6 +829,8 @@ class HumanaizeUI:
             self.chat_frame.grid(row=0, column=0, sticky="nsew")
         elif panel_name == "thoughts":
             self.thoughts_frame.grid(row=0, column=0, sticky="nsew")
+        elif panel_name == "qq":
+            self.qq_frame.grid(row=0, column=0, sticky="nsew")
         elif panel_name == "command":
             self.command_frame.grid(row=0, column=0, sticky="nsew")
         elif panel_name == "status":
@@ -879,6 +947,109 @@ class HumanaizeUI:
         self.thought_text.tag_config("reflection", foreground="#c084fc")  # 浅紫色 - 反思
         self.thought_text.tag_config("internal", foreground="#9ca3af")  # 灰色 - 内部思考
         self.thought_text.tag_config("thinking", foreground="#6b7280")  # 默认灰色
+
+    def _create_qq_panel(self):
+        """创建QQ消息面板"""
+        self.qq_frame = ctk.CTkFrame(
+            self.content_container,
+            corner_radius=20,
+            fg_color="#252540",
+            border_width=0
+        )
+        self.qq_frame.grid_rowconfigure(1, weight=1)
+        self.qq_frame.grid_columnconfigure(0, weight=1)
+
+        header_frame = ctk.CTkFrame(self.qq_frame, fg_color="transparent")
+        header_frame.grid(row=0, column=0, sticky="ew", padx=16, pady=(16, 8))
+        header_frame.grid_columnconfigure(0, weight=1)
+
+        self.qq_label = ctk.CTkLabel(
+            header_frame,
+            text="💬 QQ Messages",
+            anchor="w",
+            font=("Segoe UI", 18, "bold"),
+            text_color="#e0e0e0"
+        )
+        self.qq_label.grid(row=0, column=0, sticky="w")
+
+        self.qq_clear_btn = ctk.CTkButton(
+            header_frame,
+            text="Clear",
+            width=80,
+            height=40,
+            fg_color="#353560",
+            hover_color="#454580",
+            corner_radius=12,
+            font=("Segoe UI", 12),
+            command=self._clear_qq_messages
+        )
+        self.qq_clear_btn.grid(row=0, column=1)
+
+        self.qq_text = ctk.CTkTextbox(
+            self.qq_frame,
+            wrap=tk.WORD,
+            fg_color="#0a0a15",
+            text_color="#e0e0e0",
+            border_width=0,
+            corner_radius=16,
+            font=("Segoe UI", 14)
+        )
+        self.qq_text.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 16))
+        self.qq_text.configure(state="disabled")
+        self.qq_text.tag_config("sender", foreground="#60a5fa")
+        self.qq_text.tag_config("group", foreground="#f472b6")
+        self.qq_text.tag_config("time", foreground="#6b7280")
+        self.qq_text.tag_config("message", foreground="#e0e0e0")
+        self.qq_text.tag_config("sent", foreground="#34d399")
+        self.qq_text.tag_config("sent_from", foreground="#fbbf24")
+
+    def _clear_qq_messages(self):
+        """清空QQ消息"""
+        self.qq_messages.clear()
+        self.qq_text.configure(state="normal")
+        self.qq_text.delete("1.0", tk.END)
+        self.qq_text.configure(state="disabled")
+
+    def _add_qq_message(self, msg):
+        """添加QQ消息到UI"""
+        import time
+        
+        self.qq_messages.append(msg)
+        
+        sender = msg.get('from', 'Unknown')
+        message = msg.get('message', '')
+        msg_type = msg.get('message_type', 'private')
+        msg_direction = msg.get('type', 'received')
+        timestamp = msg.get('timestamp', time.time())
+        
+        time_str = time.strftime('%H:%M:%S', time.localtime(timestamp))
+        
+        self.qq_text.configure(state="normal")
+        
+        if self.qq_text.get("1.0", tk.END).strip():
+            self.qq_text.insert(tk.END, "\n")
+        
+        self.qq_text.insert(tk.END, f"[{time_str}] ", "time")
+        
+        if msg_direction == 'sent':
+            if msg_type == 'group':
+                self.qq_text.insert(tk.END, f"{sender} -> Group: ", "sent_from")
+            else:
+                self.qq_text.insert(tk.END, f"{sender} -> {msg.get('target_id', '')}: ", "sent_from")
+            self.qq_text.insert(tk.END, message, "sent")
+        else:
+            if msg_type == 'group':
+                self.qq_text.insert(tk.END, f"{sender} (Group): ", "group")
+            else:
+                self.qq_text.insert(tk.END, f"{sender}: ", "sender")
+            self.qq_text.insert(tk.END, message, "message")
+        
+        self.qq_text.configure(state="disabled")
+        self.qq_text.see(tk.END)
+
+    def _handle_qq_message(self, msg):
+        """处理QQ消息回调"""
+        self.root.after(0, lambda: self._add_qq_message(msg))
 
     def _create_command_panel(self):
         """创建命令输出面板"""
@@ -1026,12 +1197,47 @@ class HumanaizeUI:
         )
         self.clear_btn.grid(row=0, column=3, padx=(8, 16), pady=14)
 
+        self.voice_toggle_btn = ctk.CTkButton(
+            bottom_frame,
+            text="🎤",
+            command=self.toggle_voice_input,
+            width=70,
+            height=48,
+            corner_radius=14,
+            fg_color="#0f766e",
+            hover_color="#115e59",
+            font=("Segoe UI", 14),
+            text_color="#ffffff"
+        )
+        self.voice_toggle_btn.grid(row=0, column=4, padx=(0, 8), pady=14)
+
+        self.speak_toggle_btn = ctk.CTkButton(
+            bottom_frame,
+            text="🔊",
+            command=self.toggle_voice_output,
+            width=70,
+            height=48,
+            corner_radius=14,
+            fg_color="#4338ca",
+            hover_color="#3730a3",
+            font=("Segoe UI", 14),
+            text_color="#ffffff"
+        )
+        self.speak_toggle_btn.grid(row=0, column=5, padx=(0, 16), pady=14)
+
+        self.voice_input_enabled = False
+        self.voice_output_enabled = True
+
     def send(self):
         text = self.entry.get().strip()
         if not text:
             return
         
         logger.info(f"User input: {text}")
+
+        if self.voice_input_enabled:
+            self._add_chat_message(f"You: {text}")
+            self._handle_final_voice_text(text)
 
         # 确保在主线程执行UI更新
         def disable_ui():
@@ -1044,7 +1250,7 @@ class HumanaizeUI:
 
         self._add_chat_message(f"You: {text}")
 
-        add(self.memory, "user", text)
+        add(self.memory, "user", text, source="user")
         save_memory(self.memory)
 
         if hasattr(self, "idle_engine"):
@@ -1123,8 +1329,19 @@ class HumanaizeUI:
         context = "Recent conversation:"
         for msg in messages:
             role = msg.get("role", "").capitalize()
+            source = msg.get("source", "")
             content = msg.get("content", "")[:100]
-            context += f"\n{role}: {content}"
+            
+            if source == "user":
+                context += f"\n[用户] {content}"
+            elif source == "ai_autonomous":
+                context += f"\n[Aize主动] {content}"
+            elif source == "ai_response":
+                context += f"\n[Aize回复] {content}"
+            elif source == "system":
+                context += f"\n[系统] {content}"
+            else:
+                context += f"\n{role}: {content}"
         return context
 
     def _add_chat_message(self, text: str, message_type: str = "normal"):
@@ -1329,6 +1546,31 @@ class HumanaizeUI:
         elif update_type == "autonomous_message":
             self._handle_autonomous_message_update(update)
 
+    def _handle_speech_chunk(self, chunk: str):
+        if self.voice_output_enabled:
+            self._add_chat_message(f"AI: {chunk}", "normal")
+
+    def _handle_partial_voice_text(self, text: str):
+        self._add_chat_message(f"You: {text}", "normal")
+
+    def _handle_final_voice_text(self, text: str):
+        if not text:
+            return
+        self.entry.delete(0, tk.END)
+        self.entry.insert(0, text)
+        self.entry.icursor(len(text))
+
+    def toggle_voice_input(self):
+        if not self.voice_service.start_listening():
+            self._add_chat_message("System: microphone is unavailable", "error")
+            return
+        self.voice_input_enabled = not self.voice_input_enabled
+        self.voice_toggle_btn.configure(text="🎤●" if self.voice_input_enabled else "🎤")
+
+    def toggle_voice_output(self):
+        self.voice_output_enabled = not self.voice_output_enabled
+        self.speak_toggle_btn.configure(text="🔊" if self.voice_output_enabled else "🔈")
+
     def _handle_chat_response_update(self, update):
         """处理聊天响应更新"""
         # 取消超时定时器（任何响应都表示流程正常进行）
@@ -1360,6 +1602,8 @@ class HumanaizeUI:
         r = "\n".join([ln.rstrip() for ln in r.splitlines() if ln.strip() != ""]) or ""
         display = f"AI: {r}" if r else "AI:"
         logger.info(f"Final display text: {display}")
+        if self.voice_output_enabled:
+            self.voice_service.speak_stream(r)
         self._add_chat_message(display)
         self.send_btn.configure(state="normal")
         self.entry.configure(state="normal")

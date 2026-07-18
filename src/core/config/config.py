@@ -1,7 +1,7 @@
 LLAMA_SERVER = "http://127.0.0.1:8080"
 LLAMA_SERVER_URL = f"{LLAMA_SERVER}/completion"
-MODEL_NAME = "tinyllama"
-MAX_TOKENS = 256
+MODEL_NAME = "gemma-4-E4B-it-ultra-uncensored-heretic-Q8_0.gguf"
+MAX_TOKENS = 512
 TEMPERATURE = 0.7
 TOP_P = 0.9
 

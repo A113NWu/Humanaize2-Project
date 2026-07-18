@@ -9,6 +9,8 @@ from tools.gan_iteration import GANIteration
 from tools.self_optimizer import get_optimizer
 from memory import add_thought, save_memory
 
+_idle_engine_instance = None
+
 class IdleEngine:
     """
     空闲引擎 - AI在没有用户交互时进行的内部思考活动
@@ -21,6 +23,8 @@ class IdleEngine:
     - 在GAN思考期间缓存用户问题，并在GAN完成后交给主引擎处理
     """
     def __init__(self, memory, callback, idle_interval=300, gan_enabled=True):
+        global _idle_engine_instance
+        _idle_engine_instance = self
         """
         Args:
             memory: 共享的记忆系统
@@ -83,34 +87,72 @@ class IdleEngine:
         """
         Perform GAN internal thinking.
         
+        Process:
+        1. Aize chooses an activity from activity list
+        2. If "自己思考", Aize determines a specific thinking topic
+        3. GAN debates around the chosen topic
+        4. Output conclusion with "让我们开始工作吧"
+        
         Note: this is an internal thought process only and does not generate a user-facing reply.
         The result is sent to the UI as a thought entry.
         """
         self.is_running_gan = True
         gan_result = None
         try:
-            debate = self.gan.self_debate()
-            synthesis = debate.get('synthesis', '')
-            gan_result = {
-                "topic": getattr(self.gan, "topic", ""),
-                "synthesis": synthesis,
-                "reply_a": getattr(self.gan, "reply_a", ""),
-                "reply_b": getattr(self.gan, "reply_b", "")
-            }
-            
-            if self.memory is not None:
-                add_thought(self.memory, synthesis, thought_type="gan")
-                save_memory(self.memory)
+            # Step 1: Let Aize choose an activity and determine thinking direction
+            activity, thinking_topic = self._choose_activity()
             
             if self.callback:
                 self.callback({
                     "type": "internal_thought",
-                    "thought": f"[Self-thought] {synthesis}"
+                    "thought": f"[Idle Activity] Aize chooses: {activity}"
                 })
-                self.callback({
-                    "type": "gan_complete",
-                    "gan_result": gan_result
-                })
+            
+            if activity == "3. 自己思考" and thinking_topic:
+                # Step 2: GAN debates around the chosen topic
+                if self.callback:
+                    self.callback({
+                        "type": "internal_thought",
+                        "thought": f"[Thinking Direction] {thinking_topic}"
+                    })
+                
+                debate = self.gan.self_debate(is_user_topic=True, user_topic=thinking_topic)
+                synthesis = debate.get('synthesis', '')
+                gan_result = {
+                    "topic": getattr(self.gan, "topic", ""),
+                    "synthesis": synthesis,
+                    "reply_a": getattr(self.gan, "reply_a", ""),
+                    "reply_b": getattr(self.gan, "reply_b", "")
+                }
+                
+                if self.memory is not None:
+                    add_thought(self.memory, synthesis, thought_type="gan")
+                    save_memory(self.memory)
+                
+                if self.callback:
+                    self.callback({
+                        "type": "internal_thought",
+                        "thought": f"[Self-thought] {synthesis}"
+                    })
+                    self.callback({
+                        "type": "gan_complete",
+                        "gan_result": gan_result
+                    })
+            elif activity == "4. 找用户说话":
+                # Aize wants to talk to user, queue a break silence task
+                if self.callback:
+                    self.callback({
+                        "type": "internal_thought",
+                        "thought": f"[Idle Activity] Aize wants to talk to user: {thinking_topic}"
+                    })
+            else:
+                # Other activities, just log
+                if self.callback:
+                    self.callback({
+                        "type": "internal_thought",
+                        "thought": f"[Idle Activity] {activity} - {thinking_topic}"
+                    })
+                
         except Exception as e:
             if self.callback:
                 self.callback({"type": "error", "error": f"GAN thinking failed: {e}"})
@@ -120,6 +162,35 @@ class IdleEngine:
             
             # 在GAN完成后运行自我优化（如果有足够的交互数据）
             self._run_self_optimization()
+    
+    def _choose_activity(self):
+        """让Aize选择空闲活动和思考方向"""
+        from llm import chat
+        from core.data.prompts_manager import load_prompt
+        
+        prompt = load_prompt("idle_activity_choice")
+        
+        try:
+            response = chat(prompt).strip()
+            
+            activity = ""
+            topic = ""
+            
+            for line in response.split('\n'):
+                line = line.strip()
+                if line.startswith("活动：") or line.startswith("活动:"):
+                    activity = line.replace("活动：", "").replace("活动:", "").strip()
+                elif line.startswith("话题：") or line.startswith("话题:"):
+                    topic = line.replace("话题：", "").replace("话题:", "").strip()
+            
+            if not activity:
+                activity = "3. 自己思考"
+            if not topic and activity == "3. 自己思考":
+                topic = "人工智能的发展趋势"
+            
+            return activity, topic
+        except Exception as e:
+            return "3. 自己思考", "日常思考"
     
     def _run_self_optimization(self):
         """Run AI self-optimization during GAN idle time"""
@@ -195,6 +266,22 @@ class IdleEngine:
                     "prompt": pending.get("prompt"),
                     "memory": pending.get("memory")
                 })
+
+    def signal_user_activity(self):
+        """收到用户活动信号，暂停当前的GAN思考"""
+        if self.is_running_gan:
+            try:
+                self.gan.stop_immediately()
+            except Exception:
+                pass
+        self.paused = True
+        self._resume_timer = time.time()
+
+    def check_resume(self):
+        """检查是否应该恢复空闲思考（用户活动结束1分钟后）"""
+        if self.paused and hasattr(self, '_resume_timer'):
+            if time.time() - self._resume_timer >= 60:
+                self.paused = False
 
     def stop(self):
         """停止空闲引擎"""

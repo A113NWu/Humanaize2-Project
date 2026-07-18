@@ -1,5 +1,5 @@
 {
-  "version": "2.2.3",
-  "last_updated": "2026-06-16T00:00:00.000000",
-  "release_notes": "v2.2.3新增：0.Windows現代化GUI介面;1.GitHub Pages官網;2.更新Linux APT完整安裝命令;3.優化Solve模式狀態欄刷新"
+  "version": "2.2.4",
+  "last_updated": "2026-06-20T00:00:00.000000",
+  "release_notes": "v2.2.4修复：1.修复Agent和Skills模块多处bug;2.修复命令格式解析问题;3.改进Shell技能输出格式统一;4.添加Command Output滚动条;5.修复Skills Manager加载逻辑;6.添加language_adapter模块"
 }

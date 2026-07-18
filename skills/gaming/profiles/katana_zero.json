@@ -1,0 +1,66 @@
+{
+    "game_name": "Katana ZERO",
+    "description": "武士零游戏配置 - 快节奏动作游戏，每关有时间限制，一击必杀机制",
+    "trigger": {
+        "window_title": "Katana ZERO",
+        "match_mode": "contains"
+    },
+    "controls": [
+        {"name": "向左移动", "action": "move_left", "type": "key", "keys": ["a", "arrowleft"], "description": "向左移动角色"},
+        {"name": "向右移动", "action": "move_right", "type": "key", "keys": ["d", "arrowright"], "description": "向右移动角色"},
+        {"name": "向上移动", "action": "move_up", "type": "key", "keys": ["w", "arrowup"], "description": "向上移动/攀爬"},
+        {"name": "向下移动", "action": "move_down", "type": "key", "keys": ["s", "arrowdown"], "description": "向下移动/下蹲"},
+        {"name": "向左攻击", "action": "attack_left", "type": "key", "keys": ["arrowleft"], "description": "向左挥刀攻击"},
+        {"name": "向右攻击", "action": "attack_right", "type": "key", "keys": ["arrowright"], "description": "向右挥刀攻击"},
+        {"name": "向上攻击", "action": "attack_up", "type": "key", "keys": ["arrowup"], "description": "向上挥刀攻击"},
+        {"name": "向下攻击", "action": "attack_down", "type": "key", "keys": ["arrowdown"], "description": "向下挥刀攻击"},
+        {"name": "翻滚闪避", "action": "dash", "type": "key", "keys": ["space"], "description": "快速翻滚闪避，可穿越敌人"},
+        {"name": "使用物品", "action": "use_item", "type": "key", "keys": ["e"], "description": "使用收集到的物品"},
+        {"name": "暂停/菜单", "action": "pause", "type": "key", "keys": ["escape"], "description": "暂停游戏打开菜单"},
+        {"name": "重新开始", "action": "restart", "type": "key", "keys": ["r"], "description": "重新开始当前关卡"},
+        {"name": "跳过对话", "action": "skip_dialog", "type": "key", "keys": ["space", "enter"], "description": "跳过剧情对话"},
+        {"name": "什么都不做", "action": "do_nothing", "type": "key", "keys": [], "description": "保持当前状态"}
+    ],
+    "time_limit": {
+        "enabled": true,
+        "total_time": 0,
+        "urgency_threshold": 30,
+        "action_on_timeout": "restart",
+        "timer_region": {
+            "x": 45,
+            "y": 2,
+            "width": 10,
+            "height": 5
+        },
+        "warning_messages": ["time", "warning", "hurry", "quick", "run"]
+    },
+    "death_detection": {
+        "enabled_methods": ["scene_change", "text", "visual_cues"],
+        "text": {
+            "keywords": ["restart", "try again", "retry", "you died", "death", "defeat", "失败", "重试", "重新开始", "continue"],
+            "enabled": true
+        },
+        "health_bar": {
+            "enabled": false
+        },
+        "scene_change": {
+            "enabled": true,
+            "threshold": 40
+        },
+        "visual_cues": {
+            "enabled": true,
+            "confidence_threshold": 0.75
+        }
+    },
+    "ui_regions": {},
+    "tips": [
+        "武士零是快节奏动作游戏，使用WASD移动，方向键攻击",
+        "空格键翻滚闪避，可以穿越敌人攻击",
+        "每关有时间限制，需要快速通关",
+        "一击必杀机制：被敌人攻击即死亡",
+        "死亡后按R键重新开始当前关卡",
+        "遇到困难关卡可搜索Katana ZERO攻略获取关卡技巧",
+        "利用翻滚无敌帧躲避攻击",
+        "优先消灭远程敌人，再处理近战敌人"
+    ]
+}

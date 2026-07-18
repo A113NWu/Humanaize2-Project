@@ -47,13 +47,13 @@ class ModelDownloader:
                 return {"success": False, "error": f"Unknown model: {model_name}"}
             
             info = model_info[model_name]
-            # 下載到專案根目錄的 models 資料夾
+            # 下載到專案根目錄的 model 資料夾
             base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            models_dir = os.path.join(base_dir, "models")
-            os.makedirs(models_dir, exist_ok=True)
+            model_dir = os.path.join(base_dir, "model")
+            os.makedirs(model_dir, exist_ok=True)
             
             # 下載為 tinyllama.gguf（統一名稱）
-            file_path = os.path.join(models_dir, "tinyllama.gguf")
+            file_path = os.path.join(model_dir, "tinyllama.gguf")
             
             if self._callback(f"Downloading {model_name}..."):
                 return {"success": False, "error": "Download cancelled"}
@@ -188,9 +188,9 @@ class ModelDownloader:
             return False
         
         info = model_info[model_name]
-        # 檢查專案根目錄的 models 資料夾
+        # 檢查專案根目錄的 model 資料夾
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        file_path = os.path.join(base_dir, "models", info["filename"])
+        file_path = os.path.join(base_dir, "model", info["filename"])
         
         if os.path.exists(file_path):
             file_size = os.path.getsize(file_path)
@@ -208,4 +208,4 @@ class ModelDownloader:
             return None
         
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        return os.path.join(base_dir, "models", model_info[model_name])
+        return os.path.join(base_dir, "model", model_info[model_name])

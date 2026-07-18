@@ -8,6 +8,7 @@ import sys
 import json
 import shutil
 import zipfile
+import importlib
 from typing import Dict, List, Optional
 
 
@@ -561,6 +562,15 @@ class SkillsCLI:
             self.show_skill_details(skill_name)
             return True
         
+        elif command == '-startgui':
+            if len(args) < 3:
+                print("[SkillsCLI] Error: Missing skill name")
+                print("[SkillsCLI] Usage: humanaize2 skills -startgui [skill_name]")
+                return False
+            
+            skill_name = args[2]
+            return self._start_skill_gui(skill_name)
+        
         elif command == '-help':
             self._print_usage()
             return True
@@ -568,6 +578,40 @@ class SkillsCLI:
         else:
             print(f"[SkillsCLI] Error: Unknown command '{command}'")
             self._print_usage()
+            return False
+    
+    def _start_skill_gui(self, skill_name: str) -> bool:
+        """Start the GUI for a specific skill"""
+        installed_skills = self._get_installed_skills()
+        actual_skill_name = self._resolve_skill_name(skill_name, installed_skills)
+        
+        if actual_skill_name is None:
+            print(f"[SkillsCLI] Error: Skill '{skill_name}' is not installed")
+            return False
+        
+        skill_path = os.path.join(self.skills_dir, actual_skill_name)
+        
+        try:
+            sys.path.insert(0, os.path.dirname(self.skills_dir))
+            
+            gui_module_path = os.path.join(skill_path, "gui.py")
+            if os.path.exists(gui_module_path):
+                spec = importlib.util.spec_from_file_location(f"skills.{actual_skill_name}.gui", gui_module_path)
+                if spec and spec.loader:
+                    gui_module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(gui_module)
+                    
+                    if hasattr(gui_module, 'run_gui'):
+                        print(f"[SkillsCLI] Starting GUI for skill '{actual_skill_name}'...")
+                        gui_module.run_gui()
+                        return True
+            
+            print(f"[SkillsCLI] Error: GUI module not found for skill '{actual_skill_name}'")
+            print("[SkillsCLI] Note: The skill needs to have a 'gui.py' file with a 'run_gui()' function")
+            return False
+        
+        except Exception as e:
+            print(f"[SkillsCLI] Error starting GUI for skill '{actual_skill_name}': {str(e)}")
             return False
     
     def _print_usage(self):
@@ -585,6 +629,7 @@ class SkillsCLI:
         print("    humanaize2 skills -uninstall [skill_name] Uninstall a skill")
         print("    humanaize2 skills -list                   List all installed skills")
         print("    humanaize2 skills -info [skill_name]      Show skill details")
+        print("    humanaize2 skills -startgui [skill_name]  Start skill configuration GUI")
         print("    humanaize2 skills -help                   Show this help message")
         
         print("\n  Notes:")
@@ -592,6 +637,7 @@ class SkillsCLI:
         print("    - Use '-enable' commands to activate skills")
         print("    - Skills can be installed from .zip files or directories")
         print("    - Manual installation: extract zip to './skills' folder")
+        print("    - Use '-startgui' to launch GUI configuration for skills that support it")
         
         print("\n" + "=" * 60)
 
