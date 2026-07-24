@@ -1,9 +1,15 @@
 {
-  "language": "中文",
-  "theme": "Light",
-  "model_name": "gemma-4-E4B-it-ultra-uncensored-heretic-Q8_0",
-  "model_path": "/home/allenwu/桌面/Humanaize_2_1/model/gemma-4-E4B-it-ultra-uncensored-heretic-Q8_0.gguf",
-  "skills_prompt": "",
-  "auto_break_silence": true,
-  "gan_enabled": true
+    "language": "中文",
+    "theme": "Light",
+    "model_name": "gemma-4-26B-A4B-it-ultra-uncensored-heretic-Q5_K_S",
+    "model_path": "D:/Humanaize 2.0 Agent/Humanaize2-Project/models/gemma-4-26B-A4B-it-ultra-uncensored-heretic-Q5_K_S.gguf",
+    "skills_prompt": "",
+    "auto_break_silence": true,
+    "gan_enabled": true,
+    "iot_auto_start": true,
+    "iot_host": "0.0.0.0",
+    "iot_port": 8765,
+    "iot_scan_enabled": true,
+    "iot_scan_interval": 30,
+    "iot_discovered_devices": []
 }

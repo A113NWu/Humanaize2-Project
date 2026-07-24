@@ -79,6 +79,15 @@ class HumanaizeUI:
         self.skills_prompt = self.settings.get("skills_prompt", "")
         self.auto_break_silence = self.settings.get("auto_break_silence", True)
         self.gan_enabled = self.settings.get("gan_enabled", True)
+        self.iot_auto_start = self.settings.get("iot_auto_start", True)
+        self.iot_host = self.settings.get("iot_host", "0.0.0.0")
+        self.iot_port = self.settings.get("iot_port", 8765)
+        self.iot_scan_enabled = self.settings.get("iot_scan_enabled", True)
+        self.iot_scan_interval = self.settings.get("iot_scan_interval", 30)
+        self.iot_discovered_devices = self.settings.get("iot_discovered_devices", [])
+        self._iot_scanner = None
+        self._iot_scan_thread = None
+        self._iot_manager = None
         
         # 检查自定义模型路径是否存在，如果不存在则回退
         if self.custom_model_path and not os.path.exists(self.custom_model_path):
@@ -558,7 +567,229 @@ class HumanaizeUI:
         ctk.CTkCheckBox(options_frame, text=self._t("auto_break_silence"), variable=auto_break_var, corner_radius=6).grid(row=0, column=0, sticky="w", padx=15, pady=10)
         ctk.CTkCheckBox(options_frame, text=self._t("enable_gan"), variable=gan_enabled_var, corner_radius=6).grid(row=1, column=0, sticky="w", padx=15, pady=(0, 10))
         row += 1
-        
+
+        # IoT Compute Network Section
+        iot_frame = ctk.CTkFrame(scroll_frame, corner_radius=12, fg_color="#252540" if self.theme == "Dark" else "#e8e8f0")
+        iot_frame.grid(row=row, column=0, sticky="ew", padx=0, pady=(0, 15))
+        iot_frame.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(iot_frame, text="IoT Compute Network", anchor="w", font=("Segoe UI", 12, "bold")).grid(row=0, column=0, sticky="w", padx=15, pady=(12, 8))
+
+        iot_auto_start_var = tk.BooleanVar(value=self.settings.get("iot_auto_start", True))
+        iot_host_var = tk.StringVar(value=self.settings.get("iot_host", "0.0.0.0"))
+        iot_port_var = tk.StringVar(value=str(self.settings.get("iot_port", 8765)))
+        iot_scan_enabled_var = tk.BooleanVar(value=self.settings.get("iot_scan_enabled", True))
+        iot_scan_interval_var = tk.StringVar(value=str(self.settings.get("iot_scan_interval", 30)))
+
+        ctk.CTkCheckBox(iot_frame, text="Auto start on launch", variable=iot_auto_start_var, corner_radius=6).grid(row=1, column=0, sticky="w", padx=15, pady=(0, 8))
+
+        iot_settings_row = ctk.CTkFrame(iot_frame, fg_color="transparent")
+        iot_settings_row.grid(row=2, column=0, sticky="ew", padx=15, pady=(0, 8))
+        iot_settings_row.grid_columnconfigure(0, weight=3)
+        iot_settings_row.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(iot_settings_row, text="Host", anchor="w", width=40).grid(row=0, column=0, sticky="w", padx=(0, 6))
+        ctk.CTkEntry(iot_settings_row, textvariable=iot_host_var, corner_radius=8).grid(row=0, column=1, sticky="ew")
+
+        iot_settings_row2 = ctk.CTkFrame(iot_frame, fg_color="transparent")
+        iot_settings_row2.grid(row=3, column=0, sticky="ew", padx=15, pady=(0, 8))
+        iot_settings_row2.grid_columnconfigure(0, weight=3)
+        iot_settings_row2.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(iot_settings_row2, text="Port", anchor="w", width=40).grid(row=0, column=0, sticky="w", padx=(0, 6))
+        ctk.CTkEntry(iot_settings_row2, textvariable=iot_port_var, corner_radius=8).grid(row=0, column=1, sticky="ew")
+
+        ctk.CTkCheckBox(iot_frame, text="Auto scan devices in background", variable=iot_scan_enabled_var, corner_radius=6).grid(row=4, column=0, sticky="w", padx=15, pady=(0, 4))
+
+        iot_interval_row = ctk.CTkFrame(iot_frame, fg_color="transparent")
+        iot_interval_row.grid(row=5, column=0, sticky="ew", padx=15, pady=(0, 8))
+        iot_interval_row.grid_columnconfigure(0, weight=3)
+        iot_interval_row.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(iot_interval_row, text="Scan Interval (s)", anchor="w", width=40).grid(row=0, column=0, sticky="w", padx=(0, 6))
+        ctk.CTkEntry(iot_interval_row, textvariable=iot_scan_interval_var, corner_radius=8).grid(row=0, column=1, sticky="ew")
+
+        iot_status_label = ctk.CTkLabel(iot_frame, text="Status: Idle", anchor="w", text_color="#9ca3af")
+        iot_status_label.grid(row=6, column=0, sticky="w", padx=15, pady=(0, 6))
+
+        discovered_frame = ctk.CTkFrame(iot_frame, fg_color="transparent")
+        discovered_frame.grid(row=7, column=0, sticky="ew", padx=15, pady=(0, 4))
+        discovered_frame.grid_columnconfigure(0, weight=1)
+
+        devices_label = ctk.CTkLabel(discovered_frame, text="Discovered Devices: Loading...", anchor="w")
+        devices_label.grid(row=0, column=0, sticky="w")
+
+        devices_list_frame = ctk.CTkFrame(iot_frame, fg_color="transparent", height=60)
+        devices_list_frame.grid(row=8, column=0, sticky="ew", padx=15, pady=(0, 8))
+        devices_list_frame.grid_columnconfigure(0, weight=1)
+
+        _device_widgets = []
+
+        def refresh_devices_list():
+            for w in _device_widgets:
+                w.destroy()
+            _device_widgets.clear()
+
+            devices = list(self.iot_discovered_devices)
+            if self._iot_scanner and self._iot_scanner.is_scanning():
+                devices = self._iot_scanner.get_discovered_devices()
+
+            if not devices:
+                lbl = ctk.CTkLabel(devices_list_frame, text="  No devices discovered. Run a scan to find Aize Companion devices on your LAN.", anchor="w", text_color="#9ca3af")
+                lbl.grid(row=0, column=0, sticky="w", pady=2)
+                _device_widgets.append(lbl)
+                devices_label.configure(text=f"Discovered Devices: 0")
+                return
+
+            devices_label.configure(text=f"Discovered Devices: {len(devices)}")
+            for idx, device in enumerate(devices):
+                ip = device.get("ip", "Unknown")
+                port = device.get("port", 8765)
+                name = device.get("device_name", f"Aize Device ({ip})")
+                status_color = "#10b981" if device.get("is_connected") else "#9ca3af"
+                row_frame = ctk.CTkFrame(devices_list_frame, fg_color="transparent")
+                row_frame.grid(row=idx, column=0, sticky="ew", pady=1)
+                row_frame.grid_columnconfigure(0, weight=1)
+                info_text = f"• {name}  ws://{ip}:{port}"
+                if device.get("is_connected"):
+                    info_text += "  [Connected]"
+                lbl = ctk.CTkLabel(row_frame, text=info_text, anchor="w", text_color=status_color)
+                lbl.grid(row=0, column=0, sticky="w")
+                _device_widgets.append(row_frame)
+                _device_widgets.append(lbl)
+
+        refresh_devices_list()
+
+        def on_device_found(device):
+            self.iot_discovered_devices = self.settings.get("iot_discovered_devices", [])
+            saved_ids = {d.get("ip") for d in self.iot_discovered_devices}
+            if device.get("ip") not in saved_ids:
+                self.iot_discovered_devices.append(device)
+                self.settings["iot_discovered_devices"] = self.iot_discovered_devices
+                try:
+                    settings_path = os.path.join(os.path.dirname(__file__), "data", "ui_settings.json")
+                    with open(settings_path, 'w', encoding='utf-8') as f:
+                        json.dump(self.settings, f, indent=4, ensure_ascii=False)
+                except Exception:
+                    pass
+            def _update_devices_label():
+                count = len(self._iot_scanner.get_discovered_devices()) if self._iot_scanner else len(self.iot_discovered_devices)
+                refresh_devices_list()
+                devices_label.configure(text=f"Discovered Devices: {count}")
+            self.settings_window.after(0, _update_devices_label)
+
+        def start_scan():
+            try:
+                from tools.iot_device_scanner import IoTDeviceScanner
+                port_val = int(iot_port_var.get())
+                interval_val = max(5, min(300, int(iot_scan_interval_var.get())))
+                self._iot_scanner = IoTDeviceScanner(port=port_val, scan_interval=interval_val)
+                self._iot_scanner.on_device_found(on_device_found)
+                self._iot_scanner.start_scanning()
+                iot_status_label.configure(text=f"Status: Scanning... (every {interval_val}s)", text_color="#6366f1")
+                self.settings_window.after(1000, refresh_devices_list)
+            except ImportError as e:
+                iot_status_label.configure(text=f"Status: Module not available ({e})", text_color="#ef4444")
+            except ValueError:
+                iot_status_label.configure(text="Status: Invalid port/interval", text_color="#ef4444")
+            except Exception as e:
+                iot_status_label.configure(text=f"Status: {e}", text_color="#ef4444")
+
+        def stop_scan():
+            if self._iot_scanner:
+                self._iot_scanner.stop_scanning()
+                iot_status_label.configure(text="Status: Stopped", text_color="#9ca3af")
+
+        def manual_scan():
+            iot_status_label.configure(text="Status: Scanning...", text_color="#6366f1")
+            self.settings_window.update()
+
+            def run_scan():
+                try:
+                    from tools.iot_device_scanner import IoTDeviceScanner
+                    port_val = int(iot_port_var.get())
+                    scanner = IoTDeviceScanner(port=port_val, scan_interval=10)
+                    found = []
+                    def on_found(d):
+                        found.append(d)
+                    scanner.on_device_found(on_found)
+                    scanner._do_scan()
+
+                    if found:
+                        existing = self.settings.get("iot_discovered_devices", [])
+                        existing_ids = {d.get("ip") for d in existing}
+                        for d in found:
+                            if d.get("ip") not in existing_ids:
+                                d["device_name"] = f"Aize Device ({d['ip']})"
+                                existing.append(d)
+                        self.settings["iot_discovered_devices"] = existing
+                        self.iot_discovered_devices = existing
+                        try:
+                            settings_path = os.path.join(os.path.dirname(__file__), "data", "ui_settings.json")
+                            with open(settings_path, 'w', encoding='utf-8') as f:
+                                json.dump(self.settings, f, indent=4, ensure_ascii=False)
+                        except Exception:
+                            pass
+                        self.settings_window.after(0, lambda: (refresh_devices_list(), iot_status_label.configure(text=f"Status: Found {len(found)} device(s)", text_color="#10b981")))
+                    else:
+                        self.settings_window.after(0, lambda: iot_status_label.configure(text="Status: No devices found", text_color="#f59e0b"))
+                except ImportError as e:
+                    self.settings_window.after(0, lambda: iot_status_label.configure(text=f"Status: Module not available", text_color="#ef4444"))
+                except Exception as e:
+                    self.settings_window.after(0, lambda: iot_status_label.configure(text=f"Status: {e}", text_color="#ef4444"))
+
+            threading.Thread(target=run_scan, daemon=True).start()
+
+        def connect_selected():
+            devices = self.iot_discovered_devices
+            if self._iot_scanner and self._iot_scanner.is_scanning():
+                devices = self._iot_scanner.get_discovered_devices()
+            if not devices:
+                iot_status_label.configure(text="Status: No devices to connect", text_color="#f59e0b")
+                return
+
+            def do_connect():
+                success = 0
+                for device in devices:
+                    ip = device.get("ip", "")
+                    port = device.get("port", 8765)
+                    try:
+                        import socket
+                        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        sock.settimeout(2)
+                        result = sock.connect_ex((ip, port))
+                        sock.close()
+                        if result == 0:
+                            device["is_connected"] = True
+                            success += 1
+                    except Exception:
+                        pass
+                self.settings["iot_discovered_devices"] = devices
+                self.iot_discovered_devices = devices
+                try:
+                    settings_path = os.path.join(os.path.dirname(__file__), "data", "ui_settings.json")
+                    with open(settings_path, 'w', encoding='utf-8') as f:
+                        json.dump(self.settings, f, indent=4, ensure_ascii=False)
+                except Exception:
+                    pass
+                self.settings_window.after(0, lambda: (refresh_devices_list(), iot_status_label.configure(text=f"Status: Connected to {success}/{len(devices)} device(s)", text_color="#10b981")))
+
+            threading.Thread(target=do_connect, daemon=True).start()
+            iot_status_label.configure(text="Status: Connecting...", text_color="#6366f1")
+
+        button_frame_iot = ctk.CTkFrame(iot_frame, fg_color="transparent")
+        button_frame_iot.grid(row=9, column=0, sticky="ew", padx=15, pady=(8, 12))
+        button_frame_iot.grid_columnconfigure(0, weight=1)
+        button_frame_iot.grid_columnconfigure(1, weight=1)
+        button_frame_iot.grid_columnconfigure(2, weight=1)
+        button_frame_iot.grid_columnconfigure(3, weight=1)
+
+        ctk.CTkButton(button_frame_iot, text="Start Auto Scan", command=start_scan, corner_radius=8, fg_color="#6366f1", hover_color="#4f46e5").grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ctk.CTkButton(button_frame_iot, text="Stop Scan", command=stop_scan, corner_radius=8, fg_color="#374151", hover_color="#4b5563").grid(row=0, column=1, sticky="ew", padx=4)
+        ctk.CTkButton(button_frame_iot, text="Manual Scan", command=manual_scan, corner_radius=8, fg_color="#6366f1", hover_color="#4f46e5").grid(row=0, column=2, sticky="ew", padx=4)
+        ctk.CTkButton(button_frame_iot, text="Connect All", command=connect_selected, corner_radius=8, fg_color="#10b981", hover_color="#059669").grid(row=0, column=3, sticky="ew", padx=(4, 0))
+        row += 1
+
         # Update Section
         update_frame = ctk.CTkFrame(scroll_frame, corner_radius=12, fg_color="#252540" if self.theme == "Dark" else "#e8e8f0")
         update_frame.grid(row=row, column=0, sticky="ew", padx=0, pady=(0, 15))
@@ -639,7 +870,20 @@ class HumanaizeUI:
                     skills_manager.enable_skill(skill_name)
                 else:
                     skills_manager.disable_skill(skill_name)
-            
+
+            try:
+                iot_port_val = int(iot_port_var.get())
+            except ValueError:
+                iot_port_val = 8765
+            try:
+                iot_interval_val = int(iot_scan_interval_var.get())
+                iot_interval_val = max(5, min(300, iot_interval_val))
+            except ValueError:
+                iot_interval_val = 30
+
+            existing = self._load_settings()
+            discovered = existing.get("iot_discovered_devices", self.iot_discovered_devices)
+
             settings = {
                 "language": language_var.get(),
                 "theme": theme_var.get(),
@@ -648,8 +892,21 @@ class HumanaizeUI:
                 "skills_prompt": skills_box.get("1.0", tk.END).strip(),
                 "auto_break_silence": auto_break_var.get(),
                 "gan_enabled": gan_enabled_var.get(),
+                "iot_auto_start": iot_auto_start_var.get(),
+                "iot_host": iot_host_var.get().strip() or "0.0.0.0",
+                "iot_port": iot_port_val,
+                "iot_scan_enabled": iot_scan_enabled_var.get(),
+                "iot_scan_interval": iot_interval_val,
+                "iot_discovered_devices": discovered,
             }
             self._save_settings(settings)
+
+            self.iot_auto_start = settings["iot_auto_start"]
+            self.iot_host = settings["iot_host"]
+            self.iot_port = settings["iot_port"]
+            self.iot_scan_enabled = settings["iot_scan_enabled"]
+            self.iot_scan_interval = settings["iot_scan_interval"]
+            self.iot_discovered_devices = discovered
             
             if old_theme.lower() != theme_var.get().lower():
                 self._theme_changed_prompt()
@@ -1349,7 +1606,7 @@ class HumanaizeUI:
         # 过滤掉系统消息、错误信息、命令执行消息等
         
         # 只允许以下类型的消息显示在Chat区域
-        allowed_types = ["normal", "thinking_placeholder"]  # normal包含用户消息和AI回复
+        allowed_types = ["normal", "thinking_placeholder", "autonomous"]  # normal包含用户消息和AI回复
         
         # 检查消息内容是否为允许的类型
         if message_type not in allowed_types:

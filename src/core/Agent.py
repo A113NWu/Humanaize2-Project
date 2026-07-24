@@ -18,8 +18,8 @@ except ImportError:
     logger = logging.getLogger(__name__)
 
 try:
-    from skills_manager import SkillsManager, LanguageAdapter
-    from language_adapter import LanguageAdapter as StandaloneLanguageAdapter
+    from skills_manager import SkillsManager
+    from language_adapter import LanguageAdapter
     SKILLS_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"Skills system not available: {e}")
@@ -36,7 +36,7 @@ class Agent:
         if SKILLS_AVAILABLE:
             skills_dir = os.path.join(os.path.dirname(__file__), "skills")
             self.skills_manager = SkillsManager(skills_dir)
-            self.language_adapter = StandaloneLanguageAdapter()
+            self.language_adapter = LanguageAdapter()
     
     def set_language(self, language: str):
         """Set the current language for the agent"""

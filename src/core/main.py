@@ -7,6 +7,7 @@ Humanaize v2.0 - 主要進入點
     python main.py boot -m win-gui  - 啟動 Windows 現代化 GUI 介面
     python main.py boot -m solve -r <file> -enable HSN - 啟動解決模式
     python main.py boot -m guard [--background] [--start-when-boot] - 啟動守護模式
+    python main.py boot -m iot [--host <ip>] [--port <n>] - 啟動 IoT 算力網絡
     python main.py settings     - 開啟設定介面
     python main.py update       - 檢查並安裝更新
 """
@@ -36,8 +37,7 @@ warnings.filterwarnings("ignore", message=".*iCCP.*known incorrect sRGB profile.
 
 def _get_llama_server_path():
     """取得當前平台的正確 llama-server 路徑"""
-    # 首先檢查系統安裝的 llama-server (Linux)
-    if sys.platform != "win32" and os.name != "nt":
+    if sys.platform != "win32":
         system_paths = [
             "/usr/bin/llama-server",
             "/usr/local/bin/llama-server",
@@ -47,40 +47,61 @@ def _get_llama_server_path():
             if os.path.exists(path):
                 return path
     
-    # 如果系統沒有，則檢查專案目錄
-    # 取得專案根目錄 (src/core 的父目錄)
-    # main.py 在 src/core 中，所以需要 2 次 dirname 呼叫:
-    # src/core/main.py -> src/core -> src -> project_root
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     llama_dir = os.path.join(base_dir, "llama")
 
-    if sys.platform == "win32" or os.name == "nt":
+    if sys.platform == "win32":
         return os.path.join(llama_dir, "llama-server.exe")
-    elif sys.platform == "darwin":
-        return os.path.join(llama_dir, "llama-server")
     else:
         return os.path.join(llama_dir, "llama-server")
 
 
 def _get_model_path():
     """取得當前平台的模型路徑"""
-    # 取得專案根目錄 (src/core 的父目錄)
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    model_dir = os.path.join(base_dir, "model")
     
-    # 首先檢查精確匹配
-    exact_path = os.path.join(model_dir, "tinyllama.gguf")
-    if os.path.exists(exact_path):
-        return exact_path
+    settings_path = os.path.join(base_dir, "src", "core", "ui", "data", "ui_settings.json")
+    if os.path.exists(settings_path):
+        try:
+            import json
+            with open(settings_path, 'r', encoding='utf-8') as f:
+                settings = json.load(f)
+            custom_model_path = settings.get("model_path", "")
+            if custom_model_path:
+                if os.path.isabs(custom_model_path):
+                    if os.path.exists(custom_model_path):
+                        print(f"[INFO] Using custom model path from settings: {custom_model_path}")
+                        return custom_model_path
+                    else:
+                        print(f"[WARN] Custom model path not found: {custom_model_path}, falling back to default")
+                else:
+                    abs_path = os.path.join(base_dir, custom_model_path)
+                    if os.path.exists(abs_path):
+                        print(f"[INFO] Using custom model path from settings: {abs_path}")
+                        return abs_path
+                    else:
+                        print(f"[WARN] Custom model path not found: {abs_path}, falling back to default")
+        except Exception as e:
+            print(f"[WARN] Failed to read settings: {e}")
     
-    # 如果精確匹配不存在，查找任何 GGUF 文件
-    if os.path.exists(model_dir):
-        for f in os.listdir(model_dir):
-            if f.endswith('.gguf'):
-                return os.path.join(model_dir, f)
+    env_model_path = os.environ.get("HUMANIZE2_MODEL_PATH", "")
+    if env_model_path and os.path.exists(env_model_path):
+        print(f"[INFO] Using model path from environment: {env_model_path}")
+        return env_model_path
     
-    # 如果都找不到，返回預設路徑（讓調用者處理錯誤）
-    return exact_path
+    for model_dir_name in ["models", "model"]:
+        model_dir = os.path.join(base_dir, model_dir_name)
+        
+        exact_path = os.path.join(model_dir, "tinyllama.gguf")
+        if os.path.exists(exact_path):
+            return exact_path
+        
+        if os.path.exists(model_dir):
+            for f in os.listdir(model_dir):
+                if f.endswith('.gguf'):
+                    return os.path.join(model_dir, f)
+    
+    return os.path.join(base_dir, "models", "tinyllama.gguf")
 
 
 def _is_port_in_use(port: int = 8080) -> bool:
@@ -92,63 +113,104 @@ def _is_port_in_use(port: int = 8080) -> bool:
 
 def _kill_process_on_port(port: int = 8080) -> bool:
     """终止占用指定端口的进程"""
-    try:
-        result = subprocess.run(
-            ['lsof', '-ti', f':{port}'],
-            capture_output=True,
-            text=True
-        )
-        if result.stdout:
-            pids = result.stdout.strip().split('\n')
-            for pid in pids:
-                try:
-                    subprocess.run(['kill', '-9', pid], check=True)
-                    print(f"[INFO] Killed process {pid} on port {port}")
-                except:
-                    pass
-            return True
-    except:
-        pass
-    
-    try:
-        result = subprocess.run(
-            ['ss', '-tlnp', f'sport = :{port}'],
-            capture_output=True,
-            text=True
-        )
-        if result.stdout:
-            lines = result.stdout.strip().split('\n')
-            for line in lines[1:]:
-                parts = line.split()
-                if len(parts) > 5:
-                    pid_info = parts[5]
-                    if '=' in pid_info:
-                        pid = pid_info.split('=')[1].split(',')[0]
-                        try:
-                            subprocess.run(['kill', '-9', pid], check=True)
-                            print(f"[INFO] Killed process {pid} on port {port}")
-                        except:
-                            pass
-            return True
-    except:
-        pass
+    if sys.platform == "win32":
+        try:
+            result = subprocess.run(
+                ['netstat', '-ano', '-p', 'tcp'],
+                capture_output=True,
+                text=True
+            )
+            if result.stdout:
+                lines = result.stdout.strip().split('\n')
+                for line in lines:
+                    if f':{port}' in line:
+                        parts = line.split()
+                        if len(parts) >= 5:
+                            pid = parts[-1]
+                            try:
+                                subprocess.run(
+                                    ['taskkill', '/F', '/PID', pid],
+                                    capture_output=True,
+                                    text=True
+                                )
+                                print(f"[INFO] Killed process {pid} on port {port}")
+                            except:
+                                pass
+                return True
+        except:
+            pass
+    else:
+        try:
+            result = subprocess.run(
+                ['lsof', '-ti', f':{port}'],
+                capture_output=True,
+                text=True
+            )
+            if result.stdout:
+                pids = result.stdout.strip().split('\n')
+                for pid in pids:
+                    try:
+                        subprocess.run(['kill', '-9', pid], check=True)
+                        print(f"[INFO] Killed process {pid} on port {port}")
+                    except:
+                        pass
+                return True
+        except:
+            pass
+        
+        try:
+            result = subprocess.run(
+                ['ss', '-tlnp', f'sport = :{port}'],
+                capture_output=True,
+                text=True
+            )
+            if result.stdout:
+                lines = result.stdout.strip().split('\n')
+                for line in lines[1:]:
+                    parts = line.split()
+                    if len(parts) > 5:
+                        pid_info = parts[5]
+                        if '=' in pid_info:
+                            pid = pid_info.split('=')[1].split(',')[0]
+                            try:
+                                subprocess.run(['kill', '-9', pid], check=True)
+                                print(f"[INFO] Killed process {pid} on port {port}")
+                            except:
+                                pass
+                return True
+        except:
+            pass
     
     return False
 
 
-def _check_and_start_server(max_wait: int = 120) -> bool:
-    """檢查LLM伺服器是否執行，若未執行則自動啟動，並等待伺服器完全啟動"""
+def _check_and_start_server(max_wait: int = 120, force_restart: bool = False) -> bool:
+    """檢查LLM伺服器是否執行，若未執行則自動啟動，並等待伺服器完全啟動
+    
+    Args:
+        max_wait: 最大等待时间（秒）
+        force_restart: 是否强制重启服务器（用于模型切换）
+    """
     from tools.tools import check_llm_server
     import time
 
     print("[INFO] Checking LLM server...")
     
-    if check_llm_server():
+    target_model_path = _get_model_path()
+    model_name = os.path.basename(target_model_path)
+    
+    print("=" * 60)
+    print(f"[MODEL] Model Name: {model_name}")
+    print(f"[MODEL] Model Path: {target_model_path}")
+    print(f"[MODEL] File Exists: {'Yes' if os.path.exists(target_model_path) else 'No'}")
+    print("=" * 60)
+    
+    if check_llm_server() and not force_restart:
         print("[INFO] LLM server is already running.")
         return True
 
     if _is_port_in_use(8080):
-        print("[WARN] Port 8080 is occupied but server not responding properly")
+        print("[WARN] Port 8080 is occupied")
         print("[INFO] Attempting to clear port and restart...")
         if _kill_process_on_port(8080):
             time.sleep(2)
@@ -156,13 +218,15 @@ def _check_and_start_server(max_wait: int = 120) -> bool:
             print("[ERROR] Failed to clear port 8080")
             return False
 
-    print("[INFO] LLM server not detected. Starting server...")
+    print("[INFO] Starting LLM server...")
 
     server_path = _get_llama_server_path()
-    model_path = _get_model_path()
+    model_path = target_model_path
 
     if not os.path.exists(server_path):
         print("[ERROR] llama-server not found at:", server_path)
+        print("[INFO] Please download llama-server from https://github.com/ggerganov/llama.cpp/releases")
+        print("[INFO] Place the binary in:", os.path.dirname(server_path))
         return False
 
     if not os.path.exists(model_path):
@@ -174,16 +238,16 @@ def _check_and_start_server(max_wait: int = 120) -> bool:
             process = subprocess.Popen(
                 [server_path, "-m", model_path, "-c", "4096", "-ngl", "999", "--host", "127.0.0.1", "--port", "8080", "-n", "256"],
                 cwd=os.path.dirname(server_path),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
             )
         else:
             process = subprocess.Popen(
                 [server_path, "-m", model_path, "-c", "4096", "-ngl", "999", "--host", "127.0.0.1", "--port", "8080", "-n", "256"],
                 cwd=os.path.dirname(server_path),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
             )
 
         print("[INFO] Waiting for LLM server to start...")
@@ -191,12 +255,7 @@ def _check_and_start_server(max_wait: int = 120) -> bool:
             time.sleep(1)
             
             if process.poll() is not None:
-                stdout, stderr = process.communicate(timeout=5)
                 print("[ERROR] LLM server crashed on startup")
-                if stdout:
-                    print("[ERROR] STDOUT:", stdout.decode('utf-8', errors='ignore'))
-                if stderr:
-                    print("[ERROR] STDERR:", stderr.decode('utf-8', errors='ignore'))
                 return False
                 
             if check_llm_server():
@@ -223,8 +282,66 @@ def _read_ascii():
         return ""
 
 
+def _auto_start_iot_network():
+    """在後台自動啟動 IoT 算力網絡（如果配置啟用）"""
+    def _start():
+        try:
+            settings_path = os.path.join(os.path.dirname(__file__), "ui", "data", "ui_settings.json")
+            
+            # 讀取配置
+            import json
+            settings = {}
+            if os.path.exists(settings_path):
+                with open(settings_path, 'r', encoding='utf-8') as f:
+                    settings = json.load(f)
+            
+            auto_start = settings.get("iot_auto_start", True)
+            if not auto_start:
+                return
+            
+            host = settings.get("iot_host", "0.0.0.0")
+            port = settings.get("iot_port", 8765)
+            scan_enabled = settings.get("iot_scan_enabled", True)
+            scan_interval = settings.get("iot_scan_interval", 30)
+            
+            from tools.iot_compute_manager import start_iot_network
+            manager = start_iot_network(host=host, port=port)
+            print(f"[IoT] 算力網絡後台啟動成功: ws://{host}:{port}")
+            
+            # 啟動設備掃描
+            if scan_enabled:
+                from tools.iot_device_scanner import IoTDeviceScanner
+                scanner = IoTDeviceScanner(port=port, scan_interval=scan_interval)
+                
+                # 保存掃描到的設備到配置
+                def on_device_found(device):
+                    saved = settings.get("iot_discovered_devices", [])
+                    saved_ids = {d.get("ip") for d in saved}
+                    if device.get("ip") not in saved_ids:
+                        saved.append(device)
+                        settings["iot_discovered_devices"] = saved
+                        try:
+                            with open(settings_path, 'w', encoding='utf-8') as f:
+                                json.dump(settings, f, indent=4, ensure_ascii=False)
+                        except Exception:
+                            pass
+                
+                scanner.on_device_found(on_device_found)
+                scanner.start_scanning()
+                print(f"[IoT] 設備掃描已啟動（間隔: {scan_interval}s）")
+            
+        except ImportError as e:
+            logger.debug(f"IoT network dependencies not available: {e}")
+        except Exception as e:
+            logger.error(f"Auto start IoT network failed: {e}")
+    
+    thread = threading.Thread(target=_start, daemon=True)
+    thread.start()
+
+
 def boot_cli():
     _check_and_start_server()
+    _auto_start_iot_network()
     from ui.cli import HumanaizeCLI
     cli = HumanaizeCLI()
     cli.run()
@@ -254,6 +371,7 @@ def _check_updates_background():
 
 def boot_gui():
     _check_and_start_server()
+    _auto_start_iot_network()
     
     # 后台检查更新
     _check_updates_background()
@@ -283,6 +401,7 @@ def boot_gui():
 def boot_windows_gui():
     """启动 Windows 专属现代化 GUI"""
     _check_and_start_server()
+    _auto_start_iot_network()
     
     # 后台检查更新
     _check_updates_background()
@@ -300,6 +419,7 @@ def boot_windows_gui():
     except:
         pass
     
+    import customtkinter as ctk
     from ui.windows_gui import ModernWindowsUI
     root = ctk.CTk()
     app = ModernWindowsUI(root)
@@ -311,6 +431,8 @@ def boot_solve(args):
     if not _check_and_start_server():
         print("[ERROR] Failed to start LLM server. Exiting...")
         return
+    
+    _auto_start_iot_network()
 
     from tools.solve_mode import SolveMode
     
@@ -378,6 +500,53 @@ def boot_guard(args):
         print(f"[ERROR] Failed to import guard_mode module: {e}")
     except Exception as e:
         print(f"[ERROR] Failed to start Guard mode: {e}")
+
+
+def boot_iot(args):
+    """啟動 IoT 算力網絡（獨立於 HSN）"""
+    print("[IoT] 正在啟動算力網絡...")
+    
+    # 解析參數
+    host = "0.0.0.0"
+    port = 8765
+    
+    for i, arg in enumerate(args):
+        if arg == "--host" and i + 1 < len(args):
+            host = args[i + 1]
+        elif arg == "--port" and i + 1 < len(args):
+            port = int(args[i + 1])
+    
+    try:
+        from tools.iot_compute_manager import start_iot_network
+        
+        manager = start_iot_network(host=host, port=port)
+        
+        print(f"[IoT] 算力網絡已啟動")
+        print(f"[IoT] WebSocket 地址: ws://{host}:{port}")
+        print(f"[IoT] 等待設備連接中...")
+        print(f"[IoT] 按 Ctrl+C 停止服務")
+        
+        # 顯示狀態
+        import time
+        try:
+            while True:
+                time.sleep(5)
+                stats = manager.get_stats()
+                online = stats.get('online_devices', 0)
+                total = stats.get('total_devices', 0)
+                tasks = stats.get('completed_tasks', 0)
+                print(f"[IoT] 狀態: 在線={online}/{total} | 已完成任務={tasks}")
+        except KeyboardInterrupt:
+            print("\n[IoT] 正在停止算力網絡...")
+            from tools.iot_compute_manager import stop_iot_network
+            stop_iot_network()
+            print("[IoT] 已停止")
+            
+    except ImportError as e:
+        print(f"[ERROR] Failed to import IoT module: {e}")
+        print("[INFO] 請安裝 websockets 庫: pip install websockets>=12.0")
+    except Exception as e:
+        print(f"[ERROR] Failed to start IoT network: {e}")
 
 
 def open_settings():
@@ -541,6 +710,9 @@ def main():
         elif mode == "guard":
             print("Starting Guard mode...")
             boot_guard(mode_args)
+        elif mode == "iot":
+            print("Starting IoT Compute Network...")
+            boot_iot(mode_args)
         else:
             choice = random.randint(0, 4)
             if choice == 3 and ascii_art:
@@ -572,6 +744,7 @@ def main():
         print("  humanaize2 boot         - Start CLI chat interface")
         print("  humanaize2 boot -m gui  - Start GUI interface")
         print("  humanaize2 boot -m solve [--hsn] [--sandbox <dir>] [-gan] - Start problem solving mode")
+        print("  humanaize2 boot -m iot [--host <ip>] [--port <n>] - Start IoT compute network")
         print("  humanaize2 settings     - Open settings interface")
         print("  humanaize2 skills      - Manage skills")
         print("  humanaize2 update      - Check for and install updates")

@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     from .color_logger import color_logger
 except ImportError:
-    from tools import SimpleLogger
+    from .tools import SimpleLogger
     color_logger = SimpleLogger("emotion_engine.log")
 
 

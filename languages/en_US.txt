@@ -1,0 +1,68 @@
+# English Language File
+# Humanaize 2.0 Translation
+
+# Basic UI
+chat=Chat
+thoughts=Thoughts
+system=System
+command_output=Command Output
+input_placeholder=Enter your message...
+send=Send
+clear=Clear
+settings=Settings
+language=Language
+theme=Theme
+model=Model
+custom_model=Custom Model
+skills=Skills
+save=Save
+cancel=Cancel
+
+# AI Status
+ai_thinking=AI is thinking...
+
+# Settings Options
+gan_enabled=Enable GAN
+auto_break_silence=Auto Break Silence
+
+# CLI
+cli_start=Welcome to Humanaize 2.0! Type /help for available commands.
+ai=AI
+you=You
+error=Error
+response_generated=Response generated successfully
+internal_thinking=Internal thinking in progress
+gan_thinking_complete=GAN thinking complete
+gan_chosen=AI chose to use GAN thinking
+gan_skipped=AI chose to answer directly
+
+# GAN Debate
+topic=Topic
+argument=Argument
+counter_argument=Counter Argument
+rebuttal=Rebuttal
+
+# Commands
+available_commands=Available Commands
+show_help=Show this help message
+show_memory=Show memory data
+show_status=Show system status
+toggle_gan=Toggle GAN mode
+clear_screen=Clear the screen
+quit_program=Quit the program
+
+# Status
+enabled=Enabled
+disabled=Disabled
+system_status=System Status
+message_count=Messages
+thought_count=Thoughts
+
+# Memory
+no_memory_data=No memory data available
+
+# Updates
+check_updates=Check for Updates
+download_update=Download Update
+update_available=Update Available
+up_to_date=Up to Date

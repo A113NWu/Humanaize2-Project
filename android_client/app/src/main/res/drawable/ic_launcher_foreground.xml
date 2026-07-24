@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- A 字母形状 (Aize logo) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M54,30 L75,78 L62,78 L58,68 L50,68 L46,78 L33,78 Z 
+        M52,60 L56,60 L54,52 Z"/>
+    
+    <!-- 连接线 -->
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:pathData="M25,85 L83,85"/>
+    
+    <!-- 装饰点 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M25,81 A4,4 0 1,1 25,89 A4,4 0 1,1 25,81 Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M83,81 A4,4 0 1,1 83,89 A4,4 0 1,1 83,81 Z"/>
+</vector>

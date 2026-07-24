@@ -1,21 +1,14 @@
-Analyze the problem and create a concise task list to solve it.
+Create a task list for this problem.
 
 Problem: {problem}
-
 Reference files: {reference_files}
-
 HSN Enabled: {hsn_enabled}
 
-GUIDELINES:
-- Keep it brief: 3-5 tasks maximum
-- Each task title: 6-10 words
-- Each task description: 10-20 words
-- Focus on essential steps only
-- Skip trivial or obvious tasks
+Requirements:
+- Output ONLY compact JSON array
+- 3-5 tasks maximum
+- Each task: {{"id":N,"title":"short title","description":"brief desc"}}
+- No markdown, no explanation, just JSON
 
-Please output ONLY a JSON array with tasks. Each task should have:
-- id: sequential number
-- title: brief task description
-- description: concise explanation
-
-The tasks should be ordered logically from first to last step.
+Example output:
+[{{"id":1,"title":"Analyze problem","description":"Understand requirements"}},{{"id":2,"title":"Implement solution","description":"Build and test"}}]

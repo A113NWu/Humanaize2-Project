@@ -1,0 +1,54 @@
+<resources>
+    <string name="app_name">Aize Companion</string>
+    <string name="app_description">Humanaize 2.0 IoT 算力客户端</string>
+    
+    <!-- 导航 -->
+    <string name="nav_home">首页</string>
+    <string name="nav_compute">算力</string>
+    <string name="nav_chat">对话</string>
+    <string name="nav_settings">设置</string>
+    
+    <!-- 连接状态 -->
+    <string name="status_disconnected">未连接</string>
+    <string name="status_connecting">连接中...</string>
+    <string name="status_connected">已连接</string>
+    <string name="status_busy">处理任务中</string>
+    <string name="status_idle">空闲</string>
+    
+    <!-- 设置 -->
+    <string name="server_address_label">服务器地址</string>
+    <string name="server_address_hint">ws://192.168.1.100:8765</string>
+    <string name="device_name_label">设备名称</string>
+    <string name="device_name_hint">我的手机</string>
+    <string name="enable_compute_label">启用算力贡献</string>
+    <string name="enable_compute_description">将本机空闲算力用于分布式任务处理</string>
+    <string name="max_tasks_label">最大并发任务数</string>
+    <string name="max_tasks_hint">1</string>
+    <string name="contribution_mode_label">贡献模式</string>
+    <string name="mode_idle">仅充电时</string>
+    <string name="mode_wifi">仅 WiFi 下</string>
+    <string name="mode_always">始终</string>
+    
+    <!-- 算力统计 -->
+    <string name="compute_stats_title">算力统计</string>
+    <string name="total_tasks">已完成任务</string>
+    <string name="compute_time">累计算力贡献</string>
+    <string name="tasks_per_minute">每分钟处理</string>
+    <string name="current_task">当前任务</string>
+    <string name="no_current_task">无</string>
+    
+    <!-- 聊天 -->
+    <string name="chat_title">与 Aize 对话</string>
+    <string name="chat_input_hint">输入消息...</string>
+    <string name="chat_send">发送</string>
+    <string name="chat_typing">Aize 正在思考...</string>
+    <string name="chat_connected">已连接 Aize</string>
+    <string name="chat_disconnected">未连接</string>
+    <string name="chat_streaming">生成中...</string>
+    
+    <!-- 通知 -->
+    <string name="channel_compute_name">算力服务</string>
+    <string name="channel_compute_description">持续提供算力贡献</string>
+    <string name="notification_computing">正在处理计算任务</string>
+    <string name="notification_text_idle">Aize Companion 正在后台运行</string>
+</resources>

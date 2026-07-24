@@ -66,12 +66,23 @@ chmod 755 "$PKG_DIR/DEBIAN/postrm"
 # Copy application files
 cp -r ../../src "$PKG_DIR/usr/share/humanaize2/"
 cp -r ../../skills "$PKG_DIR/usr/share/humanaize2/"
+cp -r ../../prompt "$PKG_DIR/usr/share/humanaize2/" 2>/dev/null || true
+cp -r ../../languages "$PKG_DIR/usr/share/humanaize2/" 2>/dev/null || true
+cp -r ../../data "$PKG_DIR/usr/share/humanaize2/" 2>/dev/null || true
 cp ../../config/version.json "$PKG_DIR/usr/share/humanaize2/"
 cp ../../requirements.txt "$PKG_DIR/usr/share/humanaize2/"
 cp ../../pyproject.toml "$PKG_DIR/usr/share/humanaize2/"
-cp ../../docs/LICENSE "$PKG_DIR/usr/share/humanaize2/"
-cp ../../docs/README.md "$PKG_DIR/usr/share/humanaize2/"
 cp ../../humanaize2.sh "$PKG_DIR/usr/share/humanaize2/"
+
+# Copy llama binaries if present
+if [ -d "../../llama" ]; then
+    cp -r ../../llama "$PKG_DIR/usr/share/humanaize2/"
+fi
+
+# Copy models if present
+if [ -d "../../models" ]; then
+    cp -r ../../models "$PKG_DIR/usr/share/humanaize2/"
+fi
 
 # Copy systemd service
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

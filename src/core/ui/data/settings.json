@@ -1,3 +1,7 @@
 {
-    "guard_enabled": true
+    "guard_enabled": true,
+    "language": "Chinese",
+    "counter_lab_mode": true,
+    "model_name": "gemma4",
+    "model_path": "D:\\Humanaize 2.0 Agent\\Humanaize2-Project\\models\\gemma-4-26B-A4B-it-ultra-uncensored-heretic-Q5_K_S.gguf"
 }

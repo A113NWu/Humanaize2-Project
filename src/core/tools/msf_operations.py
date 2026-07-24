@@ -24,8 +24,8 @@ class MSFOperations:
     def get_hosts(self, filters: Optional[Dict] = None) -> Dict:
         """获取主机列表"""
         query = """
-            SELECT id, host, os_name, os_flavor, os_sp, os_lang, 
-                   state, last_seen, info
+            SELECT id, address, os_name, os_flavor, os_sp, os_lang, 
+                   state, updated_at, info
             FROM hosts
         """
         
@@ -35,7 +35,7 @@ class MSFOperations:
         
         if filters:
             if "host" in filters:
-                conditions.append("host LIKE %(host)s")
+                conditions.append("address LIKE %(host)s")
                 params["host"] = f"%{filters['host']}%"
             if "os_name" in filters:
                 conditions.append("os_name LIKE %(os_name)s")
@@ -49,13 +49,20 @@ class MSFOperations:
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
         
-        query += " ORDER BY last_seen DESC"
+        query += " ORDER BY updated_at DESC"
         
         if limit is not None:
-            query += " LIMIT %s"
+            query += " LIMIT %(limit)s"
             params["limit"] = limit
         
-        return msf_db.execute_query(query, params)
+        result = msf_db.execute_query(query, params)
+        
+        if result["status"] == "success":
+            for row in result["data"]:
+                row["host"] = row.pop("address", row.get("host"))
+                row["last_seen"] = row.pop("updated_at", row.get("last_seen"))
+        
+        return result
     
     def get_host_details(self, host_id: int) -> Dict:
         """获取主机详细信息"""
@@ -106,22 +113,23 @@ class MSFOperations:
                 return {"status": "error", "message": f"Missing required field: {field}"}
         
         query = """
-            INSERT INTO hosts (host, os_name, os_flavor, os_sp, os_lang, 
-                              state, info, mac, created_at)
-            VALUES (%(host)s, %(os_name)s, %(os_flavor)s, %(os_sp)s, %(os_lang)s,
-                    %(state)s, %(info)s, %(mac)s, NOW())
+            INSERT INTO hosts (address, os_name, os_flavor, os_sp, os_lang, 
+                              state, info, mac, workspace_id, created_at)
+            VALUES (%(address)s, %(os_name)s, %(os_flavor)s, %(os_sp)s, %(os_lang)s,
+                    %(state)s, %(info)s, %(mac)s, %(workspace_id)s, NOW())
             RETURNING id;
         """
         
         params = {
-            "host": host_data.get("host"),
+            "address": host_data.get("host"),
             "os_name": host_data.get("os_name", ""),
             "os_flavor": host_data.get("os_flavor", ""),
             "os_sp": host_data.get("os_sp", ""),
             "os_lang": host_data.get("os_lang", ""),
             "state": host_data.get("state", "alive"),
             "info": host_data.get("info", ""),
-            "mac": host_data.get("mac", "")
+            "mac": host_data.get("mac", ""),
+            "workspace_id": host_data.get("workspace_id", 1)
         }
         
         return msf_db.execute_command(query, params)

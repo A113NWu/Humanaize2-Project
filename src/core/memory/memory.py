@@ -1,6 +1,10 @@
 import json, os
 from datetime import datetime
-from config import MEMORY_FILE, MAX_MEMORY
+
+try:
+    from core.config.config import MEMORY_FILE, MAX_MEMORY
+except ImportError:
+    from config.config import MEMORY_FILE, MAX_MEMORY
 
 DEFAULT_MEMORY = {"messages": [], "summaries": [], "thoughts": [], "decisions": []}
 

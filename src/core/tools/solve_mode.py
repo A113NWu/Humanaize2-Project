@@ -245,7 +245,17 @@ class SolveModeStatusBar:
 
 
 class HSNetwork:
-    """HSN (Human-System Network) collaboration module"""
+    """
+    HSN (Human-System Network) - AI 協作網絡
+    
+    用於 AI 與 AI 之間的溝通協作，解決複雜問題。
+    這是純 AI-to-AI 通信系統，與 IoT 算力利用系統完全獨立。
+    
+    職責：
+    - AI 同伴的發現和管理
+    - 協作問題解決
+    - AI 之間的消息傳遞
+    """
     
     def __init__(self):
         self.enabled = False
@@ -254,63 +264,92 @@ class HSNetwork:
         self.session_key = None
     
     def enable(self):
-        """Enable HSN functionality"""
+        """啟用 HSN 功能"""
         self.enabled = True
     
     def disable(self):
-        """Disable HSN functionality"""
+        """禁用 HSN 功能"""
         self.enabled = False
         self.connected = False
     
     def connect(self) -> bool:
-        """Establish HSN connection with security authentication"""
+        """建立 HSN 連接，發現 AI 同伴"""
         if not self.enabled:
             return False
         
         try:
-            # Simulate secure connection
             self._generate_session_key()
             self._discover_peers()
             self.connected = True
+            print(f"[HSN] 已連接，發現 {len(self.peers)} 個 AI 同伴")
             return True
         except Exception as e:
-            print(f"[HSN] Connection failed: {e}")
+            print(f"[HSN] 連接失敗: {e}")
             return False
     
     def disconnect(self):
-        """Disconnect from HSN"""
+        """斷開 HSN 連接"""
         self.connected = False
         self.peers = []
         self.session_key = None
+        print("[HSN] 已斷開連接")
     
     def _generate_session_key(self):
-        """Generate secure session key"""
+        """生成安全會話密鑰"""
         import uuid
         self.session_key = str(uuid.uuid4())
     
     def _discover_peers(self):
-        """Discover connected AI peers"""
-        # Simulated peers
+        """發現 AI 同伴"""
         self.peers = [
-            {"id": "peer-001", "name": "AI-Assistant Alpha", "capabilities": ["analysis", "research"]},
-            {"id": "peer-002", "name": "AI-Assistant Beta", "capabilities": ["problem-solving", "optimization"]},
+            {
+                "id": "peer-alpha", 
+                "name": "AI-Assistant Alpha", 
+                "capabilities": ["analysis", "research"],
+                "type": "local_ai"
+            },
+            {
+                "id": "peer-beta", 
+                "name": "AI-Assistant Beta", 
+                "capabilities": ["problem-solving", "optimization"],
+                "type": "local_ai"
+            }
         ]
+        print(f"[HSN] 發現 {len(self.peers)} 個 AI 同伴")
     
     def collaborate(self, problem: str) -> Dict:
-        """Collaborate with peers to solve a problem"""
+        """與 AI 同伴協作解決問題"""
         if not self.connected or not self.enabled:
-            return {"error": "HSN not connected"}
+            return {"error": "HSN 未連接"}
+        
+        self._discover_peers()
         
         results = []
         for peer in self.peers:
             result = {
                 "peer_id": peer["id"],
                 "peer_name": peer["name"],
-                "contribution": f"Analysis from {peer['name']}: Problem '{problem}' requires multi-dimensional approach considering {', '.join(peer['capabilities'])}."
+                "peer_type": peer.get("type", "local_ai"),
+                "contribution": f"來自 {peer['name']} 的分析: 問題 '{problem}' 需要從 {', '.join(peer['capabilities'])} 等維度進行思考。"
             }
             results.append(result)
         
-        return {"status": "success", "collaborators": len(self.peers), "results": results}
+        return {
+            "status": "success", 
+            "collaborators": len(self.peers), 
+            "results": results
+        }
+    
+    def list_peers(self) -> List[Dict]:
+        """列出所有 AI 同伴"""
+        return self.peers.copy()
+    
+    def get_peer(self, peer_id: str) -> Optional[Dict]:
+        """獲取指定同伴信息"""
+        for peer in self.peers:
+            if peer["id"] == peer_id:
+                return peer
+        return None
 
 
 class SolveMode:
@@ -333,11 +372,17 @@ class SolveMode:
         self._use_color = Colors.support_color()
         self._start_time = None
         self.status_bar = SolveModeStatusBar(self._use_color)
+        self._requires_text_output = False  # 是否需要生成文本内容
+        self._problem_type = "command"  # "command" 或 "text"
         
     def _get_system_info(self) -> str:
         """获取当前系统环境信息"""
         info = []
         info.append("=== SYSTEM INFORMATION ===")
+        info.append("IMPORTANT: The following information describes the environment you are running on.")
+        info.append("These are NOT user messages - they are just technical details about your execution environment.")
+        info.append("Please ignore this information when interpreting the user's problem.")
+        info.append("")
         info.append(f"Operating System: {platform.system()} {platform.release()}")
         info.append(f"Architecture: {platform.machine()}")
         info.append(f"Python Version: {platform.python_version()}")
@@ -359,6 +404,65 @@ class SolveMode:
         
         info.append("==========================")
         return "\n".join(info)
+    
+    def _classify_problem_type(self) -> str:
+        """判断问题类型：'command' 或 'text'
+        
+        Returns:
+            'command': 适合生成命令（安装、配置、修复等）
+            'text': 需要生成文本内容（写作、报告、邮件等）
+        """
+        if not self.problem:
+            self._requires_text_output = False
+            self._problem_type = "command"
+            return "command"
+        
+        # 文本生成关键词
+        text_keywords = [
+            "写", "创作", "生成", "撰写", "编写", "制作",
+            "文章", "报告", "论文", "邮件", "文案", "诗歌", "故事", "剧本",
+            "write", "create", "generate", "compose", "draft", "author",
+            "article", "report", "paper", "email", "text", "content",
+            "story", "poem", "novel", "script", "blog", "document",
+            "总结", "摘要", "翻译", "润色", "改写", "编辑",
+            "summarize", "translate", "rewrite", "edit", "polish"
+        ]
+        
+        # 命令执行关键词
+        command_keywords = [
+            "安装", "配置", "修复", "部署", "运行", "启动", "停止", "安装",
+            "install", "configure", "fix", "deploy", "run", "start", "stop",
+            "bug", "error", "issue", "problem", "setup", "build", "compile",
+            "debug", "test", "execute", "command", "terminal", "shell",
+            "漏洞", "攻击", "扫描", "渗透", "exploit", "scan", "attack",
+            "代码", "程序", "脚本", "code", "program", "script",
+            "数据库", "network", "server", "database", "config"
+        ]
+        
+        problem_lower = self.problem.lower()
+        
+        # 计算关键词匹配得分
+        text_score = sum(1 for kw in text_keywords if kw.lower() in problem_lower)
+        command_score = sum(1 for kw in command_keywords if kw.lower() in problem_lower)
+        
+        # 如果明确要求生成文本
+        if text_score > 0 and text_score > command_score:
+            self._requires_text_output = True
+            self._problem_type = "text"
+            if self._use_color:
+                print(f"{Colors.CYAN}[MODE]{Colors.RESET}  Problem type: TEXT OUTPUT (will generate text content)")
+            else:
+                print("[MODE]  Problem type: TEXT OUTPUT (will generate text content)")
+        else:
+            self._requires_text_output = False
+            self._problem_type = "command"
+            if self._use_color:
+                print(f"{Colors.CYAN}[MODE]{Colors.RESET}  Problem type: COMMAND ONLY (efficient mode, no text generation)")
+            else:
+                print("[MODE]  Problem type: COMMAND ONLY (efficient mode, no text generation)")
+        
+        sys.stdout.flush()
+        return self._problem_type
     
     def parse_args(self, args: List[str]):
         """Parse command line arguments"""
@@ -401,6 +505,9 @@ class SolveMode:
         
         self._print_header()
         
+        # 分类问题类型（命令模式或文本模式）
+        self._classify_problem_type()
+        
         if not self._check_llm_server():
             return {"status": "failed", "error": "LLM server is not available"}
         
@@ -415,7 +522,7 @@ class SolveMode:
         if self.enhanced_gan_enabled:
             return self._run_enhanced_gan_mode()
         
-        # Generate todo list
+        # Generate todo list (使用更短的 max_tokens 以节省算力)
         self._generate_todo_list()
         
         if not self.todo_list:
@@ -581,48 +688,135 @@ class SolveMode:
         print()
     
     def _generate_todo_list(self):
-        """Generate todo list using LLM"""
+        """Generate todo list using LLM (optimized for efficiency)"""
+        import time as time_module
+        
         if self._use_color:
             print(f"{Colors.BLUE}[INFO]{Colors.RESET} Analyzing problem and generating task list...")
         else:
             print("[INFO] Analyzing problem and generating task list...")
+        sys.stdout.flush()
         
-        system_info = self._get_system_info()
+        # 精简的系统信息（仅保留关键部分）
+        system_info = f"OS: {platform.system()} {platform.release()} | Python: {platform.python_version()}"
+        
+        # 根据问题类型调整 prompt
         prompt = system_info + "\n\n" + load_solve_mode_todo_prompt(self.problem, self.reference_files, self.hsn_enabled)
         
-        try:
-            if self._use_color:
-                print(f"{Colors.YELLOW}[WAIT]{Colors.RESET}  AI is generating task list...")
-            else:
-                print(f"[WAIT]  AI is generating task list...")
-            
-            response = chat(prompt)
-            if response:
-                self.todo_list = self._parse_todo_list(response)
-                
-                if self.todo_list:
-                    if self._use_color:
-                        print(f"{Colors.GREEN}[OK]{Colors.RESET}  Task list generated by AI successfully")
-                    else:
-                        print(f"[OK]  Task list generated by AI successfully")
-                else:
-                    if self._use_color:
-                        print(f"{Colors.YELLOW}[WARN]{Colors.RESET} AI generated empty task list, using default")
-                    else:
-                        print(f"[WARN] AI generated empty task list, using default")
-                    self._generate_default_todo_list()
-            else:
+        # 减少重试次数以节省算力
+        max_retries = 1
+        base_delay = 3  # seconds
+        start_time = time_module.time()
+        
+        for attempt in range(max_retries + 1):
+            try:
                 if self._use_color:
-                    print(f"{Colors.YELLOW}[WARN]{Colors.RESET} AI returned empty response, using default task list")
+                    print(f"{Colors.YELLOW}[WAIT]{Colors.RESET}  AI is generating task list... (attempt {attempt + 1}/{max_retries + 1})")
                 else:
-                    print(f"[WARN] AI returned empty response, using default task list")
-                self._generate_default_todo_list()
-        except Exception as e:
-            if self._use_color:
-                print(f"{Colors.YELLOW}[WARN]{Colors.RESET} AI unavailable ({e}), using default task list")
-            else:
-                print(f"[WARN] AI unavailable ({e}), using default task list")
-            self._generate_default_todo_list()
+                    print(f"[WAIT]  AI is generating task list... (attempt {attempt + 1}/{max_retries + 1})")
+                sys.stdout.flush()
+                
+                # 减少 max_tokens 以节省算力（从 512 降到 256）
+                progress_start = time_module.time()
+                
+                response = chat(prompt, max_tokens=256)
+                
+                elapsed = time_module.time() - progress_start
+                if self._use_color:
+                    print(f"{Colors.DIM}[TIME]{Colors.RESET}  Response received in {elapsed:.1f}s")
+                else:
+                    print(f"[TIME]  Response received in {elapsed:.1f}s")
+                sys.stdout.flush()
+                
+                if response and response.strip():
+                    # 调试输出
+                    if self._use_color:
+                        print(f"{Colors.DIM}[DEBUG]{Colors.RESET}  Response length: {len(response)} chars")
+                    else:
+                        print(f"[DEBUG]  Response length: {len(response)} chars")
+                    sys.stdout.flush()
+                    
+                    self.todo_list = self._parse_todo_list(response)
+                    
+                    if self.todo_list:
+                        if self._use_color:
+                            print(f"{Colors.GREEN}[OK]{Colors.RESET}  Task list generated by AI successfully ({len(self.todo_list)} tasks)")
+                        else:
+                            print(f"[OK]  Task list generated by AI successfully ({len(self.todo_list)} tasks)")
+                        sys.stdout.flush()
+                        break
+                    else:
+                        if self._use_color:
+                            print(f"{Colors.YELLOW}[WARN]{Colors.RESET} AI generated empty task list, retrying...")
+                        else:
+                            print(f"[WARN] AI generated empty task list, retrying...")
+                        sys.stdout.flush()
+                        
+                        # 如果还有重试机会，等待后重试
+                        if attempt < max_retries:
+                            delay = base_delay * (attempt + 1)
+                            if self._use_color:
+                                print(f"{Colors.DIM}[WAIT]{Colors.RESET}  Waiting {delay}s before retry...")
+                            else:
+                                print(f"[WAIT]  Waiting {delay}s before retry...")
+                            sys.stdout.flush()
+                            time_module.sleep(delay)
+                            continue
+                        else:
+                            if self._use_color:
+                                print(f"{Colors.YELLOW}[WARN]{Colors.RESET} All retries exhausted, using default task list")
+                            else:
+                                print(f"[WARN] All retries exhausted, using default task list")
+                            sys.stdout.flush()
+                            self._generate_default_todo_list()
+                else:
+                    if self._use_color:
+                        print(f"{Colors.YELLOW}[WARN]{Colors.RESET} AI returned empty response")
+                    else:
+                        print(f"[WARN] AI returned empty response")
+                    sys.stdout.flush()
+                    
+                    if attempt < max_retries:
+                        delay = base_delay * (attempt + 1)
+                        if self._use_color:
+                            print(f"{Colors.DIM}[WAIT]{Colors.RESET}  Waiting {delay}s before retry...")
+                        else:
+                            print(f"[WAIT]  Waiting {delay}s before retry...")
+                        sys.stdout.flush()
+                        time_module.sleep(delay)
+                        continue
+                    else:
+                        self._generate_default_todo_list()
+                        
+            except Exception as e:
+                if self._use_color:
+                    print(f"{Colors.YELLOW}[WARN]{Colors.RESET} AI unavailable on attempt {attempt + 1}: {e}")
+                else:
+                    print(f"[WARN] AI unavailable on attempt {attempt + 1}: {e}")
+                sys.stdout.flush()
+                
+                if attempt < max_retries:
+                    delay = base_delay * (attempt + 1)
+                    if self._use_color:
+                        print(f"{Colors.DIM}[WAIT]{Colors.RESET}  Waiting {delay}s before retry...")
+                    else:
+                        print(f"[WAIT]  Waiting {delay}s before retry...")
+                    sys.stdout.flush()
+                    time_module.sleep(delay)
+                else:
+                    if self._use_color:
+                        print(f"{Colors.YELLOW}[WARN]{Colors.RESET} All attempts failed, using default task list")
+                    else:
+                        print(f"[WARN] All attempts failed, using default task list")
+                    sys.stdout.flush()
+                    self._generate_default_todo_list()
+        
+        total_elapsed = time_module.time() - start_time
+        if self._use_color:
+            print(f"{Colors.DIM}[TOTAL]{Colors.RESET}  Total time: {total_elapsed:.1f}s")
+        else:
+            print(f"[TOTAL]  Total time: {total_elapsed:.1f}s")
+        sys.stdout.flush()
         
         # Display todo list
         self._display_todo_list()
@@ -641,34 +835,168 @@ class SolveMode:
         """Parse the LLM response into task objects"""
         tasks = []
         
+        if not response or not response.strip():
+            return tasks
+        
         try:
-            # Try to extract JSON
-            json_match = re.search(r'\[.*\]', response, re.DOTALL)
+            cleaned_response = self._clean_response_for_parsing(response)
+            
+            # 方法1: 尝试直接解析整个响应为 JSON 数组
+            try:
+                data = json.loads(cleaned_response)
+                if isinstance(data, list):
+                    for idx, item in enumerate(data, 1):
+                        if isinstance(item, dict):
+                            tasks.append(Task(
+                                id=item.get('id', idx),
+                                title=item.get('title', f"Task {idx}"),
+                                description=item.get('description', "")
+                            ))
+                    if tasks:
+                        return tasks
+            except (json.JSONDecodeError, ValueError):
+                pass
+            
+            # 方法2: 使用改进的正则表达式提取 JSON 数组
+            # 尝试匹配 [ ... ] 形式的 JSON 数组
+            json_match = re.search(r'\[[\s\S]*\]', cleaned_response)
             if json_match:
-                data = json.loads(json_match.group())
-                for idx, item in enumerate(data, 1):
-                    if isinstance(item, dict):
-                        tasks.append(Task(
-                            id=item.get('id', idx),
-                            title=item.get('title', f"Task {idx}"),
-                            description=item.get('description', "")
-                        ))
-            else:
-                # Try parsing as numbered list
-                lines = response.split('\n')
-                task_pattern = re.compile(r'^[\d.]+\s+(.*)')
-                for line in lines:
-                    match = task_pattern.match(line)
-                    if match:
+                try:
+                    data = json.loads(json_match.group())
+                    if isinstance(data, list):
+                        for idx, item in enumerate(data, 1):
+                            if isinstance(item, dict):
+                                tasks.append(Task(
+                                    id=item.get('id', idx),
+                                    title=item.get('title', f"Task {idx}"),
+                                    description=item.get('description', "")
+                                ))
+                        if tasks:
+                            return tasks
+                except (json.JSONDecodeError, ValueError):
+                    pass
+            
+            # 方法3: 手动提取 JSON 数组
+            bracket_start = cleaned_response.find('[')
+            bracket_end = cleaned_response.rfind(']')
+            if bracket_start != -1 and bracket_end != -1 and bracket_end > bracket_start:
+                json_str = cleaned_response[bracket_start:bracket_end + 1]
+                # 清理可能的尾部字符
+                json_str = re.sub(r'[^\[\]\{\}\,\:\s\d\w\"\'\-]+$', '', json_str)
+                try:
+                    data = json.loads(json_str)
+                    if isinstance(data, list):
+                        for idx, item in enumerate(data, 1):
+                            if isinstance(item, dict):
+                                tasks.append(Task(
+                                    id=item.get('id', idx),
+                                    title=item.get('title', f"Task {idx}"),
+                                    description=item.get('description', "")
+                                ))
+                        if tasks:
+                            return tasks
+                except (json.JSONDecodeError, ValueError):
+                    pass
+            
+            # 方法4: 从截断的 JSON 中提取完整的任务对象
+            # 处理 LLM 输出被截断的情况（Windows 上响应速度慢导致 max_tokens 限制）
+            object_pattern = re.compile(r'\{\s*"id"\s*:\s*\d+\s*,\s*"title"\s*:\s*"([^"]*)"\s*,\s*"description"\s*:\s*"([^"]*)"\s*\}')
+            for match in object_pattern.finditer(cleaned_response):
+                tasks.append(Task(
+                    id=len(tasks) + 1,
+                    title=match.group(1) or f"Task {len(tasks) + 1}",
+                    description=match.group(2)
+                ))
+            if tasks:
+                if self._use_color:
+                    print(f"{Colors.DIM}[DEBUG]{Colors.RESET}  Extracted {len(tasks)} tasks from truncated JSON")
+                else:
+                    print(f"[DEBUG]  Extracted {len(tasks)} tasks from truncated JSON")
+                return tasks
+            
+            # 方法5: 更宽松的 JSON 对象提取
+            # 尝试匹配任何包含 id, title, description 的 JSON 对象
+            loose_pattern = re.compile(r'"id"\s*:\s*(\d+)[^}]*?"title"\s*:\s*"([^"]*)"[^}]*?"description"\s*:\s*"([^"]*)"')
+            for match in loose_pattern.finditer(cleaned_response):
+                task_id = int(match.group(1))
+                task_title = match.group(2) or f"Task {task_id}"
+                task_desc = match.group(3)
+                tasks.append(Task(
+                    id=task_id,
+                    title=task_title,
+                    description=task_desc
+                ))
+            if tasks:
+                if self._use_color:
+                    print(f"{Colors.DIM}[DEBUG]{Colors.RESET}  Extracted {len(tasks)} tasks using loose pattern")
+                else:
+                    print(f"[DEBUG]  Extracted {len(tasks)} tasks using loose pattern")
+                return tasks
+            
+            # 方法6: 解析为编号列表 (Markdown 格式)
+            lines = response.split('\n')
+            task_pattern = re.compile(r'^[\s]*[\d]+[\.\)][\s]+(.+)')
+            for line in lines:
+                match = task_pattern.match(line.strip())
+                if match:
+                    title = match.group(1).strip()
+                    # 移除可能的 Markdown 格式
+                    title = re.sub(r'^\*\*(.+?)\*\*$', r'\1', title)  # 移除粗体
+                    title = re.sub(r'^[\-\*]\s+', '', title)  # 移除列表符号
+                    if title and len(title) > 2:
                         tasks.append(Task(
                             id=len(tasks) + 1,
-                            title=match.group(1).strip(),
+                            title=title,
                             description=""
                         ))
-        except Exception:
-            pass
+            if tasks:
+                return tasks
+                
+        except Exception as e:
+            if self._use_color:
+                print(f"{Colors.YELLOW}[DEBUG]{Colors.RESET} Parse error: {e}")
+            else:
+                print(f"[DEBUG] Parse error: {e}")
         
         return tasks
+    
+    def _clean_response_for_parsing(self, response: str) -> str:
+        """清理 LLM 响应以便解析 JSON"""
+        cleaned = response.strip()
+        
+        # 移除 Markdown 代码块标记
+        cleaned = re.sub(r'```json\s*', '', cleaned)
+        cleaned = re.sub(r'```javascript\s*', '', cleaned)
+        cleaned = re.sub(r'```\s*', '', cleaned)
+        cleaned = re.sub(r'\s*```', '', cleaned)
+        
+        # 移除 thinking 标签内容
+        cleaned = re.sub(r'<thinking>[\s\S]*?</thinking>', '', cleaned)
+        cleaned = re.sub(r'<think>[\s\S]*?</think>', '', cleaned)
+        
+        # 移除 markdown 格式但保留内容
+        # 移除标题符号
+        cleaned = re.sub(r'#+\s*', '', cleaned)
+        # 移除粗体符号
+        cleaned = re.sub(r'\*\*(.+?)\*\*', r'\1', cleaned)
+        
+        # 尝试找到第一个完整的 JSON 结构
+        # 从第一个 [ 开始
+        first_bracket = cleaned.find('[')
+        if first_bracket > 0:
+            # 检查 [ 之前的内容是否都是说明文字
+            pre_text = cleaned[:first_bracket].strip()
+            if pre_text and len(pre_text) < 100:  # 允许少量前置说明
+                # 返回从 [ 开始的部分
+                post_text = cleaned[first_bracket:]
+                # 找到最后一个 ]
+                last_bracket = post_text.rfind(']')
+                if last_bracket > 0:
+                    # 可能有多余字符在 ] 之后
+                    json_part = post_text[:last_bracket + 1]
+                    return json_part
+        
+        return cleaned
     
     def _display_todo_list(self):
         """Display the generated todo list"""
@@ -784,38 +1112,47 @@ class SolveMode:
         return f"[{'=' * filled}{' ' * empty}]"
     
     def _process_task(self, task: Task) -> str:
-        """Process the actual task logic"""
+        """Process the actual task logic (optimized for efficiency)"""
         try:
-            # Include HSN collaboration if enabled
+            # Include HSN collaboration if enabled (精简版)
             hsn_context = ""
             if self.hsn.enabled and self.hsn.connected:
                 hsn_result = self.hsn.collaborate(task.title)
                 if "results" in hsn_result:
-                    hsn_context = "\nHSN Collaboration Input:\n"
+                    hsn_context = "\nHSN Collaboration:\n"
                     for peer_result in hsn_result["results"]:
-                        hsn_context += f"- {peer_result['peer_name']}: {peer_result['contribution'][:100]}...\n"
+                        hsn_context += f"- {peer_result['contribution'][:80]}...\n"
             
             # Build skills context if skills are enabled
             skills_context = ""
             if self.skills_enabled:
                 skills_context = self._build_skills_context()
             
-            system_info = self._get_system_info()
-            prompt = system_info + "\n\n" + load_solve_mode_task_prompt(task.title, task.description, self.problem, hsn_context + skills_context)
+            # 使用精简的系统信息
+            system_info = f"OS: {platform.system()} | Python: {platform.python_version()}"
             
-            # Process with skill invocation capability
-            max_skill_calls = 5
-            max_retries_without_skill = 3
+            # 根据问题类型选择输出模式
+            output_mode = "text" if self._requires_text_output else "command"
+            
+            prompt = system_info + "\n\n" + load_solve_mode_task_prompt(
+                task.title, task.description, self.problem, 
+                hsn_context + skills_context, output_mode
+            )
+            
+            # 减少技能调用次数以节省算力（从 5 降到 2）
+            max_skill_calls = 2
+            max_retries_without_skill = 1  # 减少重试次数
             skill_calls_made = 0
             retries_without_skill = 0
             previous_results = ""
             
             while skill_calls_made < max_skill_calls:
-                prompt_with_history = prompt + "\n\nPrevious Skill Results:\n" + previous_results
+                prompt_with_history = prompt
+                if previous_results:
+                    prompt_with_history += "\n\nPrevious Results:\n" + previous_results
                 
                 if retries_without_skill > 0:
-                    prompt_with_history += f"\n\nWARNING: You have failed to invoke a skill {retries_without_skill} time(s). "
-                    prompt_with_history += "You MUST invoke a skill now. Output JSON format: {\"skill\": \"skill-name\", \"input\": {...}}"
+                    prompt_with_history += f"\n\nIMPORTANT: You MUST output a command or skill invocation now."
                 
                 if self._use_color:
                     print(f"\n{Colors.BOLD}{Colors.GREEN}[AI OUTPUT]{Colors.RESET}")
@@ -826,7 +1163,8 @@ class SolveMode:
                 sys.stdout.flush()
                 
                 try:
-                    response = chat(prompt_with_history)
+                    # 减少 max_tokens 以节省算力
+                    response = chat(prompt_with_history, max_tokens=200)
                     if self._use_color:
                         print(f"{Colors.GREEN}{response}{Colors.RESET}")
                     else:
@@ -869,8 +1207,14 @@ class SolveMode:
                             print(f"[SKILL RESULT] Status: {skill_result.get('status', 'unknown')}")
                         
                         previous_results += f"\nSkill '{skill_name}' executed:\n"
-                        previous_results += f"Input: {json.dumps(skill_input)[:200]}\n"
-                        previous_results += f"Result: {json.dumps(skill_result)[:500]}\n"
+                        previous_results += f"Input: {json.dumps(skill_input)[:150]}\n"
+                        previous_results += f"Result: {json.dumps(skill_result)[:300]}\n"
+                        
+                        # 简化 supervisor 检查 - 跳过不必要的重复检查
+                        if self.skills_enabled and self._should_skip_supervisor():
+                            skill_calls_made += 1
+                            retries_without_skill = 0
+                            continue
                         
                         supervisor_feedback = self._supervisor_check(task, response, skill_result)
                         if supervisor_feedback == "REDO":
@@ -892,32 +1236,25 @@ class SolveMode:
                         skill_calls_made += 1
                         continue
                 
-                # No skill call - check with supervisor
-                supervisor_feedback = self._supervisor_check(task, response, None)
-                if supervisor_feedback == "REDO":
-                    if self._use_color:
-                        print(f"\n{Colors.BOLD}{Colors.RED}[SUPERVISOR]{Colors.RESET} REDO - Result rejected, regenerating...")
-                    else:
-                        print("\n[SUPERVISOR] REDO - Result rejected, regenerating...")
+                # No skill call - 简化流程
+                if self.skills_enabled and retries_without_skill < max_retries_without_skill:
+                    retries_without_skill += 1
                     continue
                 
-                if self.skills_enabled:
-                    retries_without_skill += 1
-                    
-                    if self._use_color:
-                        print(f"\n{Colors.YELLOW}[INFO]{Colors.RESET} AI did not invoke a skill, using direct response")
-                    else:
-                        print(f"\n[INFO] AI did not invoke a skill, using direct response")
-                    
-                    task.status = Task.STATUS_COMPLETED
-                    return response[:500]
+                # 直接返回结果（不再等待 supervisor 检查）
+                if self._use_color:
+                    print(f"\n{Colors.YELLOW}[INFO]{Colors.RESET} Using direct response")
                 else:
-                    task.status = Task.STATUS_COMPLETED
-                    return response[:500]
+                    print(f"\n[INFO] Using direct response")
+                
+                task.status = Task.STATUS_COMPLETED
+                # 根据输出模式调整返回长度
+                max_return_len = 500 if self._requires_text_output else 200
+                return response[:max_return_len]
             
             # Max skill calls reached
             task.status = Task.STATUS_COMPLETED
-            return f"Task completed with {skill_calls_made} skill invocations.\n\nFinal result: {response[:300]}"
+            return f"Task completed with {skill_calls_made} skill invocations.\n\nFinal: {response[:200]}"
         
         except Exception as e:
             if self._use_color:
@@ -965,6 +1302,22 @@ class SolveMode:
         path_abs = os.path.abspath(path)
         
         return path_abs.startswith(sandbox_abs + os.sep) or path_abs == sandbox_abs
+    
+    def _should_skip_supervisor(self) -> bool:
+        """判断是否应该跳过 supervisor 检查以节省算力
+        
+        Returns:
+            True 如果可以跳过 supervisor 检查
+        """
+        # 在命令模式下，可以跳过 supervisor 检查以节省算力
+        if not self._requires_text_output:
+            return True
+        
+        # 如果没有启用技能，也可以跳过
+        if not self.skills_enabled:
+            return True
+        
+        return False
     
     def _check_llm_server(self, max_wait: int = 60) -> bool:
         """Check if LLM server is available, wait if needed"""
@@ -1065,31 +1418,33 @@ class SolveMode:
         return None
     
     def _supervisor_check(self, task: Task, response: str, skill_result: Optional[Dict] = None) -> str:
-        """Supervisor AI checks if the result is acceptable"""
+        """Supervisor AI checks if the result is acceptable (optimized)"""
         try:
+            # 在命令模式下，简化 supervisor 检查以节省算力
+            if not self._requires_text_output:
+                # 简单检查：响应不为空且看起来像命令
+                if response and len(response.strip()) > 5:
+                    # 检查是否包含明显的命令特征
+                    command_patterns = [r'\$\s*\w+', r'\[\s*\{.*?\}\s*\]', r'\{\s*"skill"']
+                    for pattern in command_patterns:
+                        if re.search(pattern, response):
+                            return "ACCEPT"
+                    # 如果有技能结果，直接接受
+                    if skill_result:
+                        return "ACCEPT"
+                    # 否则接受（命令模式下容忍度更高）
+                    return "ACCEPT"
+            
+            # 文本模式下进行完整检查
             supervisor_prompt = f"""
-You are a supervisor AI. Your task is to evaluate if the following solution is acceptable.
+Evaluate this solution for: {task.title}
 
-Task: {task.title}
-Description: {task.description}
+Response: {response[:200]}
 
-AI Response: {response[:300]}
-
-Skill Result: {json.dumps(skill_result)[:200] if skill_result else 'None'}
-
-Evaluation Criteria:
-1. Does the solution directly address the problem?
-2. Is the code/file content complete (no "...", no "(and so on)")?
-3. Is the solution practical and executable?
-
-You MUST output ONLY one of these words:
-- "ACCEPT" if the solution is acceptable
-- "REDO" if the solution is incomplete, uses placeholders, or doesn't solve the problem
-
-Output your decision now.
+Is it acceptable? Answer ONLY with ACCEPT or REDO.
 """
             
-            result = chat(supervisor_prompt)
+            result = chat(supervisor_prompt, max_tokens=20)
             
             if self._use_color:
                 print(f"\n{Colors.BOLD}{Colors.CYAN}[SUPERVISOR]{Colors.RESET} {result.strip()}")

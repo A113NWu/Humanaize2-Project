@@ -47,8 +47,10 @@ def clean_reply(reply):
     cleaned = re.sub(r'(?i)recent\s+conversation\s*:\s*', '', cleaned)
     cleaned = re.sub(r'(?i)^user\s*:\s*', '', cleaned)
     cleaned = re.sub(r'(?i)^assistant\s*:\s*', '', cleaned)
+    cleaned = re.sub(r'(?i)^aize\s*:\s*', '', cleaned)
     cleaned = re.sub(r'(?i)\nuser\s*:\s*', '\n', cleaned)
     cleaned = re.sub(r'(?i)\nassistant\s*:\s*', '\n', cleaned)
+    cleaned = re.sub(r'(?i)\naize\s*:\s*', '\n', cleaned)
 
     # 移除模板分隔符和占位符
     cleaned = re.sub(r'-{3,}', '', cleaned)

@@ -257,13 +257,22 @@ def load_solve_mode_summary_prompt(problem: str, results_text: str) -> str:
     return template.format(problem=problem, results_text=results_text)
 
 
-def load_solve_mode_task_prompt(task_title: str, task_description: str, problem: str, hsn_context: str = "") -> str:
-    """加载Solve模式任务解决提示词"""
+def load_solve_mode_task_prompt(task_title: str, task_description: str, problem: str, hsn_context: str = "", output_mode: str = "command") -> str:
+    """加载Solve模式任务解决提示词
+    
+    Args:
+        task_title: 任务标题
+        task_description: 任务描述
+        problem: 问题
+        hsn_context: HSN 协作上下文
+        output_mode: 输出模式 ("command" 或 "text")
+    """
     template = load_prompt("solve_mode_task")
     template = template.replace("{task_title}", task_title)
     template = template.replace("{task_description}", task_description)
     template = template.replace("{problem}", problem)
     template = template.replace("{hsn_context}", hsn_context)
+    template = template.replace("{output_mode}", output_mode)
     return template
 
 

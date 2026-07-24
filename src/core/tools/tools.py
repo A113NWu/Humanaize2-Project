@@ -396,14 +396,51 @@ def restart_llm_server(model_path: str = None):
     
     # 获取模型路径
     if model_path is None:
-        model_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "model")
-        exact_path = os.path.join(model_dir, "tinyllama.gguf")
-        if os.path.exists(exact_path):
-            model_path = exact_path
-        elif os.path.exists(model_dir):
-            for f in os.listdir(model_dir):
-                if f.endswith('.gguf'):
-                    model_path = os.path.join(model_dir, f)
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        
+        settings_path = os.path.join(base_dir, "src", "core", "ui", "data", "ui_settings.json")
+        if os.path.exists(settings_path):
+            try:
+                import json
+                with open(settings_path, 'r', encoding='utf-8') as f:
+                    settings = json.load(f)
+                custom_model_path = settings.get("model_path", "")
+                if custom_model_path:
+                    if os.path.isabs(custom_model_path):
+                        if os.path.exists(custom_model_path):
+                            model_path = custom_model_path
+                            print(f"[INFO] Using custom model path from settings: {model_path}")
+                        else:
+                            print(f"[WARN] Custom model path not found: {custom_model_path}, falling back to default")
+                    else:
+                        abs_path = os.path.join(base_dir, custom_model_path)
+                        if os.path.exists(abs_path):
+                            model_path = abs_path
+                            print(f"[INFO] Using custom model path from settings: {model_path}")
+                        else:
+                            print(f"[WARN] Custom model path not found: {abs_path}, falling back to default")
+            except Exception as e:
+                print(f"[WARN] Failed to read settings: {e}")
+        
+        if model_path is None:
+            env_model_path = os.environ.get("HUMANIZE2_MODEL_PATH", "")
+            if env_model_path and os.path.exists(env_model_path):
+                model_path = env_model_path
+                print(f"[INFO] Using model path from environment: {model_path}")
+        
+        if model_path is None:
+            for model_dir_name in ["models", "model"]:
+                model_dir = os.path.join(base_dir, model_dir_name)
+                exact_path = os.path.join(model_dir, "tinyllama.gguf")
+                if os.path.exists(exact_path):
+                    model_path = exact_path
+                    break
+                elif os.path.exists(model_dir):
+                    for f in os.listdir(model_dir):
+                        if f.endswith('.gguf'):
+                            model_path = os.path.join(model_dir, f)
+                            break
+                if model_path:
                     break
     
     if not os.path.exists(server_path):

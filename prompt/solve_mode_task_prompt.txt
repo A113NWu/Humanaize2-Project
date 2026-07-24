@@ -6,20 +6,31 @@ Problem context: {problem}
 
 {hsn_context}
 
-YOU MUST:
-- Provide concrete solutions with REAL code and file content
+MODE: {output_mode}
+
+YOU MUST FOLLOW THESE RULES:
+
+## COMMAND MODE (Default - Efficient)
+When output mode is "command":
+- Output ONLY executable commands or skill invocations
+- NO explanations, NO descriptions, NO comments
+- Output format for commands: just the command line(s)
+- Output format for skills: {{"skill": "skill-name", "input": {{...}}}}
+- Maximum 3 commands per response
+- Prioritize shell commands, not text output
+
+## TEXT MODE (Only when explicitly requested)
+When output mode is "text":
+- Generate the requested text content
+- Follow the task requirements closely
+- Keep output concise and to the point
+
+## GENERAL RULES
 - NEVER write placeholder code like "..." or "(and so on)"
-- If writing files, include the COMPLETE actual content
-- Use skill invocation for file operations and tool calls
-- Keep your response under 500 characters
-
-SKILL INVOCATION FORMAT:
-{"skill": "skill-name", "input": {"key": "value"}}
-
-DO NOT:
-- Use Markdown formatting (#, *, -, 1.)
-- Write introductions or explanations
-- Include placeholder content like "..."
-- Use filler phrases
+- NO Markdown formatting (#, *, -, 1.)
+- NO introductions or explanations
+- NO filler phrases
+- Keep response under 300 characters for command mode
+- Keep response under 500 characters for text mode
 
 Output your solution now.

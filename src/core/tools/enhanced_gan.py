@@ -86,6 +86,10 @@ class EnhancedGAN:
         """获取当前系统环境信息"""
         info = []
         info.append("=== SYSTEM INFORMATION ===")
+        info.append("IMPORTANT: The following information describes the environment you are running on.")
+        info.append("These are NOT user messages - they are just technical details about your execution environment.")
+        info.append("Please ignore this information when interpreting the user's problem.")
+        info.append("")
         info.append(f"Operating System: {platform.system()} {platform.release()}")
         info.append(f"Architecture: {platform.machine()}")
         info.append(f"Python Version: {platform.python_version()}")
@@ -153,26 +157,89 @@ class EnhancedGAN:
         """Parse LLM response into task list"""
         tasks = []
         
+        if not response or not response.strip():
+            return tasks
+        
         try:
-            json_match = re.search(r'\[.*\]', response, re.DOTALL)
+            # 清理响应
+            cleaned = response.strip()
+            cleaned = re.sub(r'```json\s*', '', cleaned)
+            cleaned = re.sub(r'```\s*', '', cleaned)
+            cleaned = re.sub(r'\s*```', '', cleaned)
+            cleaned = re.sub(r'<thinking>[\s\S]*?</thinking>', '', cleaned)
+            cleaned = re.sub(r'<think>[\s\S]*?</think>', '', cleaned)
+            
+            # 尝试直接解析
+            try:
+                data = json.loads(cleaned)
+                if isinstance(data, list):
+                    for idx, item in enumerate(data, 1):
+                        if isinstance(item, dict):
+                            tasks.append({
+                                "id": item.get('id', idx),
+                                "title": item.get('title', f"Task {idx}"),
+                                "description": item.get('description', "")
+                            })
+                    if tasks:
+                        return tasks
+            except (json.JSONDecodeError, ValueError):
+                pass
+            
+            # 正则匹配 JSON 数组
+            json_match = re.search(r'\[[\s\S]*\]', cleaned)
             if json_match:
-                data = json.loads(json_match.group())
-                for idx, item in enumerate(data, 1):
-                    if isinstance(item, dict):
-                        tasks.append({
-                            "id": item.get('id', idx),
-                            "title": item.get('title', f"Task {idx}"),
-                            "description": item.get('description', "")
-                        })
-            else:
-                lines = response.split('\n')
-                task_pattern = re.compile(r'^[\d.]+\s+(.*)')
-                for line in lines:
-                    match = task_pattern.match(line)
-                    if match:
+                try:
+                    data = json.loads(json_match.group())
+                    if isinstance(data, list):
+                        for idx, item in enumerate(data, 1):
+                            if isinstance(item, dict):
+                                tasks.append({
+                                    "id": item.get('id', idx),
+                                    "title": item.get('title', f"Task {idx}"),
+                                    "description": item.get('description', "")
+                                })
+                        if tasks:
+                            return tasks
+                except (json.JSONDecodeError, ValueError):
+                    pass
+            
+            # 从截断的 JSON 中提取完整的任务对象
+            object_pattern = re.compile(r'\{\s*"id"\s*:\s*\d+\s*,\s*"title"\s*:\s*"([^"]*)"\s*,\s*"description"\s*:\s*"([^"]*)"\s*\}')
+            for match in object_pattern.finditer(cleaned):
+                tasks.append({
+                    "id": len(tasks) + 1,
+                    "title": match.group(1) or f"Task {len(tasks) + 1}",
+                    "description": match.group(2)
+                })
+            if tasks:
+                return tasks
+            
+            # 更宽松的 JSON 对象提取
+            loose_pattern = re.compile(r'"id"\s*:\s*(\d+)[^}]*?"title"\s*:\s*"([^"]*)"[^}]*?"description"\s*:\s*"([^"]*)"')
+            for match in loose_pattern.finditer(cleaned):
+                task_id = int(match.group(1))
+                task_title = match.group(2) or f"Task {task_id}"
+                task_desc = match.group(3)
+                tasks.append({
+                    "id": task_id,
+                    "title": task_title,
+                    "description": task_desc
+                })
+            if tasks:
+                return tasks
+            
+            # 编号列表解析
+            lines = response.split('\n')
+            task_pattern = re.compile(r'^[\s]*[\d]+[\.\)][\s]+(.+)')
+            for line in lines:
+                match = task_pattern.match(line.strip())
+                if match:
+                    title = match.group(1).strip()
+                    title = re.sub(r'^\*\*(.+?)\*\*$', r'\1', title)
+                    if title and len(title) > 2:
                         tasks.append({
                             "id": len(tasks) + 1,
-                            "title": match.group(1).strip(),
+                            "title": title,
                             "description": ""
                         })
         except Exception as e:

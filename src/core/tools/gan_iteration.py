@@ -394,7 +394,7 @@ class GANIteration:
         Returns:
             Synthesized conclusion
         """
-        from utils.reply_cleaner import clean_reply
+        from core.utils.reply_cleaner import clean_reply
         
         synthesis_prompt = load_gan_synthesis_prompt(self.topic, self.reply_a)
 

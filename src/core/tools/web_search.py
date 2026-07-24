@@ -63,8 +63,12 @@ class WebSearch:
                 data = response.json()
             except ImportError:
                 # Fallback to curl if requests is not available
+                curl_cmd = ['curl', '-s', '-L', url]
+                http_proxy = os.environ.get('http_proxy') or os.environ.get('HTTP_PROXY')
+                if http_proxy:
+                    curl_cmd.extend(['--proxy', http_proxy])
                 result = subprocess.run(
-                    ['curl', '-s', '-L', '--proxy', os.environ.get('http_proxy', ''), url],
+                    curl_cmd,
                     capture_output=True,
                     text=True,
                     timeout=30

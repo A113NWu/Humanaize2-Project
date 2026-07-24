@@ -1,6 +1,6 @@
 import json, os
 from copy import deepcopy
-from config import PERSONALITY_FILE
+from .config import PERSONALITY_FILE
 
 # 基础身份信息 - 不限制性格特征，让AI自主发展
 DEFAULT_PERSONALITY = {

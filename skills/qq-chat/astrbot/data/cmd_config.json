@@ -1,4 +1,4 @@
-{
+﻿{
   "config_version": 2,
   "platform_settings": {
     "unique_session": false,
@@ -42,36 +42,11 @@
     "ignore_bot_self_message": false,
     "ignore_at_all": false
   },
-  "provider_sources": [
-    {
-      "id": "custom_openai_source",
-      "type": "openai_chat_completion",
-      "name": "ThinkingEngine API",
-      "api_base": "http://127.0.0.1:8082/v1",
-      "key": ["sk-abc123"],
-      "default_model": "thinking-engine",
-      "models": [
-        {
-          "id": "thinking-engine",
-          "name": "ThinkingEngine (Aize)",
-          "max_tokens": 8192,
-          "context_window": 8192
-        }
-      ]
-    }
-  ],
-  "provider": [
-    {
-      "id": "custom_openai",
-      "enable": true,
-      "provider_source_id": "custom_openai_source",
-      "modalities": [],
-      "custom_extra_body": {}
-    }
-  ],
+  "provider_sources": [],
+  "provider": [],
   "provider_settings": {
     "enable": true,
-    "default_provider_id": "custom_openai",
+    "default_provider_id": "",
     "fallback_chat_models": [],
     "request_max_retries": 5,
     "default_image_caption_provider_id": "",
@@ -104,7 +79,7 @@
     "llm_compress_provider_id": "",
     "max_context_length": -1,
     "dequeue_context_length": 1,
-    "streaming_response": true,
+    "streaming_response": false,
     "show_tool_use_status": false,
     "show_tool_call_result": false,
     "buffer_intermediate_messages": false,
@@ -223,11 +198,11 @@
   "dashboard": {
     "enable": true,
     "username": "astrbot",
-    "password": "51e5572f83abe165783942404477e6bf",
-    "pbkdf2_password": "pbkdf2_sha256$600000$8c9617c398676da1c422d4edc79e9dff$4ea68d1a44aa73f9c2d7edc5e026471cd7f3df81bb4c4b37a5be39b414dca08c",
+    "password": "42a11c23dcfbac3fa766f6ec59952670",
+    "pbkdf2_password": "pbkdf2_sha256$600000$9e8e891f396c5612c69f6891cd953acd$e14fdf6451a435ea6002c3bcd37c7fe22435fad79ba2b19a1539d54ed58d536a",
     "password_storage_upgraded": true,
-    "password_change_required": false,
-    "jwt_secret": "ad70f082aac4a23d6c73e8f9db4dac5b520eb4de0a841d5a8dbe865700b72f8f",
+    "password_change_required": true,
+    "jwt_secret": "587839e3e78de6ecca1d0115bc25ccaa9950def8f630748e0c17fc4020676da5",
     "host": "0.0.0.0",
     "port": 6185,
     "disable_access_log": true,
@@ -249,17 +224,7 @@
       "ca_certs": ""
     }
   },
-  "platform": [
-    {
-      "type": "qq_official",
-      "id": "qq_official_1905213281",
-      "enable": true,
-      "appid": "1905213281",
-      "secret": "hM1hN4lTBudN7sdPBylZNC1riZRJC5zt",
-      "enable_group_c2c": true,
-      "enable_guild_direct_message": false
-    }
-  ],
+  "platform": [],
   "platform_specific": {
     "lark": {
       "pre_ack_emoji": {

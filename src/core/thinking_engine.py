@@ -910,7 +910,7 @@ class ThinkingEngine:
         return get_break_silence_prompt(base_prompt)
     
     def _clean_and_humanize_reply(self, reply):
-        """清理并人性化回复内容（只处理RESPONSE部分，THOUGHT已在提取阶段分离）"""
+        """清理并人性化回复内容"""
         from utils.reply_cleaner import clean_reply
         
         if not reply:
@@ -924,7 +924,10 @@ class ThinkingEngine:
         if re.match(r'(?i)^(command|instruction|next|execute|task|waiting|skill|json)\b', cleaned):
             return None
 
-        return cleaned
+        cleaned = re.sub(r'(?i)\bTHOUGHT\s*:\s*', '', cleaned)
+        cleaned = re.sub(r'(?i)\bRESPONSE\s*:\s*', '', cleaned)
+
+        return cleaned.strip()
 
     def _handle_gan_task(self, task, memory):
         """Handle GAN task - show internal debate process."""

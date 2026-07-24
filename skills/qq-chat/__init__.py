@@ -152,26 +152,30 @@ class QQChatSkill:
         """启动Astrbot服务"""
         try:
             astrbot_path = self.config.get('astrbot_path', os.path.join(os.path.dirname(__file__), 'astrbot'))
-            venv_python = os.path.join(astrbot_path, 'venv', 'bin', 'python')
             
-            if not os.path.exists(venv_python):
+            if not os.path.exists(astrbot_path):
+                return False
+            
+            main_py = os.path.join(astrbot_path, 'main.py')
+            if not os.path.exists(main_py):
                 return False
             
             subprocess.Popen(
-                [venv_python, '-m', 'astrbot.cli', 'run'],
+                [sys.executable, main_py],
                 cwd=astrbot_path,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                daemon=True
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
             )
             
-            for _ in range(30):
+            for _ in range(60):
                 time.sleep(1)
                 if self._is_port_in_use(self.config['port']):
                     return True
             
             return False
-        except:
+        except Exception as e:
+            print(f"Failed to start astrbot: {e}")
             return False
     
     def _save_config(self):

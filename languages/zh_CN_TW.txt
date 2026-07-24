@@ -1,0 +1,68 @@
+# 繁體中文語言文件
+# Humanaize 2.0 翻譯
+
+# 基礎UI
+chat=對話
+thoughts=思考
+system=系統
+command_output=命令輸出
+input_placeholder=輸入您的問題...
+send=發送
+clear=清空
+settings=設定
+language=語言
+theme=主題
+model=模型
+custom_model=自訂模型
+skills=技能
+save=保存
+cancel=取消
+
+# AI狀態
+ai_thinking=AI 正在思考...
+
+# 設定選項
+gan_enabled=啟用 GAN
+auto_break_silence=自動打破沉默
+
+# CLI
+cli_start=歡迎使用 Humanaize 2.0！輸入 /help 查看可用命令。
+ai=AI
+you=您
+error=錯誤
+response_generated=響應生成成功
+internal_thinking=內部思考中
+gan_thinking_complete=GAN思考完成
+gan_chosen=AI選擇使用GAN思考
+gan_skipped=AI選擇直接回答
+
+# GAN辯論
+topic=話題
+argument=論點
+counter_argument=反駁論點
+rebuttal=反駁
+
+# 命令
+available_commands=可用命令
+show_help=顯示幫助信息
+show_memory=顯示記憶數據
+show_status=顯示系統狀態
+toggle_gan=切換GAN模式
+clear_screen=清空螢幕
+quit_program=退出程式
+
+# 狀態
+enabled=已啟用
+disabled=已禁用
+system_status=系統狀態
+message_count=消息數
+thought_count=思考數
+
+# 記憶
+no_memory_data=暫無記憶數據
+
+# 更新
+check_updates=檢查更新
+download_update=下載更新
+update_available=有可用更新
+up_to_date=已是最新版本

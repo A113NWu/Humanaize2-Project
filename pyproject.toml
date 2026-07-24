@@ -12,5 +12,4 @@ requires-python = ">=3.8"
 [project.scripts]
 humanaize2 = "main:main"
 
-[project.scripts]
 # Platform-specific entry points will be created via batch scripts on Windows

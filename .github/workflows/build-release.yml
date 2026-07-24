@@ -7,25 +7,22 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to build (e.g., 2.2.3)'
+        description: 'Version to build (e.g., 2.2.4)'
         required: true
-        default: '2.2.3'
+        default: '2.2.4'
 
 jobs:
   build-windows:
     runs-on: windows-latest
-    strategy:
-      matrix:
-        arch: [x86_64, arm64]
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+        
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.11'
       
       - name: Install dependencies
         run: |
@@ -33,35 +30,21 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller customtkinter
       
-      - name: Create icon
+      - name: Build executable + portable zip
         run: |
-          cd installer/windows
-          python create_icon.py
-      
-      - name: Build executable
-        run: |
-          python installer/windows/build_exe.py ${{ matrix.arch }}
-      
-      - name: Install Inno Setup
-        run: |
-          choco install innosetup -y
-      
-      - name: Build installer
-        run: |
-          cd installer/windows
-          iscc humanaize2-${{ matrix.arch }}.iss
-      
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-${{ matrix.arch }}-installer
-          path: installer/windows/output/Humanaize2-Setup-${{ matrix.arch }}.exe
+          python installer/windows/build_exe.py x86_64 --zip
       
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
-          name: windows-${{ matrix.arch }}-exe
-          path: dist/${{ matrix.arch }}/Humanaize2.exe
+          name: windows-x86_64-exe
+          path: dist/x86_64/Humanaize2.exe
+      
+      - name: Upload portable zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x86_64-portable
+          path: installer_output/x86_64/*.zip
 
   build-linux:
     runs-on: ubuntu-latest
@@ -70,10 +53,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Install dependencies
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y dpkg-dev fakeroot
+          sudo apt-get install -y dpkg-dev fakeroot wget curl python3-pip
+          pip3 install --break-system-packages pyinstaller customtkinter
+      
+      - name: Install Python dependencies
+        run: |
+          pip3 install --break-system-packages -r requirements.txt
       
       - name: Build Debian package
         run: |
@@ -81,37 +74,124 @@ jobs:
           chmod +x build_deb.sh
           ./build_deb.sh
       
-      - name: Upload artifact
+      - name: Build AppImage
+        run: |
+          cd installer/linux
+          chmod +x build_appimage.sh
+          ./build_appimage.sh
+      
+      - name: Build portable tarball
+        run: |
+          cd installer/linux
+          chmod +x build_tarball.sh
+          ./build_tarball.sh
+      
+      - name: Upload Debian package
         uses: actions/upload-artifact@v4
         with:
-          name: linux-deb-package
+          name: linux-deb
           path: installer/linux/output/*.deb
+      
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-appimage
+          path: installer/linux/output/*.AppImage
+      
+      - name: Upload portable tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-tarball
+          path: installer/linux/output/*.tar.gz
 
-  create-release:
-    needs: [build-windows, build-linux]
+  build-android:
     runs-on: ubuntu-latest
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Download Windows x86_64 installer
-        uses: actions/download-artifact@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
         with:
-          name: windows-x86_64-installer
-          path: artifacts/windows-x86_64
+          java-version: '21'
+          distribution: 'temurin'
       
-      - name: Download Windows ARM64 installer
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-arm64-installer
-          path: artifacts/windows-arm64
+      - name: Set up Android SDK
+        run: |
+          export ANDROID_HOME=$HOME/Android/Sdk
+          mkdir -p $ANDROID_HOME/cmdline-tools/latest
+          # Download and install cmdline-tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O /tmp/cmdline-tools.zip
+          unzip -q /tmp/cmdline-tools.zip -d /tmp
+          mv /tmp/cmdline-tools $ANDROID_HOME/cmdline-tools/latest
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME "platforms;android-34" "build-tools;34.0.0" "platform-tools"
+          echo "sdk.dir=$ANDROID_HOME" > android_client/local.properties
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
       
-      - name: Download Linux deb package
+      - name: Generate debug keystore
+        run: |
+          mkdir -p android_client/keystore
+          keytool -genkey -v -keystore android_client/keystore/debug.keystore \
+            -storepass android -alias androiddebugkey \
+            -keypass android -keyalg RSA -keysize 2048 \
+            -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+      
+      - name: Verify Gradle wrapper
+        run: |
+          cd android_client
+          chmod +x gradlew
+          ls -la gradle/wrapper/gradle-wrapper.jar
+      
+      - name: Build release APK
+        run: |
+          cd android_client
+          ./gradlew assembleRelease --no-daemon 2>&1 | tail -30
+      
+      - name: Rename APK
+        run: |
+          cd android_client/app/build/outputs/apk/release
+          if [ -f app-release.apk ]; then
+            cp app-release.apk Humanaize2-release.apk
+          elif [ -f app-release-unsigned.apk ]; then
+            cp app-release-unsigned.apk Humanaize2-release.apk
+          fi
+          ls -la Humanaize2-release.apk
+      
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release-apk
+          path: android_client/app/build/outputs/apk/release/Humanaize2-release.apk
+
+  create-release:
+    needs: [build-windows, build-linux, build-android]
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Download all Windows artifacts
         uses: actions/download-artifact@v4
         with:
-          name: linux-deb-package
+          path: artifacts/windows
+          pattern: windows-*
+          merge-multiple: true
+      
+      - name: Download all Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
           path: artifacts/linux
+          pattern: linux-*
+          merge-multiple: true
+      
+      - name: Download Android APK artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/android
+          pattern: android-*
+          merge-multiple: true
       
       - name: Get version
         id: get_version
@@ -123,8 +203,17 @@ jobs:
           fi
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
       
+      - name: List all artifacts
+        run: |
+          echo "=== Windows ==="
+          ls -la artifacts/windows/ 2>/dev/null || echo "Empty"
+          echo "=== Linux ==="
+          ls -la artifacts/linux/ 2>/dev/null || echo "Empty"
+          echo "=== Android ==="
+          ls -la artifacts/android/ 2>/dev/null || echo "Empty"
+      
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.get_version.outputs.VERSION }}
           name: Humanaize v${{ steps.get_version.outputs.VERSION }}
@@ -134,26 +223,32 @@ jobs:
             ### 📦 Downloads
             
             **Windows:**
-            - `Humanaize2-Setup-x86_64.exe` - Windows 64-bit installer (Intel/AMD)
-            - `Humanaize2-Setup-arm64.exe` - Windows ARM64 installer
+            - `Humanaize2.exe` - Windows 64-bit executable
+            - `Humanaize2-{version}-x86_64-portable.zip` - Windows portable (no install needed)
             
             **Linux:**
-            - `humanaize2_${{ steps.get_version.outputs.VERSION }}_all.deb` - Debian/Ubuntu package
+            - `humanaize2_{version}_all.deb` - Debian/Ubuntu package
+            - `Humanaize2-{version}-x86_64.AppImage` - Universal Linux binary (double-click to run)
+            - `Humanaize2-{version}-x86_64.tar.gz` - Portable tarball
+            
+            **Android:**
+            - `Humanaize2-release.apk` - Aize Companion app for distributed computing
             
             ### ✨ New Features
             
-            - 🎨 Modern Windows GUI with card-based design
-            - 📁 Unified version management system
-            - 🔧 AI self-development module
-            - 🌐 Multilingual support (English/Chinese)
+            - 🎨 Modern cross-platform GUI
+            - 🌐 IoT Compute Network with device discovery
+            - 🤖 AI agent with memory and reflection
+            - 💬 Multi-language support (English/Chinese)
+            - 📱 Android companion app for distributed computing
             
             ### 📖 Documentation
             
-            See [README](https://github.com/A113NWu/Humanaize2-Project/blob/main/docs/README.md) for installation instructions.
+            See [README](https://github.com/A113NWu/Humanaize2-Project) for installation instructions.
           files: |
-            artifacts/windows-x86_64/Humanaize2-Setup-x86_64.exe
-            artifacts/windows-arm64/Humanaize2-Setup-arm64.exe
-            artifacts/linux/*.deb
+            artifacts/windows/**
+            artifacts/linux/**
+            artifacts/android/**
           draft: false
           prerelease: false
         env:

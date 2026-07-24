@@ -120,7 +120,8 @@ def chat(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top_p=TOP_
 
         except requests.exceptions.HTTPError as e:
             logger.error(f"LLM HTTP error: {e}")
-            return f"[llm error] HTTP error {response.status_code}: {e}"
+            status_code = response.status_code if response else "unknown"
+            return f"[llm error] HTTP error {status_code}: {e}"
 
         except Exception as e:
             if stop_event is not None and stop_event.is_set():

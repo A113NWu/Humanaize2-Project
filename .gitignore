@@ -8,6 +8,9 @@ installer_output/
 *.deb
 *.rpm
 *.exe
+*.AppImage
+*.tar.gz
+*-portable.zip
 
 # Python cache
 __pycache__/
@@ -20,8 +23,26 @@ __pycache__/
 log/
 *.log
 installer/linux/output/
-languages/
 model/
+
+# Android build outputs
+android_client/.gradle/
+android_client/**/build/
+android_client/local.properties
+android_client/app/build/
+*.apk
+*.aab
+
+# Android keystore (never commit signing keys)
+android_client/keystore/
+
+# Gradle
+.gradle/
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+local.properties
 
 # IDE
 .idea/
@@ -33,3 +54,28 @@ model/
 .env
 .venv/
 venv/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+
+# Model files (large/binary)
+llama/
+models/
+*.bin
+*.gguf
+
+# Runtime data
+data/memory.json
+data/cmd_config.json
+src/core/data/gan_results.json
+src/core/utils/data/last_update_check.json
+
+# Test outputs
+build_log_*.txt
