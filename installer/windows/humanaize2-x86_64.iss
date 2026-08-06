@@ -28,7 +28,6 @@ WizardStyle=modern
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
-Name: "chinese"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
@@ -63,6 +62,10 @@ Root: HKCU; Subkey: "Environment"; ValueType: string; ValueName: "Humanaize2Path
 [Code]
 const
   REG_KEY = 'Environment';
+  SMTO_ABORTIFHUNG = $0002;
+
+function SendMessageTimeout(hWnd: Longint; Msg: Longint; wParam: Longint; lParam: Longint; fuFlags: UINT; uTimeout: UINT; var lpdwResult: DWORD): LongBool;
+  external 'SendMessageTimeoutW@user32.dll stdcall';
 
 function GetUserPath(): string;
 var
@@ -108,6 +111,7 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   AppPath: string;
+  dwResult: DWORD;
 begin
   if CurStep = ssPostInstall then
   begin
@@ -115,7 +119,7 @@ begin
     begin
       AppPath := ExpandConstant('{app}');
       AddToPath(AppPath);
-      SendMessageTimeout(HWND_BROADCAST, WM_SETTINGCHANGE, 0, LPARAM(PChar('Environment')), SMTO_ABORTIFHUNG, 5000, nil);
+      SendMessageTimeout($FFFF, $001A, 0, 0, SMTO_ABORTIFHUNG, 5000, dwResult);
     end;
   end;
 end;

@@ -5,9 +5,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
-import rikka.shizuku.ShizukuRemoteProcess
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.lang.reflect.Method
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
@@ -42,6 +42,28 @@ object ShizukuShellExecutor {
     private const val PERMISSION_REQUEST_CODE = 10001
 
     private val permissionCallbackInvoked = AtomicBoolean(false)
+
+    /** 緩存反射得到的 Shizuku.newProcess(String[], String[], String) 方法 */
+    @Volatile
+    private var newProcessMethod: Method? = null
+
+    private fun getNewProcessMethod(): Method? {
+        newProcessMethod?.let { return it }
+        return try {
+            val m = Shizuku::class.java.getDeclaredMethod(
+                "newProcess",
+                Array<String>::class.java,
+                Array<String>::class.java,
+                String::class.java
+            )
+            m.isAccessible = true
+            newProcessMethod = m
+            m
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to reflect Shizuku.newProcess: ${t.message}")
+            null
+        }
+    }
 
     /**
      * 檢查 Shizuku 服務是否可用（已安裝、已啟動、已授予權限）
@@ -173,12 +195,19 @@ object ShizukuShellExecutor {
                 it.map { (k, v) -> "$k=$v" }.toTypedArray()
             }
 
-            // 4. 建立 Shizuku 遠程進程
-            val process: ShizukuRemoteProcess = if (workDir != null) {
-                Shizuku.newProcess(cmdArray, envArray, workDir)
-            } else {
-                Shizuku.newProcess(cmdArray, envArray)
+            // 4. 建立 Shizuku 遠程進程（newProcess 為 private，透過反射調用）
+            val method = getNewProcessMethod()
+            if (method == null) {
+                return@withContext ShellResult(
+                    success = false, exitCode = -4,
+                    stdout = "", stderr = "",
+                    error = "無法存取 Shizuku.newProcess 方法，請確認 Shizuku API 版本",
+                    executionTimeMs = System.currentTimeMillis() - start
+                )
             }
+            val dir = workDir ?: "/"
+            @Suppress("UNCHECKED_CAST")
+            val process = method.invoke(null, cmdArray, envArray, dir) as Process
 
             // 5. 讀取 stdout/stderr（分離線程防止阻塞）
             val stdoutBuilder = StringBuilder()

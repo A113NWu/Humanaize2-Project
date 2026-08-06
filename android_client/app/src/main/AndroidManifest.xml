@@ -22,6 +22,15 @@
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
 
+    <!-- 向 Shizuku 查詢服務的 manifest 宣告（必須在 <application> 外部） -->
+    <queries>
+        <package android:name="moe.shizuku.privileged.api" />
+        <package android:name="moe.shizuku.manager" />
+        <intent>
+            <action android:name="moe.shizuku.manager.intent.action.SEND_VERSION" />
+        </intent>
+    </queries>
+
     <application
         android:name=".AizeApplication"
         android:allowBackup="true"
@@ -42,15 +51,6 @@
             android:multiprocess="false"
             android:permission="moe.shizuku.manager.permission.API_V23" />
 
-        <!-- 向 Shizuku 查詢服務的 manifest 宣告 -->
-        <queries>
-            <package android:name="moe.shizuku.privileged.api" />
-            <package android:name="moe.shizuku.manager" />
-            <intent>
-                <action android:name="moe.shizuku.manager.intent.action.SEND_VERSION" />
-            </intent>
-        </queries>
-        
         <!-- 主 Activity -->
         <activity
             android:name=".ui.MainActivity"

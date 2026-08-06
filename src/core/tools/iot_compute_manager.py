@@ -227,9 +227,9 @@ class IoTComputeManager:
         return self._network.get_shell_capable_devices()
 
     def send_shell_command(self, device_id: str, command: str,
-                           timeout: int = 30, work_dir: Optional[str] = None,
-                           env_vars: Optional[Dict[str, str]] = None,
-                           wait_timeout: float = 120.0) -> Optional[Dict]:
+                        timeout: int = 30, work_dir: Optional[str] = None,
+                        env_vars: Optional[Dict[str, str]] = None,
+                        wait_timeout: float = 120.0) -> Optional[Dict]:
         """
         向指定 Android 設備發送 Shell 命令，透過 Shizuku 以 ADB Shell 級別權限執行。
 
