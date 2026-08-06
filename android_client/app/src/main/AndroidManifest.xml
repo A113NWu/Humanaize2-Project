@@ -13,6 +13,14 @@
     <!-- 计算相关权限 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    
+    <!-- Shizuku 權限宣告（Shizuku 會在 appops 中授予 shell 級別權限） -->
+    <permission
+        android:name="moe.shizuku.manager.permission.API_V23"
+        android:protectionLevel="signature" />
+    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
 
     <application
         android:name=".AizeApplication"
@@ -25,6 +33,23 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.AizeCompanion"
         tools:targetApi="34">
+
+        <!-- ShizukuProvider：用於向 Shizuku 服務宣告本 app 的存在 -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="moe.shizuku.manager.permission.API_V23" />
+
+        <!-- 向 Shizuku 查詢服務的 manifest 宣告 -->
+        <queries>
+            <package android:name="moe.shizuku.privileged.api" />
+            <package android:name="moe.shizuku.manager" />
+            <intent>
+                <action android:name="moe.shizuku.manager.intent.action.SEND_VERSION" />
+            </intent>
+        </queries>
         
         <!-- 主 Activity -->
         <activity

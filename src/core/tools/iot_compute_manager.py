@@ -217,7 +217,74 @@ class IoTComputeManager:
         if not self._network:
             return
         self._network.broadcast_chat(message, exclude_device_id)
-    
+
+    # ========== 遠程 Shell (Shizuku) ==========
+
+    def get_shell_capable_devices(self) -> List[Dict]:
+        """返回支援遠程 Shell 執行（已授予 Shizuku 權限）的在線設備列表"""
+        if not self._network:
+            return []
+        return self._network.get_shell_capable_devices()
+
+    def send_shell_command(self, device_id: str, command: str,
+                           timeout: int = 30, work_dir: Optional[str] = None,
+                           env_vars: Optional[Dict[str, str]] = None,
+                           wait_timeout: float = 120.0) -> Optional[Dict]:
+        """
+        向指定 Android 設備發送 Shell 命令，透過 Shizuku 以 ADB Shell 級別權限執行。
+
+        使用前提：
+        - 設備已安裝並啟動 Shizuku 服務
+        - 用戶已在 Shizuku 彈窗中授予 Aize 權限
+        - 設備端 Settings 中已開啟「允許遠程 Shell」
+
+        Args:
+            device_id: 目標設備 ID（可由 get_shell_capable_devices() 或 get_connected_devices() 取得）
+            command: Shell 命令（由 sh -c 執行，支援管道、重定向、變數展開）
+            timeout: 設備端最長執行秒數，逾時會強制中止進程，預設 30 秒
+            work_dir: 執行命令的工作目錄；None 表示根目錄
+            env_vars: 額外環境變數字典；可為 None
+            wait_timeout: 本機等候結果的最長秒數；0 表示只發送不阻塞等候
+
+        Returns:
+            成功返回 Dict:
+                {
+                    'success': bool,
+                    'exit_code': int,          # 0=成功；非 0=失敗；-99=本地等候逾時
+                    'stdout': str,
+                    'stderr': str,
+                    'error': Optional[str],    # Shizuku 未安裝/未授權/本機逾時等提示
+                    'shell_id': str,
+                    'device_id': str,
+                    'compute_time_ms': float,  # 設備端執行耗時（毫秒）
+                }
+            網絡未初始化返回 None
+        """
+        if not self._network:
+            logger.error("IoT network not initialized")
+            return None
+        try:
+            result = self._network.send_shell_command(
+                device_id=device_id,
+                command=command,
+                timeout=timeout,
+                work_dir=work_dir,
+                env_vars=env_vars,
+                wait_timeout=wait_timeout,
+            )
+            return result
+        except Exception as e:
+            logger.error(f"send_shell_command failed: {e}")
+            return {
+                'success': False,
+                'exit_code': -1,
+                'stdout': '',
+                'stderr': '',
+                'error': str(e),
+                'shell_id': '',
+                'device_id': device_id,
+            }
+
     # ========== 統計和配置 ==========
     
     def get_stats(self) -> Dict:

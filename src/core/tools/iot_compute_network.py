@@ -70,6 +70,7 @@ class DeviceCapabilities:
     gpu_available: bool = False
     memory_gb: float = 0.0
     cpu_cores: int = 0
+    can_shell_exec: bool = False  # 是否支持远程 Shell 命令执行（Shizuku 授权）
 
 
 @dataclass
@@ -178,6 +179,9 @@ class IoTComputeNetwork:
         }
         # 存储待发送的消息队列
         self._pending_messages: Dict[str, List[Dict]] = {}
+        # Shell 执行：shell_id -> asyncio Future（保存結果）
+        self._shell_pending: Dict[str, 'asyncio.Future[Dict]'] = {}
+        self._shell_pending_lock = threading.RLock()
     
     def on(self, event: str, handler: Callable):
         """注册事件处理器"""
@@ -290,6 +294,8 @@ class IoTComputeNetwork:
                         await self._handle_chat_message_async(device_id, data, websocket)
                     elif action == 'chat_stream':
                         await self._handle_chat_stream_async(device_id, data, websocket)
+                    elif action == 'shell_result':
+                        await self._handle_shell_result_async(device_id, data, websocket)
                     elif action == 'disconnect':
                         self._handle_disconnect(device_id)
                         break
@@ -322,7 +328,8 @@ class IoTComputeNetwork:
             gpu_available=data.get('gpu_available', False),
             memory_gb=data.get('memory_gb', 0),
             cpu_cores=data.get('cpu_cores', 0),
-            supported_task_types=data.get('supported_task_types', [])
+            supported_task_types=data.get('supported_task_types', []),
+            can_shell_exec=data.get('can_shell_exec', False)
         )
         
         device = DeviceInfo(
@@ -470,6 +477,45 @@ class IoTComputeNetwork:
             'conversation_id': conversation_id,
             'device_id': device_id
         })
+
+    async def _handle_shell_result_async(self, device_id: str, data: Dict, websocket):
+        """异步处理来自设备端的 Shell 执行结果"""
+        shell_id = data.get('shell_id')
+        success = data.get('success', False)
+        exit_code = data.get('exit_code', -1)
+        stdout = data.get('stdout', '')
+        stderr = data.get('stderr', '')
+        error = data.get('error')
+        compute_time = data.get('compute_time', 0.0)
+
+        result = {
+            'shell_id': shell_id,
+            'device_id': device_id,
+            'success': bool(success),
+            'exit_code': int(exit_code),
+            'stdout': stdout,
+            'stderr': stderr,
+            'error': error,
+            'compute_time_ms': compute_time,
+            'timestamp': time.time()
+        }
+
+        # 若有等待中的 Future，完成它
+        future = None
+        with self._shell_pending_lock:
+            if shell_id and shell_id in self._shell_pending:
+                future = self._shell_pending.pop(shell_id)
+
+        if future is not None:
+            try:
+                if not future.done():
+                    future.set_result(result)
+            except Exception as e:
+                logger.error(f"Set shell result future failed: {e}")
+
+        # 触发事件，方便非协程代码订阅
+        self._emit('shell_result', result)
+        logger.debug(f"Shell result: id={shell_id}, exit={exit_code}, success={success}")
     
     async def _send_ws_async(self, websocket, data: Dict):
         """异步发送 WebSocket 消息"""
@@ -510,6 +556,152 @@ class IoTComputeNetwork:
             loop
         )
         return True
+
+    def get_shell_capable_devices(self) -> List[Dict]:
+        """返回支持远程 Shell 执行（Shizuku 授權）的設備列表"""
+        with self._lock:
+            return [
+                d.to_dict()
+                for d in self.devices.values()
+                if d.status in [DeviceStatus.ONLINE, DeviceStatus.IDLE, DeviceStatus.BUSY]
+                and d.capabilities.can_shell_exec
+            ]
+
+    def send_shell_command(self, device_id: str, command: str,
+                           timeout: int = 30, work_dir: Optional[str] = None,
+                           env_vars: Optional[Dict[str, str]] = None,
+                           wait_timeout: float = 120.0) -> Dict:
+        """
+        向指定設備發送 Shell 命令並阻塞等待結果。
+        權限依賴：設備需已開啟 Shizuku 並授予 Aize Shell 級別權限。
+
+        Args:
+            device_id: 目標設備 ID
+            command: Shell 命令（支持管道/重定向，將由 sh -c 執行）
+            timeout: 設備端超時（秒）
+            work_dir: 工作目錄；可為 None
+            env_vars: 額外環境變數；可為 None
+            wait_timeout: 本機等待響應最長秒數；0 表示只發送不等待
+
+        Returns:
+            {'success': bool, 'exit_code': int, 'stdout': str, 'stderr': str,
+             'error': Optional[str], 'shell_id': str, 'device_id': str}
+            若 wait_timeout=0，則僅返回 {'success': True, 'sent': True, 'shell_id': str}
+        """
+        if not command or not command.strip():
+            return {
+                'success': False, 'exit_code': -1, 'stdout': '',
+                'stderr': '', 'error': 'Empty command'
+            }
+
+        # 校驗設備連線與能力
+        with self._lock:
+            device = self.devices.get(device_id)
+            if device is None:
+                return {
+                    'success': False, 'exit_code': -1, 'stdout': '',
+                    'stderr': '', 'error': f'Device not found: {device_id}'
+                }
+            if not device.capabilities.can_shell_exec:
+                return {
+                    'success': False, 'exit_code': -1, 'stdout': '',
+                    'stderr': '',
+                    'error': 'Device does not support remote shell. '
+                             'Please enable Shizuku and grant permission on the device.'
+                }
+            if device.status not in [DeviceStatus.ONLINE, DeviceStatus.IDLE, DeviceStatus.BUSY] \
+                    or device._ws is None or device._loop is None:
+                return {
+                    'success': False, 'exit_code': -1, 'stdout': '',
+                    'stderr': '', 'error': f'Device {device_id} is offline'
+                }
+            device_loop = device._loop
+
+        shell_id = 'sh_' + uuid.uuid4().hex[:16]
+        msg = {
+            'action': 'shell_exec',
+            'shell_id': shell_id,
+            'command': command,
+            'timeout': int(timeout) if timeout and timeout > 0 else 30,
+            'work_dir': work_dir,
+            'env_vars': env_vars or {},
+        }
+
+        # 如果不需要等待結果，直接發送返回
+        if wait_timeout == 0:
+            ok = self.send_to_device(device_id, msg)
+            return {'success': ok, 'sent': ok, 'shell_id': shell_id}
+
+        # 建立 Future 並註冊到 shell_pending
+        loop = device_loop if device_loop else asyncio.get_event_loop()
+        future: 'asyncio.Future[Dict]' = loop.create_future()
+
+        with self._shell_pending_lock:
+            self._shell_pending[shell_id] = future
+
+        # 設備斷線時的清理
+        def _cleanup_pending():
+            with self._shell_pending_lock:
+                self._shell_pending.pop(shell_id, None)
+
+        # 發送消息
+        sent = self.send_to_device(device_id, msg)
+        if not sent:
+            _cleanup_pending()
+            try:
+                future.cancel()
+            except Exception:
+                pass
+            return {
+                'success': False, 'exit_code': -1, 'stdout': '',
+                'stderr': '', 'error': 'Failed to send shell command to device'
+            }
+
+        # 阻塞等待結果（跨線程安全地等待 asyncio Future）
+        result_holder: Dict = {}
+
+        def _waiter():
+            async def _wait():
+                try:
+                    return await asyncio.wait_for(future, timeout=max(0.1, wait_timeout))
+                except asyncio.TimeoutError:
+                    return {
+                        'success': False, 'exit_code': -99,
+                        'stdout': '', 'stderr': '',
+                        'error': f'Timeout waiting for shell result ({wait_timeout}s)'
+                    }
+                except Exception as e:
+                    return {
+                        'success': False, 'exit_code': -1,
+                        'stdout': '', 'stderr': '',
+                        'error': f'Wait error: {e}'
+                    }
+                finally:
+                    _cleanup_pending()
+
+            try:
+                result_holder['r'] = asyncio.run_coroutine_threadsafe(_wait(), loop).result()
+            except Exception as e:
+                result_holder['r'] = {
+                    'success': False, 'exit_code': -1,
+                    'stdout': '', 'stderr': '',
+                    'error': f'Wait error: {e}'
+                }
+                _cleanup_pending()
+
+        waiter_thread = threading.Thread(target=_waiter, daemon=True)
+        waiter_thread.start()
+        waiter_thread.join(timeout=max(1.0, wait_timeout + 5.0))
+
+        if 'r' in result_holder:
+            return result_holder['r']
+
+        # 極端情況：線程未能完成
+        _cleanup_pending()
+        return {
+            'success': False, 'exit_code': -1, 'stdout': '', 'stderr': '',
+            'error': 'Unexpected timeout waiting for shell result'
+        }
     
     def broadcast_to_all(self, data: Dict):
         """向所有在线设备广播消息"""

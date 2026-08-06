@@ -82,7 +82,16 @@ data class WsMessage(
     val max_concurrent_tasks: Int? = null,
     val cpu_cores: Int? = null,
     val memory_gb: Double? = null,
-    val supported_task_types: List<String>? = null
+    val supported_task_types: List<String>? = null,
+    // ===== Shell 命令相关字段 =====
+    val shell_id: String? = null,         // Shell 执行请求 ID（用于匹配请求与响应）
+    val command: String? = null,          // Shell 命令文本
+    val work_dir: String? = null,         // 工作目录
+    val env_vars: Map<String, String>? = null, // 环境变量
+    val exit_code: Int? = null,           // 退出码
+    val stdout: String? = null,           // 标准输出
+    val stderr: String? = null,           // 标准错误
+    val can_shell_exec: Boolean? = null   // 注册时上报能力：是否支持远程 Shell
 )
 
 @Serializable

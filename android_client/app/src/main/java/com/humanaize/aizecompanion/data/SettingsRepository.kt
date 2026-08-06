@@ -31,12 +31,14 @@ class SettingsRepository(private val context: Context) {
         val ENABLE_COMPUTE = booleanPreferencesKey("enable_compute")
         val MAX_TASKS = intPreferencesKey("max_concurrent_tasks")
         val CONTRIBUTION_MODE = stringPreferencesKey("contribution_mode")
+        val ENABLE_REMOTE_SHELL = booleanPreferencesKey("enable_remote_shell")
         
         // 默认值
         const val DEFAULT_SERVER_ADDRESS = "ws://127.0.0.1:8765"
         const val DEFAULT_DEVICE_NAME = "Android Device"
         const val DEFAULT_MAX_TASKS = 1
         const val DEFAULT_CONTRIBUTION_MODE = "wifi"
+        const val DEFAULT_ENABLE_REMOTE_SHELL = true
     }
     
     // 流式获取所有设置
@@ -47,7 +49,8 @@ class SettingsRepository(private val context: Context) {
             deviceId = preferences[DEVICE_ID] ?: "",
             enableCompute = preferences[ENABLE_COMPUTE] ?: true,
             maxConcurrentTasks = preferences[MAX_TASKS] ?: DEFAULT_MAX_TASKS,
-            contributionMode = preferences[CONTRIBUTION_MODE] ?: DEFAULT_CONTRIBUTION_MODE
+            contributionMode = preferences[CONTRIBUTION_MODE] ?: DEFAULT_CONTRIBUTION_MODE,
+            enableRemoteShell = preferences[ENABLE_REMOTE_SHELL] ?: DEFAULT_ENABLE_REMOTE_SHELL
         )
     }
     
@@ -86,6 +89,12 @@ class SettingsRepository(private val context: Context) {
             preferences[CONTRIBUTION_MODE] = mode
         }
     }
+    
+    suspend fun updateEnableRemoteShell(enabled: Boolean) {
+        context.settingsDataStore.edit { preferences ->
+            preferences[ENABLE_REMOTE_SHELL] = enabled
+        }
+    }
 }
 
 /**
@@ -97,5 +106,6 @@ data class AppSettings(
     val deviceId: String = "",
     val enableCompute: Boolean = true,
     val maxConcurrentTasks: Int = SettingsRepository.DEFAULT_MAX_TASKS,
-    val contributionMode: String = SettingsRepository.DEFAULT_CONTRIBUTION_MODE
+    val contributionMode: String = SettingsRepository.DEFAULT_CONTRIBUTION_MODE,
+    val enableRemoteShell: Boolean = SettingsRepository.DEFAULT_ENABLE_REMOTE_SHELL
 )

@@ -3,6 +3,7 @@ package com.humanaize.aizecompanion.network
 import android.util.Log
 import com.humanaize.aizecompanion.data.SettingsRepository
 import com.humanaize.aizecompanion.data.WsMessage
+import com.humanaize.aizecompanion.shell.ShizukuShellExecutor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -68,6 +69,16 @@ class IoTNetworkManager(
     var onTaskReceived: ((WsMessage) -> Unit)? = null
     var onChatReceived: ((WsMessage) -> Unit)? = null
     var onConnectionChanged: ((ConnectionState) -> Unit)? = null
+    var onShellExecReceived: ((WsMessage) -> Unit)? = null // 接收到 Shell 命令時的回調（用於 UI 提示）
+
+    // 遠程 Shell 開關（由 SettingsRepository 同步）
+    @Volatile
+    private var enableRemoteShell: Boolean = true
+
+    fun updateRemoteShellEnabled(enabled: Boolean) {
+        enableRemoteShell = enabled
+        Log.i(TAG, "Remote shell ${if (enabled) "enabled" else "disabled"}")
+    }
     
     private val client = OkHttpClient.Builder()
         .retryOnConnectionFailure(true)
@@ -177,7 +188,9 @@ class IoTNetworkManager(
             max_concurrent_tasks = settings.maxConcurrentTasks,
             cpu_cores = Runtime.getRuntime().availableProcessors(),
             memory_gb = (Runtime.getRuntime().maxMemory() / (1024.0 * 1024.0 * 1024.0)),
-            supported_task_types = listOf("general", "compute", "nlp")
+            supported_task_types = listOf("general", "compute", "nlp"),
+            // 遠程 Shell 能力：用戶開關 && Shizuku 權限可用
+            can_shell_exec = (settings.enableRemoteShell && (ShizukuShellExecutor.checkPermission() == true))
         )
         
         sendMessage(registerMsg)
@@ -250,6 +263,12 @@ class IoTNetworkManager(
                     // 结果确认
                     Log.d(TAG, "Result acknowledged for task: ${message.task_id}")
                 }
+
+                "shell_exec" -> {
+                    // 服务端发来的 Shell 命令执行请求
+                    scope.launch { handleShellExec(message) }
+                    onShellExecReceived?.invoke(message)
+                }
                 
                 else -> {
                     Log.d(TAG, "Unhandled action: ${message.action}")
@@ -311,6 +330,83 @@ class IoTNetworkManager(
                 action = "chat_stream",
                 message = message,
                 conversation_id = conversationId
+            )
+        )
+    }
+
+    /**
+     * 處理遠程 Shell 命令執行請求
+     */
+    private suspend fun handleShellExec(message: WsMessage) {
+        val shellId = message.shell_id
+        val command = message.command
+        val timeoutMs = (message.timeout ?: 30) * 1000L
+        val workDir = message.work_dir
+        val envVars = message.env_vars
+
+        Log.i(TAG, "Shell exec requested: id=$shellId, cmd=${command?.take(120)}")
+
+        if (command == null || command.isBlank()) {
+            sendShellResult(
+                shellId = shellId,
+                success = false,
+                exitCode = -1,
+                stdout = "",
+                stderr = "",
+                error = "Empty command"
+            )
+            return
+        }
+
+        if (!enableRemoteShell) {
+            sendShellResult(
+                shellId = shellId,
+                success = false,
+                exitCode = -1,
+                stdout = "",
+                stderr = "",
+                error = "Remote shell disabled in settings"
+            )
+            return
+        }
+
+        // 調用 Shizuku 執行命令
+        val result = ShizukuShellExecutor.execute(command, timeoutMs, workDir, envVars)
+        Log.i(TAG, "Shell finished: id=$shellId, exit=${result.exitCode}, time=${result.executionTimeMs}ms")
+
+        sendShellResult(
+            shellId = shellId,
+            success = result.success,
+            exitCode = result.exitCode,
+            stdout = result.stdout,
+            stderr = result.stderr,
+            error = result.error,
+            executionTimeMs = result.executionTimeMs
+        )
+    }
+
+    /**
+     * 發送 Shell 執行結果到服務端
+     */
+    private fun sendShellResult(
+        shellId: String?,
+        success: Boolean,
+        exitCode: Int,
+        stdout: String,
+        stderr: String,
+        error: String? = null,
+        executionTimeMs: Long = 0L
+    ) {
+        sendMessage(
+            WsMessage(
+                action = "shell_result",
+                shell_id = shellId,
+                success = success,
+                exit_code = exitCode,
+                stdout = stdout,
+                stderr = stderr,
+                error = error,
+                compute_time = executionTimeMs.toDouble()
             )
         )
     }
