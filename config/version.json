@@ -1,5 +1,5 @@
 {
-  "version": "2.2.4",
-  "last_updated": "2026-06-20T00:00:00.000000",
-  "release_notes": "v2.2.4修复：1.修复Agent和Skills模块多处bug;2.修复命令格式解析问题;3.改进Shell技能输出格式统一;4.添加Command Output滚动条;5.修复Skills Manager加载逻辑;6.添加language_adapter模块"
+  "version": "2.3.0",
+  "last_updated": "2026-08-06T00:00:00.000000",
+  "release_notes": "v2.3.0：1.添加IoT算力网络服务端，支持Android客户端设备注册/心跳/任务分发/多设备并行计算;2.添加boot -m iot启动模式;3.修复Windows安装程序版本号和路径配置;4.更新依赖添加websockets支持"
 }
