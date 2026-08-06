@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -28,6 +29,7 @@ import com.humanaize.aizecompanion.ui.viewmodel.MainViewModel
 @Composable
 fun SettingsScreen(viewModel: MainViewModel) {
     val settings by viewModel.settings.collectAsState()
+    val scope = rememberCoroutineScope()
     
     var serverAddressInput by remember { mutableStateOf(settings.serverAddress) }
     var deviceNameInput by remember { mutableStateOf(settings.deviceName) }
@@ -261,7 +263,115 @@ fun SettingsScreen(viewModel: MainViewModel) {
                 }
             }
         }
-        
+
+        // 遠程 Shell (Shizuku)
+        SectionHeader("遠程 Shell (Shizuku)")
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Shizuku 狀態
+                val shizukuStatus = remember { mutableStateOf<Boolean?>(null) }
+                LaunchedEffect(Unit) {
+                    shizukuStatus.value = viewModel.getShizukuStatus()
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Shizuku 服務狀態",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            text = when (shizukuStatus.value) {
+                                true -> "已授權（Shell 級別權限可用）"
+                                false -> "未授權，請點擊右側按鈕請求權限"
+                                null -> "未安裝或未啟動 Shizuku 服務"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = when (shizukuStatus.value) {
+                                true -> Color(0xFF4CAF50)
+                                false -> Color(0xFFFF6B35)
+                                null -> Color.Gray
+                            }
+                        )
+                    }
+                    if (shizukuStatus.value == false) {
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    val granted = viewModel.requestShizukuPermission()
+                                    shizukuStatus.value = if (granted) true else false
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFFF6B35)
+                            )
+                        ) {
+                            Text("授權")
+                        }
+                    }
+                }
+
+                SimpleDivider()
+
+                // 啟用遠程 Shell 開關
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "允許遠程 Shell 命令",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            text = "允許 Aize 透過 Shizuku 在本機執行 Shell 命令",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
+                        )
+                    }
+                    Switch(
+                        checked = settings.enableRemoteShell,
+                        onCheckedChange = {
+                            viewModel.updateRemoteShellEnabled(it)
+                            if (it) {
+                                scope.launch {
+                                    shizukuStatus.value = viewModel.getShizukuStatus()
+                                }
+                            }
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = Color(0xFFFF6B35)
+                        )
+                    )
+                }
+
+                SimpleDivider()
+
+                Text(
+                    text = "使用說明：\n" +
+                            "1. 安裝並啟動 Shizuku 應用\n" +
+                            "2. 點擊「授權」並在彈窗中允許\n" +
+                            "3. 開啟「允許遠程 Shell 命令」\n" +
+                            "4. 重新連接伺服器以更新能力上報",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
+            }
+        }
+
         // 关于
         SectionHeader("关于")
         

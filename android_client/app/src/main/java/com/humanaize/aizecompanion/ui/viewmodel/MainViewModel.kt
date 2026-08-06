@@ -71,6 +71,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             settingsRepo.settingsFlow.collect { settings ->
                 _settings.value = settings
+                // 同步遠程 Shell 開關到網絡管理器
+                networkManager.updateRemoteShellEnabled(settings.enableRemoteShell)
             }
         }
         
@@ -237,6 +239,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             settingsRepo.updateContributionMode(mode)
         }
+    }
+
+    /**
+     * 更新遠程 Shell 開關
+     */
+    fun updateRemoteShellEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepo.updateEnableRemoteShell(enabled)
+            networkManager.updateRemoteShellEnabled(enabled)
+        }
+    }
+
+    /**
+     * 查詢 Shizuku 服務狀態：null=未安裝/未啟動；true=已授權；false=未授權
+     */
+    fun getShizukuStatus(): Boolean? {
+        return com.humanaize.aizecompanion.shell.ShizukuShellExecutor.checkPermission()
+    }
+
+    /**
+     * 請求 Shizuku 權限（需在 Activity 上下文調用，Shizuku 會彈窗）
+     */
+    suspend fun requestShizukuPermission(): Boolean {
+        return com.humanaize.aizecompanion.shell.ShizukuShellExecutor.requestPermission()
     }
     
     /**
