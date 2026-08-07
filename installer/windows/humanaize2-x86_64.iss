@@ -19,8 +19,8 @@ OutputDir=installer\windows\output
 OutputBaseFilename=Humanaize2-Setup-x86_64-v2.2.6
 Compression=lzma2
 SolidCompression=yes
-ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64compatible
+ArchitecturesAllowed=x64
+ArchitecturesInstallIn64BitMode=x64
 PrivilegesRequired=admin
 LicenseFile=docs\LICENSE
 SetupIconFile=installer\windows\icon.ico
@@ -135,7 +135,7 @@ var
   dwResult: DWORD;
 begin
   // 安裝完成後廣播 WM_SETTINGCHANGE，讓新的 PATH 立即生效
-  if (CurStep = ssPostInstall) and WizardIsTaskSelected('addtopath') then
+  if (CurStep = ssPostInstall) and IsTaskSelected('addtopath') then
   begin
     SendMessageTimeout($FFFF, $001A, 0, 0, SMTO_ABORTIFHUNG, 5000, dwResult);
   end;

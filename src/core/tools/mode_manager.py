@@ -135,6 +135,14 @@ class ModeManager:
                     mode_args.append(params["sandbox"])
                 if params.get("gan"):
                     mode_args.append("-gan")
+                # 处理引用文件（支持单个字符串或列表）
+                references = params.get("reference")
+                if references:
+                    if isinstance(references, str):
+                        references = [references]
+                    for ref in references:
+                        mode_args.append("--reference")
+                        mode_args.append(ref)
                 solver.parse_args(mode_args)
             
             solver.set_problem(problem)

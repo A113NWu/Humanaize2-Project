@@ -21,6 +21,7 @@ from .gan_iteration import GANIteration
 from .enhanced_gan import EnhancedGAN
 from .skills_manager import SkillsManager
 from data.prompts_manager import load_solve_mode_todo_prompt, load_solve_mode_summary_prompt, load_solve_mode_task_prompt
+from utils.storage_manager import get_storage_manager
 
 
 class Task:
@@ -373,7 +374,11 @@ class SolveMode:
         self._start_time = None
         self.status_bar = SolveModeStatusBar(self._use_color)
         self._requires_text_output = False  # 是否需要生成文本内容
-        self._problem_type = "command"  # "command" 或 "text"
+        self._problem_type = "command"  # "command", "text", 或 "code"
+        self._generated_files: List[Dict] = []  # 生成的文件列表
+        self._project_output_dir: str = ""  # 項目輸出目錄
+        self._storage_manager = get_storage_manager()
+        self._code_generation_phase = "planning"  # planning, generating, verifying
         
     def _get_system_info(self) -> str:
         """获取当前系统环境信息"""
@@ -406,16 +411,33 @@ class SolveMode:
         return "\n".join(info)
     
     def _classify_problem_type(self) -> str:
-        """判断问题类型：'command' 或 'text'
+        """判断问题类型：'command', 'text', 或 'code'
         
         Returns:
             'command': 适合生成命令（安装、配置、修复等）
             'text': 需要生成文本内容（写作、报告、邮件等）
+            'code': 需要生成完整项目代码
         """
         if not self.problem:
             self._requires_text_output = False
             self._problem_type = "command"
             return "command"
+        
+        # 代碼生成關鍵詞（優先級最高）
+        code_keywords = [
+            "項目", "工程", "應用", "網站", "系統", "平台",
+            "project", "app", "application", "website", "webapp", "system", "platform",
+            "全棧", "frontend", "backend", "fullstack", "full-stack",
+            "代碼", "程式", "檔案", "文件", "模塊", "組件",
+            "code", "file", "module", "component", "class", "function",
+            "創建項目", "創建應用", "創建網站", "搭建", "開發",
+            "create project", "create app", "create website", "build project",
+            "生成代碼", "撰寫代碼", "寫代碼",
+            "generate code", "write code", "implement", "develop",
+            "目錄結構", "folder structure", "directory structure",
+            "package.json", "requirements.txt", "pom.xml",
+            "python項目", "web應用", "api", "restful", "database",
+        ]
         
         # 文本生成关键词
         text_keywords = [
@@ -430,23 +452,30 @@ class SolveMode:
         
         # 命令执行关键词
         command_keywords = [
-            "安装", "配置", "修复", "部署", "运行", "启动", "停止", "安装",
+            "安装", "配置", "修复", "部署", "运行", "启动", "停止",
             "install", "configure", "fix", "deploy", "run", "start", "stop",
             "bug", "error", "issue", "problem", "setup", "build", "compile",
             "debug", "test", "execute", "command", "terminal", "shell",
             "漏洞", "攻击", "扫描", "渗透", "exploit", "scan", "attack",
-            "代码", "程序", "脚本", "code", "program", "script",
-            "数据库", "network", "server", "database", "config"
+            "數據庫", "network", "server", "database", "config"
         ]
         
         problem_lower = self.problem.lower()
         
         # 计算关键词匹配得分
+        code_score = sum(1 for kw in code_keywords if kw.lower() in problem_lower)
         text_score = sum(1 for kw in text_keywords if kw.lower() in problem_lower)
         command_score = sum(1 for kw in command_keywords if kw.lower() in problem_lower)
         
-        # 如果明确要求生成文本
-        if text_score > 0 and text_score > command_score:
+        # 代碼生成優先（檢測到項目/應用創建需求）
+        if code_score >= 2 and code_score > command_score:
+            self._requires_text_output = True
+            self._problem_type = "code"
+            if self._use_color:
+                print(f"{Colors.CYAN}[MODE]{Colors.RESET}  Problem type: CODE GENERATION (will generate complete project files)")
+            else:
+                print("[MODE]  Problem type: CODE GENERATION (will generate complete project files)")
+        elif text_score > 0 and text_score > command_score:
             self._requires_text_output = True
             self._problem_type = "text"
             if self._use_color:
@@ -505,7 +534,7 @@ class SolveMode:
         
         self._print_header()
         
-        # 分类问题类型（命令模式或文本模式）
+        # 分类问题类型（command, text, 或 code）
         self._classify_problem_type()
         
         if not self._check_llm_server():
@@ -521,6 +550,10 @@ class SolveMode:
         # Check if enhanced GAN mode is enabled
         if self.enhanced_gan_enabled:
             return self._run_enhanced_gan_mode()
+        
+        # 代碼生成模式：使用專門的項目生成流程
+        if self._problem_type == "code":
+            return self._run_code_generation_mode()
         
         # Generate todo list (使用更短的 max_tokens 以节省算力)
         self._generate_todo_list()
@@ -545,6 +578,638 @@ class SolveMode:
         
         return summary
     
+    # ==================== 代碼生成模式 ====================
+
+    def _run_code_generation_mode(self) -> Dict:
+        """執行代碼生成模式：完整生成項目工程"""
+        if self._use_color:
+            print(f"{Colors.BOLD}{Colors.CYAN}" + "=" * 70 + f"{Colors.RESET}")
+            print(f"{Colors.BOLD}{Colors.CYAN}              CODE GENERATION MODE{Colors.RESET}")
+            print(f"{Colors.BOLD}{Colors.CYAN}" + "=" * 70 + f"{Colors.RESET}")
+        else:
+            print("=" * 70)
+            print("              CODE GENERATION MODE")
+            print("=" * 70)
+        
+        print()
+        
+        # Step 0: 檢查存儲空間
+        disk_info = self._storage_manager.get_disk_usage()
+        if disk_info.get("is_low_space"):
+            if self._use_color:
+                print(f"{Colors.YELLOW}[WARN]{Colors.RESET} Low disk space detected: {disk_info.get('percent_used')}% used")
+                print(f"{Colors.YELLOW}[CLEANUP]{Colors.RESET} Running automatic cleanup...")
+            else:
+                print(f"[WARN] Low disk space detected: {disk_info.get('percent_used')}% used")
+                print("[CLEANUP] Running automatic cleanup...")
+            cleanup_result = self._storage_manager.cleanup_all(aggressive=True)
+            if self._use_color:
+                print(f"{Colors.GREEN}[OK]{Colors.RESET} Cleanup completed: {cleanup_result.get('freed_total_mb', 0)} MB freed")
+            else:
+                print(f"[OK] Cleanup completed: {cleanup_result.get('freed_total_mb', 0)} MB freed")
+            print()
+        
+        # Step 1: 規劃項目結構
+        if self._use_color:
+            print(f"{Colors.BLUE}[INFO]{Colors.RESET} Step 1: Planning project structure...")
+        else:
+            print("[INFO] Step 1: Planning project structure...")
+        sys.stdout.flush()
+        
+        project_plan = self._plan_project_structure()
+        if not project_plan:
+            return {"status": "failed", "error": "Failed to plan project structure"}
+        
+        # Step 2: 創建項目目錄
+        self._project_output_dir = self._create_project_directory(project_plan)
+        if self._use_color:
+            print(f"{Colors.GREEN}[OK]{Colors.RESET} Project directory created: {self._project_output_dir}")
+        else:
+            print(f"[OK] Project directory created: {self._project_output_dir}")
+        
+        # Step 3: 逐文件生成代碼
+        if self._use_color:
+            print(f"\n{Colors.BLUE}[INFO]{Colors.RESET} Step 2: Generating project files...")
+        else:
+            print("\n[INFO] Step 2: Generating project files...")
+        sys.stdout.flush()
+        
+        total_files = len(project_plan.get("files", []))
+        generated_files = []
+        
+        # 二進制文件擴展名 - 這些文件無法用 LLM 生成，會跳過
+        BINARY_EXTENSIONS = {
+            '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.webp',
+            '.mp3', '.wav', '.ogg', '.flac', '.aac',
+            '.mp4', '.avi', '.mov', '.mkv', '.webm',
+            '.exe', '.dll', '.so', '.pyd', '.bin',
+            '.ttf', '.otf', '.woff', '.woff2',
+            '.zip', '.tar', '.gz', '.rar', '.7z',
+            '.pdf', '.doc', '.docx', '.xls', '.xlsx',
+        }
+
+        for idx, file_info in enumerate(project_plan.get("files", [])):
+            if not self._running:
+                break
+            
+            self._code_generation_phase = "generating"
+            
+            filename = file_info.get("path", f"file_{idx}.txt")
+            description = file_info.get("description", "")
+
+            # 跳過二進制文件（圖片、音頻、視頻等無法用 LLM 生成）
+            file_ext = os.path.splitext(filename)[1].lower()
+            if file_ext in BINARY_EXTENSIONS:
+                if self._use_color:
+                    print(f"{Colors.YELLOW}[SKIP]{Colors.RESET}  Binary file (not generatable): {filename}")
+                else:
+                    print(f"[SKIP]  Binary file (not generatable): {filename}")
+                continue
+            
+            if self._use_color:
+                print(f"\n{Colors.BOLD}[{idx+1}/{total_files}]{Colors.RESET} {filename}")
+                print(f"{Colors.DIM}  Purpose: {description}{Colors.RESET}")
+            else:
+                print(f"\n[{idx+1}/{total_files}] {filename}")
+                print(f"  Purpose: {description}")
+            sys.stdout.flush()
+            
+            # 生成單個文件的代碼
+            code_content = self._generate_single_file(
+                filename, description, self.problem, 
+                project_plan, generated_files
+            )
+            
+            if code_content:
+                # 寫入文件
+                file_path = os.path.join(self._project_output_dir, filename)
+                self._write_generated_file(file_path, code_content)
+                generated_files.append({
+                    "path": filename,
+                    "content": code_content,
+                    "size": len(code_content)
+                })
+                
+                if self._use_color:
+                    print(f"{Colors.GREEN}[OK]{Colors.RESET}  Generated: {filename} ({len(code_content)} chars)")
+                else:
+                    print(f"[OK]  Generated: {filename} ({len(code_content)} chars)")
+            else:
+                if self._use_color:
+                    print(f"{Colors.RED}[FAIL]{Colors.RESET}  Failed to generate: {filename}")
+                else:
+                    print(f"[FAIL]  Failed to generate: {filename}")
+        
+        # Step 4: 驗證與完成
+        self._code_generation_phase = "verifying"
+        
+        if self._use_color:
+            print(f"\n{Colors.BLUE}[INFO]{Colors.RESET} Step 3: Verifying generated project...")
+        else:
+            print("\n[INFO] Step 3: Verifying generated project...")
+        sys.stdout.flush()
+        
+        verification = self._verify_generated_project(generated_files, project_plan)
+        
+        # 生成結果摘要
+        if self._use_color:
+            print(f"\n{Colors.BOLD}{Colors.CYAN}" + "=" * 70 + f"{Colors.RESET}")
+            print(f"{Colors.BOLD}{Colors.CYAN}              CODE GENERATION COMPLETE{Colors.RESET}")
+            print(f"{Colors.BOLD}{Colors.CYAN}" + "=" * 70 + f"{Colors.RESET}")
+        else:
+            print("\n" + "=" * 70)
+            print("              CODE GENERATION COMPLETE")
+            print("=" * 70)
+        
+        if self._use_color:
+            print(f"\n{Colors.BLUE}Project Directory:{Colors.RESET} {self._project_output_dir}")
+            print(f"{Colors.BLUE}Files Generated:{Colors.RESET} {len(generated_files)}")
+            total_chars = sum(f.get("size", 0) for f in generated_files)
+            print(f"{Colors.BLUE}Total Code Size:{Colors.RESET} {total_chars} chars")
+        else:
+            print(f"\nProject Directory: {self._project_output_dir}")
+            print(f"Files Generated: {len(generated_files)}")
+            total_chars = sum(f.get("size", 0) for f in generated_files)
+            print(f"Total Code Size: {total_chars} chars")
+        
+        print()
+        
+        return {
+            "status": "completed",
+            "project_dir": self._project_output_dir,
+            "files_generated": len(generated_files),
+            "total_chars": total_chars,
+            "files": generated_files,
+            "verification": verification,
+            "problem": self.problem,
+            "project_plan": project_plan,
+        }
+    
+    def _plan_project_structure(self) -> Dict:
+        """規劃項目結構，返回文件列表"""
+        if self._use_color:
+            print(f"{Colors.YELLOW}[WAIT]{Colors.RESET}  AI is planning project structure...")
+        else:
+            print("[WAIT]  AI is planning project structure...")
+        sys.stdout.flush()
+        
+        system_info = f"OS: {platform.system()} | Python: {platform.python_version()}"
+        
+        planning_prompt = f"""{system_info}
+
+You are a senior software architect. Plan the complete file structure for this project:
+
+PROJECT REQUEST: {self.problem}
+
+Requirements:
+1. List ALL files needed with their full paths (relative to project root)
+2. For each file, provide a brief description of its purpose
+3. Include ALL necessary configuration files (package.json, requirements.txt, etc.)
+4. Include test files if appropriate
+5. Organize files by directory structure
+
+CRITICAL - NO BINARY FILES:
+- Do NOT include image files (.png, .jpg, .jpeg, .gif, .bmp, .ico, .webp, .svg binary)
+- Do NOT include audio files (.mp3, .wav, .ogg, .flac)
+- Do NOT include video files (.mp4, .avi, .mov)
+- Do NOT include compiled binaries (.exe, .dll, .so, .pyd)
+- Do NOT include font files (.ttf, .otf, .woff, .woff2)
+- For games or GUI apps, use CODE-GENERATED graphics (Canvas API, CSS, SVG as text, Unicode symbols, emoji)
+- For assets, create placeholder text files or use inline data URIs in code
+- All files must be text-based and generatable as source code
+
+Respond with a JSON array in this exact format:
+[
+  {{"path": "src/main.py", "description": "Main entry point of the application"}},
+  {{"path": "src/utils/helper.py", "description": "Utility helper functions"}},
+  {{"path": "requirements.txt", "description": "Python dependencies"}}
+]
+
+IMPORTANT: List EVERY file needed. Be comprehensive. Do NOT skip any files.
+All files MUST be text-based source code or configuration files.
+"""
+        
+        try:
+            response = chat(planning_prompt, max_tokens=1024)
+            
+            if not response:
+                if self._use_color:
+                    print(f"{Colors.YELLOW}[WARN]{Colors.RESET} Empty response from AI, using default structure")
+                else:
+                    print("[WARN] Empty response from AI, using default structure")
+                return self._get_default_project_plan()
+            
+            # 解析響應為項目計劃
+            project_plan = self._parse_project_plan(response)
+            
+            if project_plan and project_plan.get("files"):
+                if self._use_color:
+                    print(f"{Colors.GREEN}[OK]{Colors.RESET}  Project plan generated: {len(project_plan['files'])} files")
+                else:
+                    print(f"[OK]  Project plan generated: {len(project_plan['files'])} files")
+                return project_plan
+            
+        except Exception as e:
+            if self._use_color:
+                print(f"{Colors.YELLOW}[WARN]{Colors.RESET} Planning error: {e}")
+            else:
+                print(f"[WARN] Planning error: {e}")
+        
+        if self._use_color:
+            print(f"{Colors.YELLOW}[WARN]{Colors.RESET} Using default project structure")
+        else:
+            print("[WARN] Using default project structure")
+        return self._get_default_project_plan()
+    
+    def _parse_project_plan(self, response: str) -> Dict:
+        """解析 AI 返回的項目計劃"""
+        if not response:
+            return self._get_default_project_plan()
+        
+        cleaned = response.strip()
+        
+        # 嘗試多種解析方式
+        # 方式1: 直接 JSON 解析
+        try:
+            data = json.loads(cleaned)
+            if isinstance(data, list):
+                return {"files": self._normalize_file_list(data)}
+        except (json.JSONDecodeError, ValueError):
+            pass
+        
+        # 方式2: 提取 JSON 數組
+        json_match = re.search(r'\[[\s\S]*\]', cleaned)
+        if json_match:
+            try:
+                data = json.loads(json_match.group())
+                if isinstance(data, list):
+                    return {"files": self._normalize_file_list(data)}
+            except (json.JSONDecodeError, ValueError):
+                pass
+        
+        # 方式3: 逐行解析
+        files = []
+        lines = cleaned.split('\n')
+        for line in lines:
+            # 匹配 "path": "..." 或 "path": "..." 格式
+            path_match = re.search(r'"path"\s*:\s*"([^"]+)"', line)
+            desc_match = re.search(r'"description"\s*:\s*"([^"]*)"', line)
+            if path_match:
+                path = path_match.group(1)
+                desc = desc_match.group(1) if desc_match else ""
+                files.append({"path": path, "description": desc})
+        
+        if files:
+            return {"files": files}
+        
+        return self._get_default_project_plan()
+    
+    def _normalize_file_list(self, data: list) -> list:
+        """標準化文件列表"""
+        files = []
+        for item in data:
+            if isinstance(item, dict) and "path" in item:
+                files.append({
+                    "path": str(item["path"]),
+                    "description": str(item.get("description", ""))
+                })
+        return files
+    
+    def _get_default_project_plan(self) -> Dict:
+        """獲取默認項目計劃"""
+        return {
+            "files": [
+                {"path": "README.md", "description": "項目說明文檔"},
+                {"path": "requirements.txt", "description": "Python 依賴列表"},
+                {"path": "src/main.py", "description": "主程序入口"},
+                {"path": "src/__init__.py", "description": "包初始化文件"},
+                {"path": "src/config.py", "description": "配置模塊"},
+                {"path": "src/utils/__init__.py", "description": "工具包初始化"},
+                {"path": "src/utils/helpers.py", "description": "輔助函數"},
+            ]
+        }
+    
+    def _create_project_directory(self, project_plan: Dict) -> str:
+        """創建項目目錄結構"""
+        project_dir = self._storage_manager.create_temp_dir(
+            prefix="project_",
+            suffix=f"_{int(time.time())}"
+        )
+        
+        # 創建子目錄
+        for file_info in project_plan.get("files", []):
+            filepath = file_info.get("path", "")
+            dirpath = os.path.dirname(filepath)
+            if dirpath:
+                full_dir = os.path.join(project_dir, dirpath)
+                os.makedirs(full_dir, exist_ok=True)
+        
+        return project_dir
+    
+    def _generate_single_file(self, filename: str, description: str, problem: str, 
+                               project_plan: Dict, existing_files: List[Dict]) -> Optional[str]:
+        """生成單個文件的完整代碼"""
+        if self._use_color:
+            print(f"{Colors.DIM}  Generating code for {filename}...{Colors.RESET}")
+        else:
+            print(f"  Generating code for {filename}...")
+        sys.stdout.flush()
+        
+        # 構建已有文件的上下文（用於引用）
+        existing_context = ""
+        if existing_files:
+            existing_context = "\n\nEXISTING FILES (for reference):\n"
+            for f in existing_files[-3:]:  # 只包含最近 3 個文件
+                existing_context += f"\n--- {f['path']} ---\n"
+                content_preview = f['content'][:500]
+                existing_context += content_preview
+                if len(f['content']) > 500:
+                    existing_context += "\n... (truncated for brevity)"
+        
+        system_info = f"OS: {platform.system()} | Python: {platform.python_version()}"
+        
+        # 根據文件類型決定 max_tokens
+        file_ext = os.path.splitext(filename)[1].lower()
+        code_extensions = ['.py', '.js', '.ts', '.java', '.cpp', '.h', '.c', '.html', '.css', '.vue', '.jsx', '.tsx']
+        
+        if file_ext in code_extensions:
+            max_tokens = 4096  # 代碼文件需要更多 token
+        elif file_ext in ['.json', '.yaml', '.yml', '.xml', '.toml', '.cfg', '.ini']:
+            max_tokens = 2048  # 配置文件
+        elif file_ext in ['.md', '.txt', '.rst']:
+            max_tokens = 1024  # 文檔
+        else:
+            max_tokens = 2048
+        
+        generation_prompt = f"""{system_info}
+
+You are an expert software engineer. Generate the COMPLETE content for this file.
+
+PROJECT: {problem}
+FILE TO GENERATE: {filename}
+PURPOSE: {description}
+{existing_context}
+
+IMPORTANT RULES:
+1. Generate the COMPLETE file content - do NOT truncate or abbreviate
+2. Include ALL necessary code, imports, classes, functions
+3. Use proper indentation and formatting
+4. Ensure the code is production-quality and ready to use
+5. If the file is long, generate it ALL - do NOT use "...", "// ...", or any placeholder
+6. Write EVERYTHING needed for this file to be complete
+7. Do NOT reference or load external image/audio/video files - use code-generated graphics instead
+8. For games: use Canvas API, CSS shapes, Unicode/emoji symbols, or SVG (as text) for all visuals
+
+Respond with ONLY the file content (no explanations, no markdown, no code fences).
+Start writing the file content now:
+"""
+        
+        try:
+            response = chat(generation_prompt, max_tokens=max_tokens, temperature=0.7)
+            
+            if response and response.strip():
+                # 清理響應
+                content = self._clean_generated_code(response, filename)
+                if content and len(content.strip()) > 10:
+                    # 檢查是否被截斷
+                    if self._is_truncated(content):
+                        if self._use_color:
+                            print(f"{Colors.YELLOW}[WARN]{Colors.RESET}  Output appears truncated, continuing generation...")
+                        else:
+                            print("[WARN]  Output appears truncated, continuing generation...")
+                        # 繼續生成剩餘部分
+                        content = self._continue_generation(
+                            content, filename, description, problem, max_tokens
+                        )
+                    return content
+                else:
+                    if self._use_color:
+                        print(f"{Colors.YELLOW}[WARN]{Colors.RESET}  Generated content too short")
+                    else:
+                        print("[WARN]  Generated content too short")
+                    return None
+            else:
+                if self._use_color:
+                    print(f"{Colors.RED}[ERROR]{Colors.RESET}  Empty response from AI")
+                else:
+                    print("[ERROR]  Empty response from AI")
+                return None
+                
+        except Exception as e:
+            if self._use_color:
+                print(f"{Colors.RED}[ERROR]{Colors.RESET}  Generation error: {e}")
+            else:
+                print(f"[ERROR]  Generation error: {e}")
+            return None
+    
+    def _clean_generated_code(self, content: str, filename: str) -> str:
+        """清理生成的代碼"""
+        cleaned = content.strip()
+        
+        # 移除 Markdown 代碼塊標記
+        cleaned = re.sub(r'```[a-zA-Z0-9_-]*\s*', '', cleaned)
+        cleaned = re.sub(r'\s*```', '', cleaned)
+        
+        # 移除開頭的說明文字
+        if filename.endswith('.py'):
+            # Python 文件：確保開頭是 import 或註釋
+            lines = cleaned.split('\n')
+            start_idx = 0
+            for i, line in enumerate(lines):
+                stripped = line.strip()
+                if stripped and not stripped.startswith('#') and not stripped.startswith("'") and not stripped.startswith('"'):
+                    if not stripped.startswith('import') and not stripped.startswith('from') and not stripped.startswith('class') and not stripped.startswith('def'):
+                        # 可能是說明文字，跳過
+                        if i < 5 and len(stripped) > 20:
+                            start_idx = i + 1
+                            continue
+                    break
+            if start_idx > 0:
+                cleaned = '\n'.join(lines[start_idx:])
+        
+        return cleaned.strip()
+    
+    def _is_truncated(self, content: str) -> bool:
+        """檢測生成的內容是否被截斷"""
+        # 檢查常見的截斷跡象
+        truncation_patterns = [
+            r'\.\.\.$',                    # 以省略號結尾
+            r'\.\.\)\s*$',                 # 省略號加右括號
+            r'\.\.\]\s*$',                 # 省略號加右方括號
+            r'\.\.\}\s*$',                 # 省略號加右花括號
+            r'\.\.\);\s*$',                # 省略號加右括號加分號
+            r'//\s*...\s*$',               # C 風格註釋省略
+            r'#\s*(rest|continues|more)',  # Python 風格
+            r'\.\.\.\s*$',                 # 多個點
+            r'\\$',                        # 未轉義的反斜杠
+            r'\[truncated\]',              # 明確的截斷標記
+            r'\[...\]',                    # 省略號標記
+        ]
+        
+        for pattern in truncation_patterns:
+            if re.search(pattern, content, re.IGNORECASE):
+                return True
+        
+        # 檢查是否以不完整的代碼結構結尾
+        last_lines = content.split('\n')[-5:]
+        joined = '\n'.join(last_lines)
+        
+        # 檢查未關閉的括號
+        open_braces = content.count('{') - content.count('}')
+        open_parens = content.count('(') - content.count(')')
+        open_brackets = content.count('[') - content.count(']')
+        
+        if open_braces > 0 or open_parens > 0 or open_brackets > 0:
+            return True
+        
+        # 檢查是否在語句中間截斷
+        if joined.count('\n') < 5 and len(content) > 100:
+            # 如果最後一行以未完結的字符結尾
+            last_char = content[-1] if content else ''
+            if last_char in '.,;:=+\\-*/&|<>!?':
+                return True
+        
+        return False
+    
+    def _continue_generation(self, existing_content: str, filename: str, 
+                               description: str, problem: str, max_tokens: int) -> str:
+        """繼續生成被截斷的內容"""
+        if self._use_color:
+            print(f"{Colors.DIM}  Continuing generation...{Colors.RESET}")
+        else:
+            print("  Continuing generation...")
+        sys.stdout.flush()
+        
+        # 取最後一部分內容作為上下文
+        context_lines = existing_content.split('\n')
+        # 從倒數第 20 行開始作為上下文
+        start_from = max(0, len(context_lines) - 20)
+        context = '\n'.join(context_lines[start_from:])
+        
+        system_info = f"OS: {platform.system()} | Python: {platform.python_version()}"
+        
+        continue_prompt = f"""{system_info}
+
+The following code was being generated but got truncated. Continue from where it left off.
+
+ORIGINAL REQUEST: {problem}
+FILE: {filename}
+PURPOSE: {description}
+
+THE CODE SO FAR (last portion):
+```
+{context}
+```
+
+IMPORTANT:
+1. Continue writing from where the code ends
+2. Generate the COMPLETE remaining code
+3. Do NOT repeat what's already been written
+4. Ensure all functions, classes, and blocks are properly closed
+5. Output ONLY the continuation - no explanations
+
+Continue the code now:
+"""
+        
+        try:
+            continuation = chat(continue_prompt, max_tokens=max_tokens, temperature=0.7)
+            
+            if continuation and continuation.strip():
+                # 組合完整內容
+                # 移除重複的部分（從最後一個完整語句之後開始）
+                combined = existing_content.rstrip() + '\n' + self._clean_generated_code(continuation, filename)
+                
+                # 再次檢查是否截斷
+                if self._is_truncated(combined):
+                    # 最多再繼續一次
+                    if self._use_color:
+                        print(f"{Colors.YELLOW}[WARN]{Colors.RESET}  Still truncated, one more continuation...")
+                    else:
+                        print("[WARN]  Still truncated, one more continuation...")
+                    combined = self._continue_generation(
+                        combined, filename, description, problem, max_tokens
+                    )
+                
+                return combined
+            else:
+                return existing_content
+                
+        except Exception as e:
+            if self._use_color:
+                print(f"{Colors.RED}[ERROR]{Colors.RESET}  Continuation error: {e}")
+            else:
+                print(f"[ERROR]  Continuation error: {e}")
+            return existing_content
+    
+    def _write_generated_file(self, file_path: str, content: str):
+        """寫入生成的文件"""
+        try:
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+        except Exception as e:
+            if self._use_color:
+                print(f"{Colors.RED}[ERROR]{Colors.RESET}  Failed to write {file_path}: {e}")
+            else:
+                print(f"[ERROR]  Failed to write {file_path}: {e}")
+    
+    def _verify_generated_project(self, generated_files: List[Dict], project_plan: Dict) -> Dict:
+        """驗證生成的項目"""
+        verification = {
+            "total_files_planned": len(project_plan.get("files", [])),
+            "total_files_generated": len(generated_files),
+            "files": [],
+            "issues": []
+        }
+        
+        # 檢查缺失的文件
+        planned_paths = set(f.get("path", "") for f in project_plan.get("files", []))
+        generated_paths = set(f.get("path", "") for f in generated_files)
+        
+        missing = planned_paths - generated_paths
+        for m in missing:
+            verification["issues"].append(f"Missing file: {m}")
+        
+        # 檢查每個文件
+        for file_info in generated_files:
+            path = file_info.get("path", "")
+            content = file_info.get("content", "")
+            issues = []
+            
+            # 檢查文件大小
+            if len(content) < 20:
+                issues.append("File content too short (< 20 chars)")
+            
+            # 檢查常見問題
+            if content.count('placeholder') > 0 or content.count('TODO') > 3:
+                issues.append("Contains placeholders/TODOs")
+            
+            # 檢查 Python 文件的基本語法
+            if path.endswith('.py') and content:
+                try:
+                    compile(content, path, 'exec')
+                except SyntaxError as e:
+                    issues.append(f"Python syntax error: {e}")
+            
+            verification["files"].append({
+                "path": path,
+                "size": len(content),
+                "issues": issues
+            })
+        
+        verification["has_issues"] = len(verification["issues"]) > 0 or any(
+            f.get("issues", []) for f in verification["files"]
+        )
+        
+        if self._use_color:
+            status = f"{Colors.GREEN}PASS{Colors.RESET}" if not verification["has_issues"] else f"{Colors.YELLOW}WARNINGS{Colors.RESET}"
+            print(f"{Colors.BLUE}Verification:{Colors.RESET} {status}")
+        else:
+            status = "PASS" if not verification["has_issues"] else "WARNINGS"
+            print(f"Verification: {status}")
+        
+        return verification
+
     def _run_enhanced_gan_mode(self) -> Dict:
         """Execute solve mode with enhanced GAN two-phase execution"""
         if self._use_color:
@@ -716,10 +1381,11 @@ class SolveMode:
                     print(f"[WAIT]  AI is generating task list... (attempt {attempt + 1}/{max_retries + 1})")
                 sys.stdout.flush()
                 
-                # 减少 max_tokens 以节省算力（从 512 降到 256）
+                # 根據問題類型調整 max_tokens
                 progress_start = time_module.time()
+                todo_max_tokens = 512 if self._problem_type == "code" else 256
                 
-                response = chat(prompt, max_tokens=256)
+                response = chat(prompt, max_tokens=todo_max_tokens)
                 
                 elapsed = time_module.time() - progress_start
                 if self._use_color:
@@ -1112,7 +1778,7 @@ class SolveMode:
         return f"[{'=' * filled}{' ' * empty}]"
     
     def _process_task(self, task: Task) -> str:
-        """Process the actual task logic (optimized for efficiency)"""
+        """Process the actual task logic (優化版 - 支持代碼生成)"""
         try:
             # Include HSN collaboration if enabled (精简版)
             hsn_context = ""
@@ -1132,16 +1798,28 @@ class SolveMode:
             system_info = f"OS: {platform.system()} | Python: {platform.python_version()}"
             
             # 根据问题类型选择输出模式
-            output_mode = "text" if self._requires_text_output else "command"
+            output_mode = self._problem_type
             
             prompt = system_info + "\n\n" + load_solve_mode_task_prompt(
                 task.title, task.description, self.problem, 
                 hsn_context + skills_context, output_mode
             )
             
-            # 减少技能调用次数以节省算力（从 5 降到 2）
-            max_skill_calls = 2
-            max_retries_without_skill = 1  # 减少重试次数
+            # 根據輸出模式調整參數
+            if self._problem_type == "code":
+                # 代碼模式：更大的 max_tokens，更多的技能調用
+                max_skill_calls = 3
+                max_tokens = 2048
+            elif self._requires_text_output:
+                # 文本模式：中等參數
+                max_skill_calls = 2
+                max_tokens = 1024
+            else:
+                # 命令模式：最小參數
+                max_skill_calls = 2
+                max_tokens = 512
+            
+            max_retries_without_skill = 1
             skill_calls_made = 0
             retries_without_skill = 0
             previous_results = ""
@@ -1163,8 +1841,8 @@ class SolveMode:
                 sys.stdout.flush()
                 
                 try:
-                    # 减少 max_tokens 以节省算力
-                    response = chat(prompt_with_history, max_tokens=200)
+                    # 使用調整後的 max_tokens
+                    response = chat(prompt_with_history, max_tokens=max_tokens)
                     if self._use_color:
                         print(f"{Colors.GREEN}{response}{Colors.RESET}")
                     else:
@@ -1241,20 +1919,19 @@ class SolveMode:
                     retries_without_skill += 1
                     continue
                 
-                # 直接返回结果（不再等待 supervisor 检查）
+                # 直接返回結果 - 不再截斷
                 if self._use_color:
                     print(f"\n{Colors.YELLOW}[INFO]{Colors.RESET} Using direct response")
                 else:
                     print(f"\n[INFO] Using direct response")
                 
                 task.status = Task.STATUS_COMPLETED
-                # 根据输出模式调整返回长度
-                max_return_len = 500 if self._requires_text_output else 200
-                return response[:max_return_len]
+                # 返回完整內容，不截斷
+                return response
             
             # Max skill calls reached
             task.status = Task.STATUS_COMPLETED
-            return f"Task completed with {skill_calls_made} skill invocations.\n\nFinal: {response[:200]}"
+            return f"Task completed with {skill_calls_made} skill invocations.\n\nFinal: {response}"
         
         except Exception as e:
             if self._use_color:

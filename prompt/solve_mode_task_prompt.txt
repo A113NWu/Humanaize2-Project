@@ -24,13 +24,26 @@ When output mode is "text":
 - Generate the requested text content
 - Follow the task requirements closely
 - Keep output concise and to the point
+- Can be longer if needed for comprehensive content
+
+## CODE MODE (For project code generation)
+When output mode is "code":
+- Generate COMPLETE, production-quality code
+- Include ALL necessary imports, classes, functions
+- Write the FULL implementation - never truncate or abbreviate
+- Use proper language-specific formatting and conventions
+- If the task involves file operations, specify the file path in a comment
+- Output format: pure code (no markdown, no explanations)
+- The code must be complete enough to run/use immediately
 
 ## GENERAL RULES
 - NEVER write placeholder code like "..." or "(and so on)"
-- NO Markdown formatting (#, *, -, 1.)
-- NO introductions or explanations
+- NEVER use "// ..." or "# ..." to indicate continuation
+- NO Markdown formatting headers (#, *, -, 1.)
+- NO introductions or explanations before the actual output
 - NO filler phrases
-- Keep response under 300 characters for command mode
-- Keep response under 500 characters for text mode
+- For command mode: keep response under 300 characters
+- For text mode: can be longer as needed
+- For code mode: generate the COMPLETE code, regardless of length
 
 Output your solution now.

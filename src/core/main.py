@@ -17,6 +17,7 @@ import os
 import random
 import subprocess
 import threading
+from typing import Dict
 
 # 添加项目根目录和 src 目录到 Python 路径
 src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -184,6 +185,87 @@ def _kill_process_on_port(port: int = 8080) -> bool:
     return False
 
 
+def _detect_hardware() -> Dict:
+    """检测GPU和系统内存，返回硬件信息用于调整启动参数"""
+    import shutil as _shutil
+
+    result = {
+        "has_gpu": False,
+        "gpu_type": None,
+        "vram_mb": 0,
+        "ram_total_gb": 0,
+        "ram_free_gb": 0,
+        "llama_dir": "",
+    }
+
+    llama_dir = os.path.dirname(_get_llama_server_path())
+    result["llama_dir"] = llama_dir
+
+    # 检查 llama 后端 DLL（cuda / vulkan / hip / metal）
+    gpu_backends = [
+        ("ggml-cuda.dll", "cuda"),
+        ("ggml-vulkan.dll", "vulkan"),
+        ("ggml-hip.dll", "hip"),
+        ("ggml-metal.dll", "metal"),
+    ]
+    for dll_name, gpu_type in gpu_backends:
+        if os.path.exists(os.path.join(llama_dir, dll_name)):
+            result["has_gpu"] = True
+            result["gpu_type"] = gpu_type
+            break
+
+    # 用 nvidia-smi 做更准确的检测（含显存大小）
+    if not result["has_gpu"]:
+        nvidia_smi = _shutil.which("nvidia-smi")
+        if nvidia_smi:
+            try:
+                proc = subprocess.run(
+                    [nvidia_smi, "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+                    capture_output=True, text=True, timeout=5
+                )
+                if proc.returncode == 0 and proc.stdout.strip():
+                    result["has_gpu"] = True
+                    result["gpu_type"] = "cuda"
+                    result["vram_mb"] = int(proc.stdout.strip().split('\n')[0].strip())
+            except Exception:
+                pass
+
+    # 检查系统内存
+    try:
+        import psutil
+        mem = psutil.virtual_memory()
+        result["ram_total_gb"] = round(mem.total / (1024**3), 1)
+        result["ram_free_gb"] = round(mem.available / (1024**3), 1)
+    except Exception:
+        try:
+            proc = subprocess.run(["free", "-b"], capture_output=True, text=True, timeout=3)
+            if proc.returncode == 0:
+                lines = proc.stdout.strip().split('\n')
+                if len(lines) >= 2:
+                    parts = lines[1].split()
+                    if len(parts) >= 2:
+                        result["ram_total_gb"] = round(int(parts[1]) / (1024**3), 1)
+                        if len(parts) >= 7:
+                            result["ram_free_gb"] = round(int(parts[6]) / (1024**3), 1)
+        except Exception:
+            pass
+
+    return result
+
+
+def _build_llm_args(server_path, model_path, hw_info, ctx_size=4096, max_tokens=256):
+    """根据硬件情况构建 llama-server 启动参数"""
+    ngl = 999 if hw_info.get("has_gpu", False) else 0
+    return [
+        server_path, "-m", model_path,
+        "-c", str(ctx_size),
+        "-ngl", str(ngl),
+        "--host", "127.0.0.1",
+        "--port", "8080",
+        "-n", str(max_tokens),
+    ]
+
+
 def _check_and_start_server(max_wait: int = 120, force_restart: bool = False) -> bool:
     """檢查LLM伺服器是否執行，若未執行則自動啟動，並等待伺服器完全啟動
     
@@ -195,16 +277,25 @@ def _check_and_start_server(max_wait: int = 120, force_restart: bool = False) ->
     import time
 
     print("[INFO] Checking LLM server...")
-    
+
     target_model_path = _get_model_path()
     model_name = os.path.basename(target_model_path)
-    
+
+    # 检测硬件
+    hw_info = _detect_hardware()
+    hw_desc = f"GPU: {'Yes (' + hw_info['gpu_type'] + ')' if hw_info['has_gpu'] else 'No'}"
+    if hw_info.get("vram_mb", 0) > 0:
+        hw_desc += f", VRAM: {hw_info['vram_mb']} MB"
+    if hw_info.get("ram_total_gb", 0) > 0:
+        hw_desc += f", RAM: {hw_info['ram_total_gb']} GB (free: {hw_info['ram_free_gb']} GB)"
+
     print("=" * 60)
     print(f"[MODEL] Model Name: {model_name}")
     print(f"[MODEL] Model Path: {target_model_path}")
     print(f"[MODEL] File Exists: {'Yes' if os.path.exists(target_model_path) else 'No'}")
+    print(f"[HARDWARE] {hw_desc}")
     print("=" * 60)
-    
+
     if check_llm_server() and not force_restart:
         print("[INFO] LLM server is already running.")
         return True
@@ -233,44 +324,145 @@ def _check_and_start_server(max_wait: int = 120, force_restart: bool = False) ->
         print("[ERROR] Model file not found at:", model_path)
         return False
 
+    # 将 llama-server 的输出写入日志文件，便于诊断崩溃原因
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    log_dir = os.path.join(project_root, "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    server_log_path = os.path.join(log_dir, "llama_server.log")
+
+    # CPU 模式下，根据内存情况调整参数
+    # 模型文件大小（GB）作为粗略参考
+    model_size_gb = 0
     try:
-        if sys.platform == "win32" or os.name == "nt":
-            process = subprocess.Popen(
-                [server_path, "-m", model_path, "-c", "4096", "-ngl", "999", "--host", "127.0.0.1", "--port", "8080", "-n", "256"],
-                cwd=os.path.dirname(server_path),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-            )
+        model_size_gb = os.path.getsize(model_path) / (1024**3)
+    except Exception:
+        pass
+
+    # 候选参数方案：(ctx_size, max_tokens, 描述)
+    if hw_info.get("has_gpu", False):
+        configs = [
+            (4096, 256, "GPU 模式 - 标准参数"),
+        ]
+    else:
+        # CPU 模式：逐级降级
+        free_ram_gb = hw_info.get("ram_free_gb", 0)
+        if model_size_gb > 0 and free_ram_gb > 0:
+            # 模型 > 可用内存时，必须大幅降低上下文
+            if model_size_gb > free_ram_gb * 0.9:
+                print(f"[WARN] 模型大小 ({model_size_gb:.1f} GB) 接近或超过可用内存 ({free_ram_gb:.1f} GB)，将使用最小参数")
+                configs = [
+                    (512, 64, "CPU 模式 - 内存不足，最小参数"),
+                    (1024, 64, "CPU 模式 - 低内存参数"),
+                    (2048, 128, "CPU 模式 - 保守参数"),
+                ]
+            elif model_size_gb > free_ram_gb * 0.7:
+                configs = [
+                    (1024, 64, "CPU 模式 - 内存紧张"),
+                    (2048, 128, "CPU 模式 - 低内存参数"),
+                    (4096, 256, "CPU 模式 - 标准参数"),
+                ]
+            else:
+                configs = [
+                    (2048, 128, "CPU 模式 - 保守参数"),
+                    (4096, 256, "CPU 模式 - 标准参数"),
+                ]
         else:
+            configs = [
+                (2048, 128, "CPU 模式 - 保守参数"),
+                (4096, 256, "CPU 模式 - 标准参数"),
+            ]
+
+    last_error_log = ""
+    creation_flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+
+    for cfg_idx, (ctx_size, max_tokens, cfg_desc) in enumerate(configs):
+        print(f"[INFO] Attempt {cfg_idx + 1}/{len(configs)}: {cfg_desc} (ctx={ctx_size}, n={max_tokens})")
+
+        # 写日志文件
+        server_log_file = open(server_log_path, "w", encoding="utf-8")
+
+        args = _build_llm_args(server_path, model_path, hw_info, ctx_size, max_tokens)
+
+        try:
             process = subprocess.Popen(
-                [server_path, "-m", model_path, "-c", "4096", "-ngl", "999", "--host", "127.0.0.1", "--port", "8080", "-n", "256"],
+                args,
                 cwd=os.path.dirname(server_path),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+                stdout=server_log_file,
+                stderr=subprocess.STDOUT,
+                creationflags=creation_flags,
             )
 
-        print("[INFO] Waiting for LLM server to start...")
-        for attempt in range(max_wait):
-            time.sleep(1)
-            
-            if process.poll() is not None:
-                print("[ERROR] LLM server crashed on startup")
-                return False
-                
-            if check_llm_server():
-                print("[INFO] LLM server started successfully!")
-                return True
-            if (attempt + 1) % 10 == 0:
-                print(f"[INFO] Waiting for LLM server... ({attempt + 1}/{max_wait}s)")
+            print(f"[INFO] Waiting for LLM server to start (ctx={ctx_size})...")
+            for attempt in range(max_wait):
+                time.sleep(1)
 
-        print("[ERROR] LLM server failed to start within timeout.")
-        process.terminate()
-        return False
+                if process.poll() is not None:
+                    print("[ERROR] LLM server crashed on startup")
+                    server_log_file.flush()
+                    server_log_file.close()
 
-    except Exception as e:
-        print("[ERROR] Failed to start server:", str(e))
-        return False
+                    # 读取日志
+                    try:
+                        with open(server_log_path, "r", encoding="utf-8", errors="replace") as f:
+                            log_content = f.read().strip()
+                        if log_content:
+                            last_error_log = log_content
+                            print("[ERROR] ---- llama-server output ----")
+                            print(log_content[-3000:])
+                            print("[ERROR] ---- end of output ----")
+                        print(f"[INFO] Full log saved to: {server_log_path}")
+                    except Exception as read_err:
+                        print(f"[ERROR] Failed to read server log: {read_err}")
+
+                    # 检测是否为内存不足错误，决定是否重试
+                    is_oom = any(kw in log_content.lower() for kw in [
+                        "out of memory", "oom", "failed to allocate",
+                        "cannot allocate", "memory", "unable to fit",
+                        "fatal", "alloc",
+                    ])
+                    if is_oom and cfg_idx < len(configs) - 1:
+                        print(f"[WARN] Memory allocation failed, retrying with lower parameters...")
+                        # 清理端口
+                        if _is_port_in_use(8080):
+                            _kill_process_on_port(8080)
+                            time.sleep(1)
+                        continue
+                    return False
+
+                if check_llm_server():
+                    print(f"[INFO] LLM server started successfully! (ctx={ctx_size})")
+                    server_log_file.close()
+                    return True
+
+                if (attempt + 1) % 10 == 0:
+                    print(f"[INFO] Waiting for LLM server... ({attempt + 1}/{max_wait}s)")
+
+            # 超时
+            print("[ERROR] LLM server failed to start within timeout.")
+            process.terminate()
+            server_log_file.close()
+
+            if cfg_idx < len(configs) - 1:
+                print(f"[WARN] Timeout with current config, trying lower parameters...")
+                if _is_port_in_use(8080):
+                    _kill_process_on_port(8080)
+                    time.sleep(1)
+                continue
+            return False
+
+        except Exception as e:
+            server_log_file.close()
+            print(f"[ERROR] Failed to start server: {e}")
+            if cfg_idx < len(configs) - 1:
+                continue
+            return False
+
+    # 所有配置都失败
+    if last_error_log:
+        print("[ERROR] All startup attempts failed. Last error output shown above.")
+        print(f"[INFO] Suggestion: The model ({model_size_gb:.1f} GB) may be too large for available RAM.")
+        print(f"[INFO] Try a smaller model or a lower quantization level.")
+    return False
 
 
 def _read_ascii():

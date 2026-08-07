@@ -175,6 +175,7 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False):
         if os.path.exists(icon_ico):
             cmd.extend(["--icon", icon_ico])
         cmd.append("--windowed")
+        cmd.append("--uac-admin")
     elif IS_LINUX:
         cmd.append("--nowindowed")
 
@@ -194,7 +195,7 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False):
                 cwd=PROJECT_ROOT,
                 stdout=log_f,
                 stderr=subprocess.STDOUT,
-                timeout=5400
+                timeout=1200
             )
 
         if result.returncode != 0:
@@ -208,7 +209,7 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False):
             sys.exit(1)
 
     except subprocess.TimeoutExpired:
-        print(f"\n[ERROR] PyInstaller timed out (90 minutes)")
+        print(f"\n[ERROR] PyInstaller timed out (10 minutes)")
         print(f"  Full log: {log_file}")
         sys.exit(1)
     except Exception as e:
