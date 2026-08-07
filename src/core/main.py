@@ -359,9 +359,10 @@ def _check_updates_background():
             update_info = updater.check_for_updates()
             
             if update_info.get("has_update"):
-                current_version = update_info["current_version"]
-                latest_version = update_info["latest_version"]
-                notify_update(latest_version, current_version)
+                # 使用标准 Release tag 名（vX.X.X）传给通知和显示
+                current_tag = update_info.get("current_tag") or updater._format_release_tag(update_info["current_version"])
+                latest_tag = update_info.get("latest_tag") or updater._format_release_tag(update_info["latest_version"])
+                notify_update(latest_tag, current_tag)
         except Exception:
             pass
     
@@ -580,19 +581,21 @@ def handle_update(args):
         print(f"[ERROR] Failed to check for updates: {update_info['error']}")
         return
     
+    current_tag = update_info.get("current_tag") or updater._format_release_tag(update_info["current_version"])
+    latest_tag = update_info.get("latest_tag") or updater._format_release_tag(update_info["latest_version"])
     current_version = update_info["current_version"]
     latest_version = update_info["latest_version"]
     
-    print(f"Current version: {current_version}")
-    print(f"Latest version: {latest_version}")
+    print(f"Current version: {current_tag}")
+    print(f"Latest release: {latest_tag}")
     
     if update_info.get("release_notes"):
         print(f"\nRelease Notes:\n{update_info['release_notes']}")
     
     if update_info.get("has_update") or force_update:
-        # 发送更新通知
+        # 发送更新通知（使用 vX.X.X 标准标签名）
         if update_info.get("has_update"):
-            notify_update(latest_version, current_version)
+            notify_update(latest_tag, current_tag)
         
         if not update_info.get("has_update"):
             print("\n[INFO] Already up to date, but forcing update...")
@@ -621,7 +624,7 @@ def handle_update(args):
         
         if result.get("success"):
             print(f"\n{result['message']}")
-            notify_info("Humanaize 更新完成", f"已更新到版本 {latest_version}")
+            notify_info("Humanaize 更新完成", f"已更新到版本 {latest_tag}")
         else:
             print(f"\n[ERROR] Update failed: {result.get('error', result.get('message'))}")
     else:

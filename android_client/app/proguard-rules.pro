@@ -2,6 +2,12 @@
 -keep class okhttp3.** { *; }
 -dontwarn okhttp3.**
 
+# Keep Shizuku API (uses reflection and binder)
+-keep class rikka.shizuku.** { *; }
+-dontwarn rikka.shizuku.**
+-keep class moe.shizuku.** { *; }
+-dontwarn moe.shizuku.**
+
 # Keep Kotlin serialization
 -keepattributes *Annotation*, InnerClasses
 -dontnote kotlinx.serialization.AnnotationsKt
@@ -21,3 +27,6 @@
 
 # Keep App models
 -keep class com.humanaize.aizecompanion.data.** { *; }
+
+# Keep ServiceInfo constants (used in foregroundServiceType)
+-keep class android.content.pm.ServiceInfo { *; }

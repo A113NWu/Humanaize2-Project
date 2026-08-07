@@ -80,15 +80,21 @@ if "%BUILD_TYPE%"=="debug" (
 if exist "%APK_PATH%" (
     for %%F in ("%APK_PATH%") do set "APK_SIZE=%%~zF"
     set /a "APK_SIZE_MB=!APK_SIZE! / 1048576"
+    :: 重命名 APK 包含版本号（v2.2.6）
+    for /f "tokens=2 delims==" %%a in ('findstr /C:"versionName" app\build.gradle.kts') do (
+        for /f "tokens=2 delims=^"" %%b in ("%%a") do set "APP_VERSION=%%b"
+    )
+    set "VERSIONED_APK=AizeCompanion-v!APP_VERSION!-%BUILD_TYPE%.apk"
+    copy "%APK_PATH%" "!VERSIONED_APK!" >nul 2>&1
     echo.
     echo ==============================================
     echo  Build successful!
     echo ==============================================
-    echo  APK: %cd%\%APK_PATH%
+    echo  APK: %cd%\!VERSIONED_APK!
     echo  Size: !APK_SIZE_MB! MB
     echo.
     echo  Install on device:
-    echo    adb install "%cd%\%APK_PATH%"
+    echo    adb install "%cd%\!VERSIONED_APK!"
 ) else (
     echo [ERROR] Build failed. Check the output above for details.
     pause

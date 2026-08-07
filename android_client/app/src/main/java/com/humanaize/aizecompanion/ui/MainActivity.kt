@@ -1,8 +1,12 @@
 package com.humanaize.aizecompanion.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -29,10 +33,21 @@ import com.humanaize.aizecompanion.ui.viewmodel.MainViewModel
  * 包含底部导航栏和四个主要功能页面。
  */
 class MainActivity : ComponentActivity() {
-    
+
+    // Android 13+ (API 33+) 需要运行时请求通知权限
+    private val requestNotificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { _ -> }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
+
+        // Android 13+ 请求 POST_NOTIFICATIONS 权限
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+
         val app = application as AizeApplication
         
         setContent {

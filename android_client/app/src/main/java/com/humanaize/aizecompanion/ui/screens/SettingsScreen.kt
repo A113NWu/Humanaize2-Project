@@ -18,6 +18,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.humanaize.aizecompanion.data.ContributionMode
 import com.humanaize.aizecompanion.data.toContributionMode
+import com.humanaize.aizecompanion.BuildConfig
 import com.humanaize.aizecompanion.ui.viewmodel.MainViewModel
 
 /**
@@ -388,7 +389,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text("版本", color = Color.Gray)
-                    Text("1.0.0")
+                    Text("v${BuildConfig.VERSION_NAME}")
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),

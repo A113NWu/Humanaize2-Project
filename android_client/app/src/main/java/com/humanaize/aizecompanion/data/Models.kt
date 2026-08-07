@@ -27,7 +27,8 @@ data class DeviceCapabilities(
     val gpu_available: Boolean = false,
     val memory_gb: Double = 0.0,
     val cpu_cores: Int = 0,
-    val supported_task_types: List<String> = emptyList()
+    val supported_task_types: List<String> = emptyList(),
+    val can_shell_exec: Boolean = false
 )
 
 @Serializable

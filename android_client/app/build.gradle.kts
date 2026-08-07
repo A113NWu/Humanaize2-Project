@@ -12,8 +12,10 @@ android {
         applicationId = "com.humanaize.aizecompanion"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        // versionCode 格式：主版本×10000 + 次版本×100 + 修订版本
+        // 2.2.6 → 20206，与系统版本号同步
+        versionCode = 20206
+        versionName = "2.2.6"
         
         vectorDrawables {
             useSupportLibrary = true
@@ -27,6 +29,10 @@ android {
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
+            // 明確啟用 v1/v2/v3 簽名方案，確保在 HyperOS / 小米設備上正常安裝
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
         }
     }
 
@@ -57,6 +63,7 @@ android {
     
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     
     composeOptions {

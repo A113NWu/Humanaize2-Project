@@ -5,9 +5,11 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import com.humanaize.aizecompanion.AizeApplication
 import com.humanaize.aizecompanion.R
 import com.humanaize.aizecompanion.compute.ComputeEngine
@@ -61,11 +63,29 @@ class ComputeService : Service() {
         computeEngine = ComputeEngine(networkManager)
         
         // 开始前台服务
-        startForeground(NOTIFICATION_ID, createNotification())
+        // Android 14 (API 34) 要求 startForeground 必须指定 foregroundServiceType
+        startForegroundCompat()
         
         // 监听任务
         networkManager.onTaskReceived = { task ->
             computeEngine.processTask(task)
+        }
+    }
+
+    /**
+     * 兼容不同 Android 版本的前台服务启动
+     * Android 14+ 必须通过 ServiceCompat.startForeground 指定类型
+     */
+    private fun startForegroundCompat() {
+        val notification = createNotification()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            // Android 14 (API 34)：必须显式指定 foregroundServiceType
+            ServiceCompat.startForeground(
+                this, NOTIFICATION_ID, notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
         }
     }
     

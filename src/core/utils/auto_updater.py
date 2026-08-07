@@ -32,7 +32,7 @@ except ImportError:
 class AutoUpdater:
     def __init__(self, repo_url: str, current_version: str = None):
         self.repo_url = repo_url
-        self.current_version = current_version or get_version()
+        self.current_version = self._normalize_version(current_version or get_version())
         self.update_info = None
         self.last_check_file = os.path.join(os.path.dirname(__file__), "data", "last_update_check.json")
         self._session = None
@@ -41,7 +41,20 @@ class AutoUpdater:
             self._session.headers.update({
                 "User-Agent": get_update_checker_agent()
             })
-    
+
+    @staticmethod
+    def _normalize_version(v: str) -> str:
+        """统一内部版本号格式：移除 v 前缀，用于存储与比较。内部始终使用 X.X.X 纯数字形式。"""
+        if not v:
+            return "0.0.0"
+        return v.strip().lstrip("vV")
+
+    @staticmethod
+    def _format_release_tag(v: str) -> str:
+        """将内部版本号格式化为 Release 标签：vX.X.X（GitHub 标签标准命名）。"""
+        n = AutoUpdater._normalize_version(v)
+        return f"v{n}"
+
     def _get_session(self):
         """Get or create a requests session"""
         if USE_REQUESTS and not self._session:
@@ -52,9 +65,9 @@ class AutoUpdater:
         return self._session
     
     def get_local_version(self) -> str:
-        # 使用统一的版本获取函数
-        return get_version()
-    
+        # 使用统一的版本获取函数，并标准化为 X.X.X
+        return self._normalize_version(get_version())
+
     def save_local_version(self, version: str):
         os.makedirs(os.path.dirname(__file__), exist_ok=True)
         version_file = os.path.join(os.path.dirname(__file__), "version.json")
@@ -63,7 +76,8 @@ class AutoUpdater:
                 data = json.load(f)
         except Exception:
             data = {}
-        data["version"] = version
+        # 统一以不带 v 前缀的形式存储，避免前缀重复
+        data["version"] = self._normalize_version(version)
         data["last_updated"] = datetime.now().isoformat()
         with open(version_file, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -89,61 +103,75 @@ class AutoUpdater:
                 return None
     
     def check_for_updates(self) -> Dict:
+        current_internal = self.get_local_version()
         result = {
             "has_update": False,
-            "latest_version": self.get_local_version(),
-            "current_version": self.get_local_version(),
+            "latest_version": current_internal,        # 内部版本号 X.X.X（无 v 前缀）
+            "latest_tag": self._format_release_tag(current_internal),  # Release 标签 vX.X.X
+            "current_version": current_internal,
+            "current_tag": self._format_release_tag(current_internal),
             "release_notes": "",
             "download_url": "",
             "error": None
         }
-        
+
         try:
             # Build the GitHub API URL for latest release
             releases_url = "https://api.github.com/repos/A113NWu/Humanaize2-Project/releases/latest"
-            
+
             # Try multiple endpoints
             data = self._fetch_with_retry(releases_url)
-            
+
             if data is None:
                 # Try alternative method using tags
                 tags_url = "https://api.github.com/repos/A113NWu/Humanaize2-Project/tags"
                 data = self._fetch_with_retry(tags_url)
                 if isinstance(data, list) and data:
-                    # Get the first tag (usually the latest)
+                    # Get the first tag (usually the latest) - tag 名统一格式为 vX.X.X
                     latest_tag = data[0].get("name", "")
-                    result["latest_version"] = latest_tag.lstrip("v")
-                    result["download_url"] = f"https://github.com/A113NWu/Humanaize2-Project/archive/refs/tags/{latest_tag}.zip"
-            
+                    latest_ver = self._normalize_version(latest_tag)
+                    result["latest_version"] = latest_ver
+                    result["latest_tag"] = self._format_release_tag(latest_ver)
+                    result["download_url"] = f"https://github.com/A113NWu/Humanaize2-Project/archive/refs/tags/{result['latest_tag']}.zip"
+
             if data and isinstance(data, dict):
-                latest_version = data.get("tag_name", "").lstrip("v")
-                result["latest_version"] = latest_version
+                latest_tag_raw = data.get("tag_name", "")
+                latest_ver = self._normalize_version(latest_tag_raw)
+                result["latest_version"] = latest_ver
+                result["latest_tag"] = self._format_release_tag(latest_ver)
                 result["release_notes"] = data.get("body", "No release notes available.")
-                result["download_url"] = data.get("zipball_url", "")
-            
-            result["current_version"] = self.get_local_version()
-            
-            # Compare versions
+                # 优先使用标准 vX.X.X 标签名的 zipball 链接
+                result["download_url"] = data.get("zipball_url", "") or (
+                    f"https://github.com/A113NWu/Humanaize2-Project/archive/refs/tags/{result['latest_tag']}.zip"
+                )
+
+            result["current_version"] = current_internal
+            result["current_tag"] = self._format_release_tag(current_internal)
+
+            # Compare versions（使用内部标准的 X.X.X 做比较）
             if self._version_compare(result["latest_version"], result["current_version"]) > 0:
                 result["has_update"] = True
-            
+
+            # 保存时使用内部标准版本号，避免 v 前缀重复
             self._save_last_check(result["latest_version"])
-            
+
         except Exception as e:
             result["error"] = str(e)
-        
+
         return result
-    
+
     def _version_compare(self, v1: str, v2: str) -> int:
-        """Compare two version strings"""
-        parts1 = [int(p) for p in v1.split(".") if p.isdigit()]
-        parts2 = [int(p) for p in v2.split(".") if p.isdigit()]
-        
+        """Compare two version strings（统一先去掉 v 前缀，按数字段比较）"""
+        vv1 = self._normalize_version(v1)
+        vv2 = self._normalize_version(v2)
+        parts1 = [int(p) for p in vv1.split(".") if p.isdigit()]
+        parts2 = [int(p) for p in vv2.split(".") if p.isdigit()]
+
         # Pad with zeros to make lengths equal
-        max_len = max(len(parts1), len(parts2))
+        max_len = max(len(parts1), len(parts2), 3)
         parts1 += [0] * (max_len - len(parts1))
         parts2 += [0] * (max_len - len(parts2))
-        
+
         for p1, p2 in zip(parts1, parts2):
             if p1 > p2:
                 return 1
@@ -345,20 +373,23 @@ class AutoUpdater:
     
     def get_update_status(self) -> str:
         info = self.get_last_check_info()
+        current_internal = self.get_local_version()
+        current_tag = self._format_release_tag(current_internal)
         if not info:
-            return "Never checked for updates"
-        
-        last_checked = info.get("last_checked", "Unknown")
-        latest = info.get("latest_version", "Unknown")
-        current = self.get_local_version()
-        
-        cmp_result = self._version_compare(latest, current)
+            return f"Never checked for updates (current: {current_tag})"
+
+        latest_internal = self._normalize_version(info.get("latest_version", "0.0.0"))
+        current_internal = self.get_local_version()
+        latest_tag = self._format_release_tag(latest_internal)
+        current_tag = self._format_release_tag(current_internal)
+
+        cmp_result = self._version_compare(latest_internal, current_internal)
         if cmp_result > 0:
-            return f"Update available: v{latest} (you have v{current})"
+            return f"Update available: {latest_tag} (you have {current_tag})"
         elif cmp_result < 0:
-            return f"You are on a newer version ({current}) than the latest release ({latest})"
+            return f"You are on a newer version ({current_tag}) than the latest release ({latest_tag})"
         else:
-            return f"You are up to date (v{current})"
+            return f"You are up to date ({current_tag})"
 
 
 def check_for_updates(repo_url: str = "https://github.com/A113NWu/Humanaize2-Project.git") -> Dict:

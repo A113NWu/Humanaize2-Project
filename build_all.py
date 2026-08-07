@@ -32,19 +32,30 @@ VERSION_FILE = os.path.join(PROJECT_ROOT, "config", "version.json")
 def get_version():
     try:
         with open(VERSION_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f).get("version", "2.2.4")
+            return json.load(f).get("version", "2.2.6")
     except Exception:
-        return "2.2.4"
+        return "2.2.6"
+
+
+def get_release_tag(version: str = None) -> str:
+    """返回统一的 Release 标签命名格式：vX.X.X"""
+    v = version or get_version()
+    v = v.strip()
+    if v.startswith("v"):
+        return v
+    return f"v{v}"
 
 
 def print_header():
     version = get_version()
+    tag = get_release_tag(version)
     print()
     print("=" * 70)
-    print(f"  Humanaize 2.0 Agent v{version} - Universal Build")
+    print(f"  Humanaize 2.0 Agent {tag} - Universal Build")
     print(f"  Platform: {platform.system()} {platform.machine()}")
     print(f"  Python:   {sys.version.split()[0]}")
     print(f"  Project:  {PROJECT_ROOT}")
+    print(f"  Release:  https://github.com/A113NWu/Humanaize2-Project/releases/tag/{tag}")
     print("=" * 70)
     print()
 

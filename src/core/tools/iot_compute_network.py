@@ -635,6 +635,8 @@ class IoTComputeNetwork:
         # 建立 Future 並註冊到 shell_pending
         loop = device_loop if device_loop else asyncio.get_event_loop()
         future: 'asyncio.Future[Dict]' = loop.create_future()
+        # 附加 device_id 便於斷線時清理
+        setattr(future, '_device_id', device_id)
 
         with self._shell_pending_lock:
             self._shell_pending[shell_id] = future
@@ -740,6 +742,30 @@ class IoTComputeNetwork:
                 self._emit('device_disconnected', self.devices[device_id].to_dict())
                 logger.info(f"Device disconnected: {self.devices[device_id].device_name}")
                 print(f"[IoT] 设备已断开: {self.devices[device_id].device_name}")
+
+        # 清理该设备上未完成的 shell_pending Future，避免内存泄漏和永久阻塞
+        cancelled_ids = []
+        with self._shell_pending_lock:
+            for shell_id, future in list(self._shell_pending.items()):
+                if getattr(future, '_device_id', None) == device_id:
+                    cancelled_ids.append(shell_id)
+                    try:
+                        if not future.done():
+                            future.set_result({
+                                'shell_id': shell_id,
+                                'device_id': device_id,
+                                'success': False,
+                                'exit_code': -1,
+                                'stdout': '',
+                                'stderr': '',
+                                'error': 'Device disconnected before shell result received',
+                                'compute_time_ms': 0.0,
+                                'timestamp': time.time(),
+                            })
+                    except Exception as e:
+                        logger.error(f"Cancel shell future on disconnect failed: {e}")
+            for sid in cancelled_ids:
+                self._shell_pending.pop(sid, None)
     
     def _heartbeat_loop(self):
         """心跳检测循环"""
@@ -871,20 +897,22 @@ class IoTComputeNetwork:
     
     def broadcast_chat(self, message: str, exclude_device_id: str = None):
         """向所有设备广播聊天消息"""
-        data = {
-            'action': 'chat_broadcast',
-            'message': message,
-            'timestamp': time.time()
-        }
-        
         with self._lock:
             targets = [
                 d.device_id for d in self.devices.values()
-                if d.status in [DeviceStatus.ONLINE, DeviceStatus.IDLE]
+                if d.status in [DeviceStatus.ONLINE, DeviceStatus.IDLE, DeviceStatus.BUSY]
                 and d.device_id != exclude_device_id
             ]
-        
+
         for device_id in targets:
+            conversation_id = str(uuid.uuid4())
+            data = {
+                'action': 'chat_response',
+                'message': message,
+                'conversation_id': conversation_id,
+                'device_id': device_id,
+                'timestamp': time.time()
+            }
             self.send_to_device(device_id, data)
     
     def get_task_status(self, task_id: str) -> Optional[Dict]:

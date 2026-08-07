@@ -1,5 +1,5 @@
 {
-  "version": "2.3.0",
-  "last_updated": "2026-08-06T00:00:00.000000",
-  "release_notes": "v2.3.0：1.添加IoT算力网络服务端，支持Android客户端设备注册/心跳/任务分发/多设备并行计算;2.添加boot -m iot启动模式;3.修复Windows安装程序版本号和路径配置;4.更新依赖添加websockets支持"
+  "version": "2.2.6",
+  "last_updated": "2026-08-07T00:00:00.000000",
+  "release_notes": "v2.2.6：1.添加IoT算力网络服务端，支持Android客户端设备注册/心跳/任务分发/多设备并行计算；2.添加boot -m iot启动模式；3.修复Windows安装程序版本号和路径配置；4.更新依赖添加websockets支持；5.统一Release标签命名格式为vX.X.X"
 }

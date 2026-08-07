@@ -18,10 +18,10 @@ def get_version() -> str:
         str: 版本号字符串，如 "2.2.3"
     """
     global _version_cache
-    
+
     if _version_cache is not None:
         return _version_cache
-    
+
     # 查找version.json的多个可能位置
     possible_paths = [
         # 项目根目录
@@ -34,19 +34,19 @@ def get_version() -> str:
         os.path.join(os.path.dirname(__file__), "version.json"),
         os.path.join(os.path.dirname(__file__), "..", "version.json"),
     ]
-    
+
     for version_file in possible_paths:
         if os.path.exists(version_file):
             try:
                 with open(version_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    _version_cache = data.get("version", "2.2.3")
+                    _version_cache = data.get("version", "2.2.6")
                     return _version_cache
             except Exception:
                 continue
-    
+
     # 如果都找不到，返回默认值
-    _version_cache = "2.2.3"
+    _version_cache = "2.2.6"
     return _version_cache
 
 def get_version_info() -> dict:
@@ -70,9 +70,9 @@ def get_version_info() -> dict:
     ]
     
     default_info = {
-        "version": "2.2.3",
-        "last_updated": "2026-06-16T00:00:00.000000",
-        "release_notes": "v2.2.3"
+        "version": "2.2.6",
+        "last_updated": "2026-08-07T00:00:00.000000",
+        "release_notes": "v2.2.6"
     }
     
     for version_file in possible_paths:

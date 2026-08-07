@@ -34,9 +34,18 @@ def get_version():
     try:
         with open(version_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
-            return data.get("version", "2.2.4")
+            return data.get("version", "2.2.6")
     except Exception:
-        return "2.2.4"
+        return "2.2.6"
+
+
+def get_release_tag(version: str = None) -> str:
+    """返回统一的 Release 标签命名格式：vX.X.X"""
+    v = version or get_version()
+    v = v.strip()
+    if v.startswith("v"):
+        return v
+    return f"v{v}"
 
 
 def get_main_script():
@@ -52,13 +61,15 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False):
     """Build executable for specified architecture"""
     app_name = "Humanaize2"
     version = get_version()
+    tag = get_release_tag(version)
     main_script = get_main_script()
     output_dir = os.path.join(PROJECT_ROOT, "dist", arch)
     build_dir = os.path.join(PROJECT_ROOT, "build", arch)
 
     print("=" * 60)
-    print(f"  Humanaize 2.0 v{version} - Building for {arch}")
+    print(f"  Humanaize 2.0 {tag} - Building for {arch}")
     print(f"  Platform: {platform.system()} {platform.machine()}")
+    print(f"  Release tag: {tag}")
     print("=" * 60)
 
     # Validate key files exist

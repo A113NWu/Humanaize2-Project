@@ -11,6 +11,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import okhttp3.*
@@ -168,18 +169,8 @@ class IoTNetworkManager(
      * 发送注册消息
      */
     private suspend fun sendRegister() {
-        val settings = settingsRepository.settingsFlow.let { flow ->
-            var current: com.humanaize.aizecompanion.data.AppSettings? = null
-            // 获取当前设置值
-            scope.launch {
-                flow.collect { settings ->
-                    current = settings
-                }
-            }
-            kotlinx.coroutines.delay(100)
-            current
-        } ?: return
-        
+        val settings = settingsRepository.settingsFlow.first()
+
         val registerMsg = WsMessage(
             action = "register",
             device_name = settings.deviceName,
@@ -192,7 +183,7 @@ class IoTNetworkManager(
             // 遠程 Shell 能力：用戶開關 && Shizuku 權限可用
             can_shell_exec = (settings.enableRemoteShell && (ShizukuShellExecutor.checkPermission() == true))
         )
-        
+
         sendMessage(registerMsg)
     }
     
@@ -420,14 +411,17 @@ class IoTNetworkManager(
         _connectionState.value = ConnectionState.DISCONNECTED
         isConnecting = false
         onConnectionChanged?.invoke(ConnectionState.DISCONNECTED)
-        
-        // 尝试重连
+
+        // 尝试重连（使用 first() 仅取一次当前值，避免 collect 无限挂起导致协程泄漏）
         scope.launch {
-            settingsRepository.settingsFlow.collect { settings ->
-                if (_connectionState.value == ConnectionState.DISCONNECTED) {
-                    attemptReconnect(settings.serverAddress)
-                }
-                return@collect
+            val serverAddress = try {
+                settingsRepository.settingsFlow.first().serverAddress
+            } catch (t: Throwable) {
+                Log.w(TAG, "handleDisconnect: failed to read settings: ${t.message}")
+                return@launch
+            }
+            if (_connectionState.value == ConnectionState.DISCONNECTED) {
+                attemptReconnect(serverAddress)
             }
         }
     }

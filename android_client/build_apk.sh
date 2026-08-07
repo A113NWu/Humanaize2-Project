@@ -58,7 +58,11 @@ build_apk() {
     local apk_path="app/build/outputs/apk/$type/app-$type.apk"
     if [ -f "$apk_path" ]; then
         local apk_size=$(du -h "$apk_path" | cut -f1)
-        echo "[OK] $type APK: $SCRIPT_DIR/$apk_path ($apk_size)"
+        # 重命名 APK 包含版本号（vX.X.X）
+        local version=$(grep 'versionName' app/build.gradle.kts | head -1 | sed 's/.*"\(.*\)".*/\1/')
+        local versioned_apk="AizeCompanion-v${version}-${type}.apk"
+        cp "$apk_path" "$versioned_apk"
+        echo "[OK] $type APK: $SCRIPT_DIR/$versioned_apk ($apk_size)"
     else
         echo "[ERROR] $type APK build failed"
         return 1
@@ -83,4 +87,4 @@ echo " Build complete!"
 echo "=============================================="
 echo
 echo " Install on device:"
-echo "   adb install $SCRIPT_DIR/app/build/outputs/apk/release/app-release.apk"
+echo "   adb install $SCRIPT_DIR/AizeCompanion-v*-release.apk"

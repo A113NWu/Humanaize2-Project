@@ -4,7 +4,8 @@
 [Setup]
 AppId={{A1B2C3D4-E5F6-7890-ABCD-EFGHIJKLMNOP}
 AppName=Humanaize 2.0 Agent
-AppVersion=2.2.3
+AppVersion=2.2.6
+AppVerName=Humanaize 2.0 Agent v2.2.6
 AppPublisher=Humanaize Project
 AppPublisherURL=https://github.com/A113NWu/Humanaize2-Project
 AppSupportURL=https://github.com/A113NWu/Humanaize2-Project/issues
@@ -14,7 +15,7 @@ DefaultGroupName=Humanaize 2.0 Agent
 AllowNoIcons=no
 LicenseFile=..\..\LICENSE
 OutputDir=installer_output
-OutputBaseFilename=Humanaize2-Setup-v2.2.3
+OutputBaseFilename=Humanaize2-Setup-v2.2.6
 Compression=lzma2
 SolidCompression=yes
 PrivilegesRequired=admin

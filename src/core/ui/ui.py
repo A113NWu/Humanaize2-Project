@@ -800,7 +800,9 @@ class HumanaizeUI:
         
         from core.utils.auto_updater import AutoUpdater
         updater = AutoUpdater("https://github.com/A113NWu/Humanaize2-Project.git")
-        version_label = ctk.CTkLabel(update_frame, text=f"Current version: {updater.get_local_version()}", anchor="w")
+        # 使用 tag 格式显示（vX.X.X），与 Release 命名一致
+        current_tag = updater._format_release_tag(updater.get_local_version())
+        version_label = ctk.CTkLabel(update_frame, text=f"Current version: {current_tag}", anchor="w")
         version_label.grid(row=1, column=0, sticky="w", padx=15, pady=(0, 5))
         
         status_label = ctk.CTkLabel(update_frame, text="", anchor="w")
@@ -818,9 +820,16 @@ class HumanaizeUI:
             if result.get("error"):
                 status_label.configure(text=f"Error: {result['error']}", text_color="#ef4444")
             elif result.get("has_update"):
-                status_label.configure(text=f"Update available: v{result['latest_version']} (you have v{result['current_version']})", text_color="#10b981")
+                # 直接使用 check_for_updates 返回的标准 release tag，避免再拼 v
+                status_label.configure(
+                    text=f"Update available: {result['latest_tag']} (you have {result['current_tag']})",
+                    text_color="#10b981"
+                )
             else:
-                status_label.configure(text=f"You are up to date (v{result['current_version']})", text_color="#9ca3af")
+                status_label.configure(
+                    text=f"You are up to date ({result['current_tag']})",
+                    text_color="#9ca3af"
+                )
         
         def download_update():
             def progress_callback(message):
