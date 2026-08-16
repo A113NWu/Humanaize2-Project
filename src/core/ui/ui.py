@@ -240,6 +240,14 @@ class HumanaizeUI:
             "api_base_url": self.settings.get("tts_api_base_url", "https://api.openai.com/v1/audio/speech"),
             "api_model": self.settings.get("tts_model", "gpt-4o-mini-tts"),
             "language": self.settings.get("tts_language", "auto"),
+            # GPT-SoVITS 克隆专用参数
+            "ref_audio_path": self.settings.get("gpt_sovits_ref_audio_path", ""),
+            "prompt_text": self.settings.get("gpt_sovits_prompt_text", ""),
+            "prompt_audio": self.settings.get("gpt_sovits_prompt_audio", ""),
+            "text_lang": self.settings.get("gpt_sovits_text_lang", ""),
+            "prompt_lang": self.settings.get("gpt_sovits_prompt_lang", ""),
+            "gpt_weight_path": self.settings.get("gpt_sovits_gpt_weight_path", ""),
+            "sovits_weight_path": self.settings.get("gpt_sovits_sovits_weight_path", ""),
         }
 
     def _save_settings(self, settings: dict):

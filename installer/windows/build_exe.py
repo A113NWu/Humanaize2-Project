@@ -175,7 +175,6 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False):
         if os.path.exists(icon_ico):
             cmd.extend(["--icon", icon_ico])
         cmd.append("--windowed")
-        cmd.append("--uac-admin")
     elif IS_LINUX:
         cmd.append("--nowindowed")
 
@@ -195,7 +194,7 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False):
                 cwd=PROJECT_ROOT,
                 stdout=log_f,
                 stderr=subprocess.STDOUT,
-                timeout=1200
+                timeout=5400
             )
 
         if result.returncode != 0:
@@ -209,7 +208,7 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False):
             sys.exit(1)
 
     except subprocess.TimeoutExpired:
-        print(f"\n[ERROR] PyInstaller timed out (10 minutes)")
+        print(f"\n[ERROR] PyInstaller timed out (90 minutes)")
         print(f"  Full log: {log_file}")
         sys.exit(1)
     except Exception as e:
@@ -238,6 +237,14 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False):
     print(f"\n[SUCCESS] Executable built:")
     print(f"  Path: {exe_path}")
     print(f"  Size: {exe_size_mb:.2f} MB")
+
+    # 重命名并拷贝到 installer_output，与 .iss 的 Source 路径对齐
+    installer_output_dir = os.path.join(PROJECT_ROOT, "installer_output", arch)
+    os.makedirs(installer_output_dir, exist_ok=True)
+    tagged_exe_name = f"{app_name}-{arch}.exe"
+    tagged_exe_path = os.path.join(installer_output_dir, tagged_exe_name)
+    shutil.copy2(exe_path, tagged_exe_path)
+    print(f"[COPY] Copied to installer_output: {tagged_exe_path}")
 
     # Create portable zip
     if create_zip:
@@ -317,36 +324,64 @@ Visit: https://github.com/A113NWu/Humanaize2-Project
 
 def _create_installer(arch, version, exe_path, output_dir):
     """Create Inno Setup installer (Windows only)"""
-    iscc_path = "iscc"
+    # 常见 Inno Setup 安装路径
+    iscc_candidates = [
+        "iscc",
+        r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+        r"C:\Program Files\Inno Setup 6\ISCC.exe",
+        r"C:\Program Files (x86)\Inno Setup 5\ISCC.exe",
+        r"C:\Program Files\Inno Setup 5\ISCC.exe",
+        r"C:\Users\Allen Wu\AppData\Local\Programs\Inno Setup 6\ISCC.exe",
+        os.path.expandvars(r"%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"),
+        os.path.expandvars(r"%LOCALAPPDATA%\Programs\Inno Setup 5\ISCC.exe"),
+    ]
+    iscc_path = None
+    for cand in iscc_candidates:
+        try:
+            if cand == "iscc":
+                result = subprocess.run([cand, "/?"], capture_output=True, timeout=5)
+                if result.returncode == 0:
+                    iscc_path = cand
+                    break
+            elif os.path.exists(cand):
+                iscc_path = cand
+                break
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            continue
 
-    # Check Inno Setup
-    try:
-        result = subprocess.run([iscc_path, "/?"], capture_output=True, timeout=5)
-        print(f"\n[INSTALLER] Inno Setup found")
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+    if not iscc_path:
         print(f"\n[SKIP] Inno Setup not found. Download from: https://jrsoftware.org/isdl.php")
         print(f"       Skipping installer creation. Portable zip is available instead.")
         return
 
+    print(f"\n[INSTALLER] Inno Setup found: {iscc_path}")
+
     iss_file = os.path.join(PROJECT_ROOT, "installer", "windows", f"humanaize2-{arch}.iss")
     if not os.path.exists(iss_file):
-        # Generate ISC file
         iss_file = os.path.join(PROJECT_ROOT, "installer", "windows", "humanaize2.iss")
 
-    print(f"[INSTALLER] Building installer with: {iss_file}")
+    print(f"[INSTALLER] Using ISS file: {iss_file}")
 
+    # 带版本号的输出文件名
+    tag = get_release_tag(version)
     try:
         result = subprocess.run(
-            [iscc_path, iss_file],
+            [
+                iscc_path,
+                f"/DAppVersion={version}",
+                f"/DReleaseTag={tag}",
+                f"/Oinstaller\\windows\\output",
+                iss_file,
+            ],
             cwd=os.path.join(PROJECT_ROOT, "installer", "windows"),
             capture_output=True,
             text=True,
-            timeout=120
+            timeout=600,
         )
 
         if result.returncode == 0:
-            print(f"  [OK] Installer built successfully")
-            # Find the output
+            print(f"  [OK] Inno Setup built successfully")
+            # 查找输出文件并拷贝到 installer_output
             output_dir_installer = os.path.join(PROJECT_ROOT, "installer", "windows", "output")
             if os.path.exists(output_dir_installer):
                 for f in os.listdir(output_dir_installer):
@@ -354,12 +389,18 @@ def _create_installer(arch, version, exe_path, output_dir):
                         src = os.path.join(output_dir_installer, f)
                         dest_dir = os.path.join(PROJECT_ROOT, "installer_output", arch)
                         os.makedirs(dest_dir, exist_ok=True)
+                        # 重命名输出为规范命名：Humanaize2-Setup-x86_64-vX.X.X.exe
+                        # ISS 默认已用 OutputBaseFilename=Humanaize2-Setup-x86_64-v2.2.6
                         dest = os.path.join(dest_dir, f)
                         shutil.copy2(src, dest)
-                        print(f"  Output: {dest}")
+                        inst_size = os.path.getsize(dest) / (1024 * 1024)
+                        print(f"  Installer: {dest} ({inst_size:.2f} MB)")
         else:
             print(f"  [WARN] Inno Setup returned non-zero: {result.returncode}")
-            print(f"  Output: {result.stdout[:500]}")
+            if result.stdout:
+                print(f"  STDOUT: {result.stdout[-800:]}")
+            if result.stderr:
+                print(f"  STDERR: {result.stderr[-800:]}")
     except Exception as e:
         print(f"  [WARN] Installer creation failed: {e}")
 

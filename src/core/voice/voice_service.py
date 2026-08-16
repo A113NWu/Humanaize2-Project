@@ -35,25 +35,51 @@ try:
 except Exception:  # pragma: no cover - optional dependency
     gTTS = None
 
+try:
+    from .tts_synthesizer import synthesize_speech, SynthesizeOptions, TTSError
+except Exception:  # pragma: no cover - optional dependency
+    synthesize_speech = None
+    SynthesizeOptions = None
+    TTSError = None
+
+
+CLOUD_BACKENDS = {"gpt-sovits", "minimax", "elevenlabs", "edge_tts", "mimo"}
+
 
 def resolve_tts_config(tts_settings: Optional[dict] = None) -> dict:
     settings = tts_settings or {}
-    backend = str(settings.get("backend") or os.getenv("HUMANAIZE_TTS_BACKEND") or "auto").strip().lower()
-    if backend in {"openai", "openai_tts", "cloud"}:
+    backend = str(settings.get("backend") or os.getenv("HUMANAIZE_TTS_BACKEND")
+                  or os.getenv("TTS_PROVIDER") or "auto").strip().lower()
+    if backend in {"openai", "openai_tts", "cloud", "openai-compatible", "openai_compatible"}:
         backend = "openai"
     elif backend in {"gtts", "google_tts", "google"}:
         backend = "gtts"
-    elif backend not in {"auto", "pyttsx3", "piper", "openai", "gtts"}:
+    elif backend in {"edge_tts", "edge-tts", "edgetts"}:
+        backend = "edge_tts"
+    elif backend in {"gpt_sovits", "gptsovits", "gpt-sovits", "sovits"}:
+        backend = "gpt-sovits"
+    elif backend in {"elevenlabs", "eleven-labs", "eleven_labs"}:
+        backend = "elevenlabs"
+    elif backend not in {"auto", "pyttsx3", "piper", "openai", "gtts",
+                         "edge_tts", "gpt-sovits", "minimax", "elevenlabs", "mimo"}:
         backend = "auto"
     return {
         "backend": backend,
         "model_path": settings.get("model_path") or os.getenv("HUMANAIZE_TTS_MODEL_PATH") or "",
-        "voice": settings.get("voice") or os.getenv("HUMANAIZE_TTS_VOICE") or "",
-        "speed": float(settings.get("speed") or os.getenv("HUMANAIZE_TTS_SPEED") or 1.0),
-        "api_key": settings.get("api_key") or os.getenv("HUMANAIZE_TTS_API_KEY") or "",
-        "api_base_url": settings.get("api_base_url") or os.getenv("HUMANAIZE_TTS_API_BASE_URL") or "https://api.openai.com/v1/audio/speech",
-        "api_model": settings.get("api_model") or os.getenv("HUMANAIZE_TTS_API_MODEL") or "gpt-4o-mini-tts",
+        "voice": settings.get("voice") or os.getenv("HUMANAIZE_TTS_VOICE") or os.getenv("TTS_VOICE") or "",
+        "speed": float(settings.get("speed") or os.getenv("HUMANAIZE_TTS_SPEED") or os.getenv("TTS_SPEED") or 1.0),
+        "api_key": settings.get("api_key") or os.getenv("HUMANAIZE_TTS_API_KEY") or os.getenv("TTS_API_KEY") or "",
+        "api_base_url": settings.get("api_base_url") or os.getenv("HUMANAIZE_TTS_API_BASE_URL") or os.getenv("TTS_API_URL") or "https://api.openai.com/v1/audio/speech",
+        "api_model": settings.get("api_model") or os.getenv("HUMANAIZE_TTS_API_MODEL") or os.getenv("TTS_MODEL") or "gpt-4o-mini-tts",
         "language": settings.get("language") or os.getenv("HUMANAIZE_TTS_LANGUAGE") or "auto",
+        # GPT-SoVITS 扩展参数
+        "ref_audio_path": settings.get("ref_audio_path") or os.getenv("GPT_SOVITS_REF_AUDIO_PATH") or "",
+        "prompt_text": settings.get("prompt_text") or os.getenv("GPT_SOVITS_PROMPT_TEXT") or "",
+        "prompt_audio": settings.get("prompt_audio") or "",
+        "text_lang": settings.get("text_lang") or os.getenv("GPT_SOVITS_TEXT_LANG") or "",
+        "prompt_lang": settings.get("prompt_lang") or os.getenv("GPT_SOVITS_PROMPT_LANG") or "",
+        "gpt_weight_path": settings.get("gpt_weight_path") or os.getenv("GPT_SOVITS_GPT_WEIGHT_PATH") or "",
+        "sovits_weight_path": settings.get("sovits_weight_path") or os.getenv("GPT_SOVITS_SOVITS_WEIGHT_PATH") or "",
     }
 
 
@@ -166,16 +192,31 @@ class VoiceService:
         if not text:
             return False
         backend = config.get("backend") or "auto"
+
+        # 1) 多 Provider 云 TTS：通过合成器统一处理
+        if backend in CLOUD_BACKENDS and synthesize_speech is not None and SynthesizeOptions is not None:
+            if self._speak_with_synthesizer(text, config):
+                return True
+
         if backend == "piper":
             return self._speak_with_piper(text, config)
         if backend == "gtts":
             return self._speak_with_gtts(text, config)
         if backend == "openai":
             return self._speak_with_openai(text, config)
+        if backend == "edge_tts" and synthesize_speech is not None and SynthesizeOptions is not None:
+            if self._speak_with_synthesizer(text, {**config, "backend": "edge_tts"}):
+                return True
         if self._speak_with_espeak(text, config):
             return True
         if backend == "piper":
             return self._speak_with_piper(text, config)
+
+        # 自动模式：优先尝试 edge_tts，再回退到 pyttsx3
+        if backend == "auto" and synthesize_speech is not None and SynthesizeOptions is not None:
+            if self._speak_with_synthesizer(text, {**config, "backend": "edge_tts"}):
+                return True
+
         if not self._engine:
             return False
         self._engine.setProperty("rate", max(80, int(180 * config.get("speed", 1.0))))
@@ -183,6 +224,55 @@ class VoiceService:
         self._engine.say(text)
         self._engine.runAndWait()
         return True
+
+    def _speak_with_synthesizer(self, text: str, config: dict) -> bool:
+        """使用 tts_synthesizer.synthesize_speech 完成云端合成并播放"""
+        try:
+            opts = SynthesizeOptions(
+                text=text,
+                provider=str(config.get("backend") or ""),
+                api_key=str(config.get("api_key") or ""),
+                api_url=str(config.get("api_base_url") or ""),
+                voice=str(config.get("voice") or ""),
+                model=str(config.get("api_model") or ""),
+                speed=float(config.get("speed") or 1.0),
+                ref_audio_path=str(config.get("ref_audio_path") or ""),
+                prompt_text=str(config.get("prompt_text") or ""),
+                prompt_audio=str(config.get("prompt_audio") or ""),
+                text_lang=str(config.get("text_lang") or config.get("language") or ""),
+                prompt_lang=str(config.get("prompt_lang") or ""),
+                gpt_weight_path=str(config.get("gpt_weight_path") or ""),
+                sovits_weight_path=str(config.get("sovits_weight_path") or ""),
+            )
+            result = synthesize_speech(opts)
+        except Exception as exc:
+            print(f"[WARN] synthesize_speech failed: {exc}")
+            return False
+
+        audio_bytes: bytes = result.get("audio_bytes") or b""
+        if not audio_bytes:
+            return False
+        content_type = (result.get("content_type") or "audio/mpeg").lower()
+        suffix = ".wav" if "wav" in content_type else ".mp3"
+
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as handle:
+            tmp_path = handle.name
+        try:
+            with open(tmp_path, "wb") as handle:
+                handle.write(audio_bytes)
+            if suffix == ".wav":
+                self._play_wav(tmp_path)
+            else:
+                self._play_mp3(tmp_path)
+            return True
+        except Exception as exc:
+            print(f"[WARN] TTS playback failed: {exc}")
+            return False
+        finally:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
     def _speak_with_espeak(self, text: str, config: dict) -> bool:
         espeak_bin = shutil.which("espeak-ng") or shutil.which("espeak")
