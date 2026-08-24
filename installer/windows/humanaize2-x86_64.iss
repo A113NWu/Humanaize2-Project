@@ -39,7 +39,7 @@ Source: "installer_output\x86_64\Humanaize2\*"; DestDir: "{app}"; Flags: ignorev
 ; humanaize2 命令啟動腳本（讓用戶可在任意目錄使用 'humanaize2' 命令）
 Source: "installer\windows\humanaize2.cmd"; DestDir: "{app}"; Flags: ignoreversion
 ; Skills 目錄（可寫，供運行時安裝/更新技能）
-Source: "skills\*"; DestDir: "{app}\skills"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "skills\*"; DestDir: "{app}\skills"; Excludes: "venv\*"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; 配置與運行時資料
 Source: "config\version.json"; DestDir: "{app}\config"; Flags: ignoreversion
 Source: "data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs

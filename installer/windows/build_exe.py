@@ -109,17 +109,11 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False):
         # Data files
         "--add-data", f"src/core/ui/data{DATA_SEP}src/core/ui/data",
         "--add-data", f"src/core/tools{DATA_SEP}src/core/tools",
-        "--add-data", f"skills{DATA_SEP}skills",
         "--add-data", f"prompt{DATA_SEP}prompt",
         "--add-data", f"languages{DATA_SEP}languages",
         "--add-data", f"config/version.json{DATA_SEP}config",
         # Hidden imports
         "--hidden-import", "customtkinter",
-        "--hidden-import", "customtkinter.ctk_tk",
-        "--hidden-import", "customtkinter.ctk_fonts",
-        "--hidden-import", "customtkinter.ctk_settings",
-        "--hidden-import", "customtkinter.ctk_appearance_mode",
-        "--hidden-import", "customtkinter.ctk_windows",
         "--hidden-import", "websockets",
         "--hidden-import", "websockets.asyncio.server",
         "--hidden-import", "websockets.asyncio.client",
@@ -136,12 +130,6 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False):
         "--hidden-import", "queue",
         "--hidden-import", "socket",
         "--hidden-import", "asyncio",
-        "--hidden-import", "tools",
-        "--hidden-import", "tools.logger",
-        "--hidden-import", "tools.tools",
-        "--hidden-import", "tools.iot_compute_manager",
-        "--hidden-import", "tools.iot_compute_network",
-        "--hidden-import", "tools.iot_device_scanner",
         # Exclude heavy unneeded modules (transitive deps not used by core app)
         "--exclude-module", "transformers",
         "--exclude-module", "torch",
@@ -212,6 +200,12 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False):
         "--exclude-module", "jinja2",
         "--exclude-module", "cryptography",
         "--exclude-module", "pydantic",
+        "--exclude-module", "speech_recognition",
+        "--exclude-module", "tensorflow",
+        "--exclude-module", "keras",
+        "--exclude-module", "tensorboard",
+        "--exclude-module", "setuptools",
+        "--exclude-module", "pkg_resources",
     ]
 
     # Platform-specific options
