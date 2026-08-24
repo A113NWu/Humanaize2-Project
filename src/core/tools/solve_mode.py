@@ -780,9 +780,9 @@ CRITICAL - NO BINARY FILES:
 
 Respond with a JSON array in this exact format:
 [
-  {{"path": "src/main.py", "description": "Main entry point of the application"}},
-  {{"path": "src/utils/helper.py", "description": "Utility helper functions"}},
-  {{"path": "requirements.txt", "description": "Python dependencies"}}
+{{"path": "src/main.py", "description": "Main entry point of the application"}},
+{{"path": "src/utils/helper.py", "description": "Utility helper functions"}},
+{{"path": "requirements.txt", "description": "Python dependencies"}}
 ]
 
 IMPORTANT: List EVERY file needed. Be comprehensive. Do NOT skip any files.
@@ -907,7 +907,7 @@ All files MUST be text-based source code or configuration files.
         return project_dir
     
     def _generate_single_file(self, filename: str, description: str, problem: str, 
-                               project_plan: Dict, existing_files: List[Dict]) -> Optional[str]:
+                            project_plan: Dict, existing_files: List[Dict]) -> Optional[str]:
         """生成單個文件的完整代碼"""
         if self._use_color:
             print(f"{Colors.DIM}  Generating code for {filename}...{Colors.RESET}")

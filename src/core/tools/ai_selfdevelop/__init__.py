@@ -13,7 +13,7 @@ Features:
 __all__ = ['skills', 'preferences', 'learning', 'customizations']
 
 # Version info
-__version__ = '2.2.6'
+__version__ = '2.2.7'
 
 # Initialize learning modules
 from .learning import BehaviorModel, AdaptationRules

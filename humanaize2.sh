@@ -24,7 +24,12 @@ else
 fi
 
 # Model configuration
-MODEL_DIR="$MAIN_DIR/models"
+# Prefer the project’s actual `model/` directory, but accept legacy `models/` setups too.
+MODEL_DIR="$MAIN_DIR/model"
+if [ ! -d "$MODEL_DIR" ] && [ -d "$MAIN_DIR/models" ]; then
+    MODEL_DIR="$MAIN_DIR/models"
+fi
+mkdir -p "$MODEL_DIR"
 MODEL_FILE="$MODEL_DIR/tinyllama.gguf"
 MODEL_URL="https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
 

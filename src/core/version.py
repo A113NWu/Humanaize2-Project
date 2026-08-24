@@ -40,13 +40,13 @@ def get_version() -> str:
             try:
                 with open(version_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    _version_cache = data.get("version", "2.2.6")
+                    _version_cache = data.get("version", "2.2.7")
                     return _version_cache
             except Exception:
                 continue
 
     # 如果都找不到，返回默认值
-    _version_cache = "2.2.6"
+    _version_cache = "2.2.7"
     return _version_cache
 
 def get_version_info() -> dict:
@@ -70,9 +70,9 @@ def get_version_info() -> dict:
     ]
     
     default_info = {
-        "version": "2.2.6",
+        "version": "2.2.7",
         "last_updated": "2026-08-07T00:00:00.000000",
-        "release_notes": "v2.2.6"
+        "release_notes": "v2.2.7"
     }
     
     for version_file in possible_paths:

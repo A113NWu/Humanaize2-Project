@@ -1531,67 +1531,56 @@ class HumanaizeUI:
             self.idle_engine.pause()
         self.autonomous_engine.on_user_message()
 
-        # 设置超时机制，防止UI永久卡住（60秒超时）
+        # 用户直接输入总是回答，跳过 should_answer 决策
+        # should_answer 决策适用于自动思考场景（AI是否主动发起对话）
+        context = self._build_context()
+        prompt = f"""{context}\n\nUser: {text}\nAssistant:"""
+
+        # 保存当前用户输入，以便超时后仍然传达给 Aize
+        self._pending_input = {"text": text, "prompt": prompt}
+
+        # 设置超时机制，防止UI永久卡住（180秒超时，适应CPU模式大模型）
         def timeout_handler():
             logger.warning("UI timeout triggered")
-            self.root.after(0, self._restore_ui_state)
-        
-        self._ui_timeout_id = self.root.after(60000, timeout_handler)
+            self.root.after(0, self._restore_ui_state_with_pending)
 
-        def on_answer_decision(result):
-            
+        self._ui_timeout_id = self.root.after(180000, timeout_handler)
+
+        def on_gan_decision(gan_result):
             # 取消超时定时器
             if hasattr(self, '_ui_timeout_id'):
                 self.root.after_cancel(self._ui_timeout_id)
-            
-            should_answer, answer_reason = result
-            
+
+            should_use_gan, gan_decision_reason = gan_result
+            logger.info(f"GAN decision: should_use_gan={should_use_gan}, reason={gan_decision_reason[:100] if gan_decision_reason else 'None'}")
+
             # 使用 root.after() 确保在主线程执行UI更新
-            def update_ui_answer():
-                if not should_answer:
-                    self._add_chat_message(f"System: AI chose not to respond to your input.", "autonomous")
-                    self._add_chat_message(f"System: Reason: {answer_reason}", "autonomous")
-                    self._resume_idle_engine()
-                    self.send_btn.configure(state="normal")
-                    self.entry.configure(state="normal")
-                    self.entry.focus()
-                    return
-                
-                context = self._build_context()
-                
-                def on_gan_decision(gan_result):
-                    should_use_gan, gan_decision_reason = gan_result
-                    
-                    # 使用 root.after() 确保在主线程执行UI更新
-                    def update_ui_gan():
-                        if should_use_gan:
-                            self._add_chat_message(self._t("gan_chosen"), "autonomous")
-                            self._add_chat_message(f"System: AI decided to use GAN thinking before answering.", "autonomous")
-                        else:
-                            self._add_chat_message(self._t("gan_skipped"), "autonomous")
-                        
-                        prompt = f"""{context}\n\nUser: {text}\nAssistant:"""
-                        
-                        try:
-                            if self.gan_enabled:
-                                self.thinking_engine.queue_chat_task(prompt, memory=self.memory, use_gan_decision=True, user_text=text)
-                            else:
-                                self.thinking_engine.queue_chat_task(prompt, memory=self.memory)
-                        except TypeError:
-                            self.thinking_engine.queue_chat_task(prompt)
-                    
-                    # 使用 root.after() 确保在主线程执行
-                    self.root.after(0, update_ui_gan)
-                
-                if self.gan_enabled:
-                    self.thinking_engine.should_use_gan_async(text, context, on_gan_decision)
+            def update_ui_gan():
+                if should_use_gan:
+                    self._add_chat_message(self._t("gan_chosen"), "autonomous")
+                    self._add_chat_message(f"System: AI decided to use GAN thinking before answering.", "autonomous")
                 else:
-                    on_gan_decision((False, "GAN disabled"))
-            
+                    self._add_chat_message(self._t("gan_skipped"), "autonomous")
+
+                try:
+                    if self.gan_enabled:
+                        self.thinking_engine.queue_chat_task(prompt, memory=self.memory, use_gan_decision=True, user_text=text)
+                    else:
+                        self.thinking_engine.queue_chat_task(prompt, memory=self.memory)
+                except TypeError:
+                    self.thinking_engine.queue_chat_task(prompt)
+
+                # 用户输入已提交，清除待处理标记
+                self._pending_input = None
+
             # 使用 root.after() 确保在主线程执行
-            self.root.after(0, update_ui_answer)
-        
-        self.thinking_engine.should_answer_user_async(text, on_answer_decision)
+            self.root.after(0, update_ui_gan)
+
+        if self.gan_enabled:
+            logger.info("Requesting GAN decision...")
+            self.thinking_engine.should_use_gan_async(text, context, on_gan_decision)
+        else:
+            on_gan_decision((False, "GAN disabled"))
 
     def clear_chat(self):
         self.chat_box.configure(state="normal")
@@ -1991,10 +1980,37 @@ class HumanaizeUI:
             self.send_btn.configure(state="normal")
             self.entry.configure(state="normal")
             self.entry.focus()
-            self._resume_idle_engine()
+            # 延迟恢复 idle engine，避免超时后立即触发自动 GAN 任务
+            self.root.after(120000, self._resume_idle_engine)
             self._add_chat_message("System: UI timeout occurred, please try again.", "error")
         except Exception as e:
             pass
+
+    def _restore_ui_state_with_pending(self):
+        """超时后恢复UI状态，并确保用户输入传达给Aize"""
+        try:
+            self.send_btn.configure(state="normal")
+            self.entry.configure(state="normal")
+            self.entry.focus()
+            # 延迟恢复 idle engine，避免超时后立即触发自动 GAN 任务
+            self.root.after(120000, self._resume_idle_engine)
+
+            # 如果有未处理的用户输入，直接提交给 thinking_engine
+            if getattr(self, "_pending_input", None):
+                pending = self._pending_input
+                self._pending_input = None
+                text = pending["text"]
+                prompt = pending["prompt"]
+                logger.info(f"Timeout fallback: submitting user input to Aize (text: {text[:50]})")
+                self._add_chat_message("System: AI is processing your input in the background...", "autonomous")
+                try:
+                    self.thinking_engine.queue_chat_task(prompt, memory=self.memory, user_text=text)
+                except TypeError:
+                    self.thinking_engine.queue_chat_task(prompt)
+            else:
+                self._add_chat_message("System: UI timeout occurred, please try again.", "error")
+        except Exception as e:
+            logger.error(f"Restore UI state error: {e}")
 
     def _performance_cleanup(self):
         """定期清理UI缓存，优化性能"""

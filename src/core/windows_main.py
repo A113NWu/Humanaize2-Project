@@ -6,6 +6,13 @@ Humanaize v2.0 - Windows 专用启动入口
 import sys
 import os
 
+# PyInstaller --windowed 模式下 sys.stdout/stderr 可能为 None，需要修复
+# 否则 loguru 等库尝试添加 sys.stdout 作为 sink 时会报 TypeError
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w")
+
 # 添加 src 和 core 目录到 Python 路径
 src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, src_dir)

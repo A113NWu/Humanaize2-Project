@@ -32,9 +32,9 @@ VERSION_FILE = os.path.join(PROJECT_ROOT, "config", "version.json")
 def get_version():
     try:
         with open(VERSION_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f).get("version", "2.2.6")
+            return json.load(f).get("version", "2.2.7")
     except Exception:
-        return "2.2.6"
+        return "2.2.7"
 
 
 def get_release_tag(version: str = None) -> str:

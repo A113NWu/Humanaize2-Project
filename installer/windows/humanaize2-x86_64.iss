@@ -4,8 +4,8 @@
 [Setup]
 AppId={{HUMANAIZE2-X64-2024}}
 AppName=Humanaize 2.0 Agent
-AppVersion=2.2.6
-AppVerName=Humanaize 2.0 Agent (x64) v2.2.6
+AppVersion=2.2.7
+AppVerName=Humanaize 2.0 Agent (x64) v2.2.7
 AppPublisher=Humanaize Project
 AppPublisherURL=https://github.com/A113NWu/Humanaize2-Project
 AppSupportURL=https://github.com/A113NWu/Humanaize2-Project/issues
@@ -16,11 +16,11 @@ AllowNoIcons=yes
 ; 所有 Source 路徑相對於專案根目錄
 SourceDir=..\..\
 OutputDir=installer\windows\output
-OutputBaseFilename=Humanaize2-Setup-x86_64-v2.2.6
+OutputBaseFilename=Humanaize2-Setup-x86_64-v2.2.7
 Compression=lzma2
 SolidCompression=yes
-ArchitecturesAllowed=x64
-ArchitecturesInstallIn64BitMode=x64
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
 LicenseFile=docs\LICENSE
 SetupIconFile=installer\windows\icon.ico
@@ -34,8 +34,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "addtopath"; Description: "Add to PATH environment variable (use 'humanaize2' command anywhere)"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-; 主程式（PyInstaller onefile，自包含）
-Source: "installer_output\x86_64\Humanaize2-x86_64.exe"; DestDir: "{app}"; Flags: ignoreversion
+; 主程式（PyInstaller --onedir，整個目錄自包含）
+Source: "installer_output\x86_64\Humanaize2\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; humanaize2 命令啟動腳本（讓用戶可在任意目錄使用 'humanaize2' 命令）
 Source: "installer\windows\humanaize2.cmd"; DestDir: "{app}"; Flags: ignoreversion
 ; Skills 目錄（可寫，供運行時安裝/更新技能）
@@ -48,12 +48,12 @@ Source: "docs\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "docs\README.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\Humanaize 2.0 Agent (x64)"; Filename: "{app}\Humanaize2-x86_64.exe"; Parameters: "boot -m gui"; WorkingDir: "{app}"
+Name: "{group}\Humanaize 2.0 Agent (x64)"; Filename: "{app}\Humanaize2.exe"; Parameters: "boot -m gui"; WorkingDir: "{app}"
 Name: "{group}\Uninstall Humanaize 2.0 Agent"; Filename: "{uninstallexe}"
-Name: "{commondesktop}\Humanaize 2.0 Agent (x64)"; Filename: "{app}\Humanaize2-x86_64.exe"; Parameters: "boot -m gui"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{commondesktop}\Humanaize 2.0 Agent (x64)"; Filename: "{app}\Humanaize2.exe"; Parameters: "boot -m gui"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\Humanaize2-x86_64.exe"; Description: "{cm:LaunchProgram,Humanaize 2.0 Agent}"; Parameters: "boot -m gui"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\Humanaize2.exe"; Description: "{cm:LaunchProgram,Humanaize 2.0 Agent}"; Parameters: "boot -m gui"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
@@ -135,7 +135,7 @@ var
   dwResult: DWORD;
 begin
   // 安裝完成後廣播 WM_SETTINGCHANGE，讓新的 PATH 立即生效
-  if (CurStep = ssPostInstall) and IsTaskSelected('addtopath') then
+  if (CurStep = ssPostInstall) and WizardIsTaskSelected('addtopath') then
   begin
     SendMessageTimeout($FFFF, $001A, 0, 0, SMTO_ABORTIFHUNG, 5000, dwResult);
   end;

@@ -80,7 +80,7 @@ if "%BUILD_TYPE%"=="debug" (
 if exist "%APK_PATH%" (
     for %%F in ("%APK_PATH%") do set "APK_SIZE=%%~zF"
     set /a "APK_SIZE_MB=!APK_SIZE! / 1048576"
-    :: 重命名 APK 包含版本号（v2.2.6）
+    :: 重命名 APK 包含版本号（v2.2.7）
     for /f "tokens=2 delims==" %%a in ('findstr /C:"versionName" app\build.gradle.kts') do (
         for /f "tokens=2 delims=^"" %%b in ("%%a") do set "APP_VERSION=%%b"
     )

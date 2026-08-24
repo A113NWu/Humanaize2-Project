@@ -15,7 +15,10 @@ if exist "%SCRIPT_DIR%src" (
 set "PYTHONPATH=%MAIN_DIR%;%MAIN_DIR%src;%MAIN_DIR%src\core;%PYTHONPATH%"
 set "PYTHONUNBUFFERED=1"
 
-set "MODEL_DIR=%MAIN_DIR%models"
+rem Prefer the project’s actual model folder, but accept legacy modelsolder names too.
+set "MODEL_DIR=%MAIN_DIR%model"
+if not exist "%MODEL_DIR%" if exist "%MAIN_DIR%models" set "MODEL_DIR=%MAIN_DIR%models"
+if not exist "%MODEL_DIR%" mkdir "%MODEL_DIR%"
 set "MODEL_FILE=%MODEL_DIR%\tinyllama.gguf"
 set "MODEL_URL=https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
 

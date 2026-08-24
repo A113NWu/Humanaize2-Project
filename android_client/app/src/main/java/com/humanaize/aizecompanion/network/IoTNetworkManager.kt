@@ -92,16 +92,21 @@ class IoTNetworkManager(
      * 连接到服务器
      */
     suspend fun connect(serverAddress: String) {
+        val normalizedAddress = serverAddress.trim()
+        if (normalizedAddress.isEmpty()) {
+            Log.w(TAG, "Empty server address; skipping connection attempt")
+            return
+        }
         if (isConnecting || _connectionState.value == ConnectionState.CONNECTED) {
             return
         }
-        
+
         isConnecting = true
         _connectionState.value = ConnectionState.CONNECTING
         onConnectionChanged?.invoke(ConnectionState.CONNECTING)
-        
+
         try {
-            val url = serverAddress.toWsUrl()
+            val url = normalizedAddress.toWsUrl()
             val request = Request.Builder()
                 .url(url)
                 .build()
@@ -111,10 +116,11 @@ class IoTNetworkManager(
             webSocket = client.newWebSocket(request, object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: Response) {
                     Log.i(TAG, "WebSocket connected")
+                    isConnecting = false
                     _connectionState.value = ConnectionState.CONNECTED
                     onConnectionChanged?.invoke(ConnectionState.CONNECTED)
                     reconnectAttempts = 0
-                    
+
                     // 发送注册消息
                     scope.launch {
                         sendRegister()

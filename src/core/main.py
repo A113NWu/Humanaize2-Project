@@ -90,19 +90,19 @@ def _get_model_path():
         print(f"[INFO] Using model path from environment: {env_model_path}")
         return env_model_path
     
-    for model_dir_name in ["models", "model"]:
+    for model_dir_name in ["model", "models"]:
         model_dir = os.path.join(base_dir, model_dir_name)
-        
+
         exact_path = os.path.join(model_dir, "tinyllama.gguf")
         if os.path.exists(exact_path):
             return exact_path
-        
+
         if os.path.exists(model_dir):
             for f in os.listdir(model_dir):
                 if f.endswith('.gguf'):
                     return os.path.join(model_dir, f)
-    
-    return os.path.join(base_dir, "models", "tinyllama.gguf")
+
+    return os.path.join(base_dir, "model", "tinyllama.gguf")
 
 
 def _is_port_in_use(port: int = 8080) -> bool:
@@ -112,8 +112,35 @@ def _is_port_in_use(port: int = 8080) -> bool:
         return s.connect_ex(('127.0.0.1', port)) == 0
 
 
+def _process_is_llama_server(pid: str) -> bool:
+    """Return True only for a PID whose command line clearly points to llama-server."""
+    if not pid or not str(pid).strip():
+        return False
+
+    try:
+        if sys.platform == "win32":
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 f"(Get-CimInstance Win32_Process -Filter 'ProcessId = {pid}').CommandLine"],
+                capture_output=True, text=True, timeout=5
+            )
+            cmdline = (result.stdout or "") + (result.stderr or "")
+        else:
+            result = subprocess.run(
+                ["ps", "-p", str(pid), "-o", "args="],
+                capture_output=True, text=True, timeout=5
+            )
+            cmdline = (result.stdout or "") + (result.stderr or "")
+
+        return "llama-server" in cmdline.lower()
+    except Exception:
+        return False
+
+
 def _kill_process_on_port(port: int = 8080) -> bool:
-    """终止占用指定端口的进程"""
+    """Only terminate llama-server processes that are actually holding the port."""
+    killed_any = False
+
     if sys.platform == "win32":
         try:
             result = subprocess.run(
@@ -128,16 +155,20 @@ def _kill_process_on_port(port: int = 8080) -> bool:
                         parts = line.split()
                         if len(parts) >= 5:
                             pid = parts[-1]
+                            if not _process_is_llama_server(pid):
+                                print(f"[INFO] Port {port} occupied by non-llama-server PID {pid}; leaving it alone.")
+                                continue
                             try:
                                 subprocess.run(
                                     ['taskkill', '/F', '/PID', pid],
                                     capture_output=True,
                                     text=True
                                 )
-                                print(f"[INFO] Killed process {pid} on port {port}")
+                                print(f"[INFO] Killed llama-server PID {pid} on port {port}")
+                                killed_any = True
                             except:
                                 pass
-                return True
+                return killed_any
         except:
             pass
     else:
@@ -148,17 +179,21 @@ def _kill_process_on_port(port: int = 8080) -> bool:
                 text=True
             )
             if result.stdout:
-                pids = result.stdout.strip().split('\n')
+                pids = [pid for pid in result.stdout.strip().split('\n') if pid.strip()]
                 for pid in pids:
+                    if not _process_is_llama_server(pid):
+                        print(f"[INFO] Port {port} occupied by non-llama-server PID {pid}; leaving it alone.")
+                        continue
                     try:
                         subprocess.run(['kill', '-9', pid], check=True)
-                        print(f"[INFO] Killed process {pid} on port {port}")
+                        print(f"[INFO] Killed llama-server PID {pid} on port {port}")
+                        killed_any = True
                     except:
                         pass
-                return True
+                return killed_any
         except:
             pass
-        
+
         try:
             result = subprocess.run(
                 ['ss', '-tlnp', f'sport = :{port}'],
@@ -173,15 +208,19 @@ def _kill_process_on_port(port: int = 8080) -> bool:
                         pid_info = parts[5]
                         if '=' in pid_info:
                             pid = pid_info.split('=')[1].split(',')[0]
+                            if not _process_is_llama_server(pid):
+                                print(f"[INFO] Port {port} occupied by non-llama-server PID {pid}; leaving it alone.")
+                                continue
                             try:
                                 subprocess.run(['kill', '-9', pid], check=True)
-                                print(f"[INFO] Killed process {pid} on port {port}")
+                                print(f"[INFO] Killed llama-server PID {pid} on port {port}")
+                                killed_any = True
                             except:
                                 pass
-                return True
+                return killed_any
         except:
             pass
-    
+
     return False
 
 

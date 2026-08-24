@@ -34,9 +34,9 @@ def get_version():
     try:
         with open(version_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
-            return data.get("version", "2.2.6")
+            return data.get("version", "2.2.7")
     except Exception:
-        return "2.2.6"
+            return "2.2.7"
 
 
 def get_release_tag(version: str = None) -> str:
@@ -90,21 +90,20 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False):
         print("[ERROR] PyInstaller not found. Install with: pip install pyinstaller")
         sys.exit(1)
 
-    # Clean previous builds
+    # Clean previous output only (keep build dir for PyInstaller cache reuse)
     if os.path.exists(output_dir):
         shutil.rmtree(output_dir)
         print(f"[CLEAN] Removed previous output: {output_dir}")
 
-    if os.path.exists(build_dir):
-        shutil.rmtree(build_dir)
-
     # Build PyInstaller command
+    # 使用 --onedir 模式：比 --onefile 快很多（不需要压缩成单文件）
+    # 安装包由 Inno Setup 打包整个目录
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--name", app_name,
-        "--onefile",
+        "--onedir",
         "--noconfirm",
-        "--clean",
+        # Note: 不使用 --clean，让 PyInstaller 复用缓存加速构建
         "--distpath", output_dir,
         "--workpath", build_dir,
         # Data files
@@ -167,6 +166,52 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False):
         "--exclude-module", "PyQt6",
         "--exclude-module", "PySide2",
         "--exclude-module", "PySide6",
+        # Additional excludes: astrbot 引入的重型依赖，Humanaize 核心不需要
+        "--exclude-module", "pygame",
+        "--exclude-module", "psycopg2",
+        "--exclude-module", "pyarrow",
+        "--exclude-module", "faiss",
+        "--exclude-module", "lxml",
+        "--exclude-module", "lz4",
+        "--exclude-module", "pydub",
+        "--exclude-module", "sqlalchemy",
+        "--exclude-module", "apscheduler",
+        "--exclude-module", "aiohttp",
+        "--exclude-module", "aiofiles",
+        "--exclude-module", "dashscope",
+        "--exclude-module", "openai",
+        "--exclude-module", "anthropic",
+        "--exclude-module", "google.generativeai",
+        "--exclude-module", "tiktoken",
+        "--exclude-module", "chromadb",
+        "--exclude-module", "pymilvus",
+        "--exclude-module", "qdrant",
+        "--exclude-module", "sklearn",
+        "--exclude-module", "xgboost",
+        "--exclude-module", "lightgbm",
+        "--exclude-module", "pyspark",
+        "--exclude-module", "selenium",
+        "--exclude-module", "playwright",
+        "--exclude-module", "docker",
+        "--exclude-module", "kubernetes",
+        # pywin32 related (causes hook errors, not needed by core app)
+        "--exclude-module", "pywintypes",
+        "--exclude-module", "pywin32",
+        "--exclude-module", "win32com",
+        "--exclude-module", "win32api",
+        # More heavy/unnecessary modules
+        "--exclude-module", "uvicorn",
+        "--exclude-module", "anyio",
+        "--exclude-module", "bcrypt",
+        "--exclude-module", "jsonschema",
+        "--exclude-module", "pygments",
+        "--exclude-module", "dateutil",
+        "--exclude-module", "pytz",
+        "--exclude-module", "openpyxl",
+        "--exclude-module", "ormsgpack",
+        "--exclude-module", "jinja2",
+        "--exclude-module", "cryptography",
+        "--exclude-module", "pydantic",
     ]
 
     # Platform-specific options
@@ -175,7 +220,6 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False):
         if os.path.exists(icon_ico):
             cmd.extend(["--icon", icon_ico])
         cmd.append("--windowed")
-        cmd.append("--uac-admin")
     elif IS_LINUX:
         cmd.append("--nowindowed")
 
@@ -195,7 +239,7 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False):
                 cwd=PROJECT_ROOT,
                 stdout=log_f,
                 stderr=subprocess.STDOUT,
-                timeout=1200
+                timeout=5400
             )
 
         if result.returncode != 0:
@@ -209,7 +253,7 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False):
             sys.exit(1)
 
     except subprocess.TimeoutExpired:
-        print(f"\n[ERROR] PyInstaller timed out (10 minutes)")
+        print(f"\n[ERROR] PyInstaller timed out (90 minutes)")
         print(f"  Full log: {log_file}")
         sys.exit(1)
     except Exception as e:
@@ -219,13 +263,19 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False):
 
     print(f"  [OK] PyInstaller completed (log: {log_file})")
 
-    # Verify output
+    # Verify output (--onedir 模式: dist/x86_64/Humanaize2/Humanaize2.exe)
     if IS_WINDOWS:
         exe_name = f"{app_name}.exe"
     else:
         exe_name = app_name
 
-    exe_path = os.path.join(output_dir, exe_name)
+    # --onedir 模式下，exe 在子目录中
+    onedir_path = os.path.join(output_dir, app_name)
+    exe_path = os.path.join(onedir_path, exe_name)
+    if not os.path.exists(exe_path):
+        # fallback: 检查 output_dir 根目录
+        exe_path = os.path.join(output_dir, exe_name)
+        onedir_path = output_dir
     if not os.path.exists(exe_path):
         print(f"\n[ERROR] Executable not found: {exe_path}")
         print(f"  Full log: {log_file}")
@@ -239,13 +289,14 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False):
     print(f"  Path: {exe_path}")
     print(f"  Size: {exe_size_mb:.2f} MB")
 
-    # 重命名并拷贝到 installer_output，与 .iss 的 Source 路径对齐
+    # 复制整个 onedir 目录到 installer_output（Inno Setup 打包整个目录）
     installer_output_dir = os.path.join(PROJECT_ROOT, "installer_output", arch)
+    dst_dir = os.path.join(installer_output_dir, app_name)
+    if os.path.exists(dst_dir):
+        shutil.rmtree(dst_dir)
     os.makedirs(installer_output_dir, exist_ok=True)
-    tagged_exe_name = f"{app_name}-{arch}.exe"
-    tagged_exe_path = os.path.join(installer_output_dir, tagged_exe_name)
-    shutil.copy2(exe_path, tagged_exe_path)
-    print(f"[COPY] Copied to installer_output: {tagged_exe_path}")
+    shutil.copytree(onedir_path, dst_dir)
+    print(f"[COPY] Copied to installer_output: {dst_dir}")
 
     # Create portable zip
     if create_zip:

@@ -93,31 +93,37 @@ class ThinkingEngine:
                 task = self._decision_queue.get(timeout=0.5)
                 if task is None:
                     break
-                    
+
                 task_type = task.get("type")
                 callback = task.get("callback")
-                
+
                 if task_type == "should_answer":
+                    logger.info("Processing should_answer decision...")
                     result = self._should_answer_user_sync(task.get("user_text"))
+                    logger.info(f"should_answer result: {result[0]}")
                     if callback:
                         callback(result)
                 elif task_type == "should_use_gan":
+                    logger.info("Processing should_use_gan decision...")
                     result = self._should_use_gan_sync(task.get("user_text"), task.get("context"))
+                    logger.info(f"should_use_gan result: {result[0]}")
                     if callback:
                         callback(result)
             except queue.Empty:
                 continue
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Decision processing error: {e}")
     
     def _should_answer_user_sync(self, user_text):
         """Synchronous version of should_answer_user for internal use"""
         from llm import chat
-        
+
         decision_prompt = load_should_answer_user_prompt(user_text)
-        
+
         try:
+            logger.info(f"Calling LLM for should_answer decision (text: {user_text[:50] if user_text else 'None'})")
             response = chat(decision_prompt, max_tokens=100, temperature=0.3).strip()
+            logger.info(f"should_answer LLM response: {response[:100] if response else 'Empty'}")
             should_answer = "是" in response or "YES" in response.upper() or "会" in response
             # 发送AI决策通知
             decision = "YES" if should_answer else "NO"
@@ -125,20 +131,23 @@ class ThinkingEngine:
             return (should_answer, response)
         except Exception as e:
             # 默认回答用户，避免流程中断
+            logger.error(f"should_answer LLM error: {e}")
             return (True, f"Error: {e} (defaulting to answer)")
     
     def _should_use_gan_sync(self, user_text, context=""):
         """Synchronous version of should_use_gan_for_answer for internal use"""
         from llm import chat
-        
+
         decision_prompt = load_should_use_gan_prompt(user_text, context)
-        
+
         try:
+            logger.info(f"Calling LLM for GAN decision (text: {user_text[:50] if user_text else 'None'})")
             response = chat(decision_prompt, max_tokens=100, temperature=0.3).strip()
+            logger.info(f"GAN decision LLM response: {response[:100] if response else 'Empty'}")
             should_use_gan = "是" in response or "YES" in response.upper()
             return (should_use_gan, response)
         except Exception as e:
-            # 默认不使用GAN，避免流程中断
+            logger.error(f"GAN decision LLM error: {e}")
             return (False, f"Error: {e} (defaulting to no GAN)")
     
     def should_answer_user_async(self, user_text, callback):

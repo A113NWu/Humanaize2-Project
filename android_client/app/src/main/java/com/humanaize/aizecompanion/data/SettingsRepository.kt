@@ -33,8 +33,9 @@ class SettingsRepository(private val context: Context) {
         val CONTRIBUTION_MODE = stringPreferencesKey("contribution_mode")
         val ENABLE_REMOTE_SHELL = booleanPreferencesKey("enable_remote_shell")
         
-        // 默认值
-        const val DEFAULT_SERVER_ADDRESS = "ws://127.0.0.1:8765"
+        // 默认值：避免在真实 Android 设备上错误地绑定到本机 loopback。
+        // 用户需要在设置中填入同一局域网内的桌面端 Humanaize 地址。
+        const val DEFAULT_SERVER_ADDRESS = ""
         const val DEFAULT_DEVICE_NAME = "Android Device"
         const val DEFAULT_MAX_TASKS = 1
         const val DEFAULT_CONTRIBUTION_MODE = "wifi"

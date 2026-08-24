@@ -199,8 +199,10 @@ class LogManager:
             return
 
         _loguru.remove()
+        # PyInstaller --windowed 模式下 sys.stdout 可能为 None
+        console_sink = sys.stdout if sys.stdout is not None else open(os.devnull, "w")
         cls._console_sink_id = _loguru.add(
-            sys.stdout,
+            console_sink,
             level="DEBUG",
             colorize=True,
             filter=lambda record: not record["extra"].get("is_trace", False),

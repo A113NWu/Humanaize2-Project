@@ -429,7 +429,7 @@ def restart_llm_server(model_path: str = None):
                 print(f"[INFO] Using model path from environment: {model_path}")
         
         if model_path is None:
-            for model_dir_name in ["models", "model"]:
+            for model_dir_name in ["model", "models"]:
                 model_dir = os.path.join(base_dir, model_dir_name)
                 exact_path = os.path.join(model_dir, "tinyllama.gguf")
                 if os.path.exists(exact_path):

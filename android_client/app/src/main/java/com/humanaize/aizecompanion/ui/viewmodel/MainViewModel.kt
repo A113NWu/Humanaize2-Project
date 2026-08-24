@@ -102,8 +102,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 自动连接（如果有保存的服务器地址）
         viewModelScope.launch {
             settingsRepo.settingsFlow.first().let { settings ->
-                if (settings.serverAddress.isNotEmpty()) {
-                    connectToServer(settings.serverAddress)
+                val address = settings.serverAddress.trim()
+                if (address.isNotEmpty() && address != "ws://127.0.0.1:8765") {
+                    connectToServer(address)
                 }
             }
         }
