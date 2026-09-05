@@ -1,2284 +1,2301 @@
 {
-    "language": "中文",
-    "theme": "Light",
-    "model_name": "gemma-4-26B-A4B-it-ultra-uncensored-heretic-Q5_K_S",
-    "model_path": "D:/Humanaize 2.0 Agent/Humanaize2-Project/models/gemma-4-26B-A4B-it-ultra-uncensored-heretic-Q5_K_S.gguf",
-    "skills_prompt": "",
-    "auto_break_silence": true,
-    "gan_enabled": true,
-    "iot_auto_start": true,
-    "iot_host": "0.0.0.0",
-    "iot_port": 8765,
-    "iot_scan_enabled": true,
-    "iot_scan_interval": 30,
-    "iot_discovered_devices": [
-        {
-            "ip": "198.18.0.2",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.2)",
-            "device_type": "unknown",
-            "last_seen": 1786172809.8300807,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.4",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.4)",
-            "device_type": "unknown",
-            "last_seen": 1786172809.8322399,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.5",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.5)",
-            "device_type": "unknown",
-            "last_seen": 1786172809.8557103,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.6",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.6)",
-            "device_type": "unknown",
-            "last_seen": 1786172809.8568075,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.7",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.7)",
-            "device_type": "unknown",
-            "last_seen": 1786172809.8582294,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.8",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.8)",
-            "device_type": "unknown",
-            "last_seen": 1786172809.8599613,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.9",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.9)",
-            "device_type": "unknown",
-            "last_seen": 1786172809.863454,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.10",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.10)",
-            "device_type": "unknown",
-            "last_seen": 1786172809.879171,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.11",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.11)",
-            "device_type": "unknown",
-            "last_seen": 1786172809.8810856,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.12",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.12)",
-            "device_type": "unknown",
-            "last_seen": 1786172809.8851078,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.13",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.13)",
-            "device_type": "unknown",
-            "last_seen": 1786172809.8870673,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.14",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.14)",
-            "device_type": "unknown",
-            "last_seen": 1786172809.8897822,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.15",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.15)",
-            "device_type": "unknown",
-            "last_seen": 1786172809.893023,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.16",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.16)",
-            "device_type": "unknown",
-            "last_seen": 1786172809.8996508,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.17",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.17)",
-            "device_type": "unknown",
-            "last_seen": 1786172809.9207237,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.18",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.18)",
-            "device_type": "unknown",
-            "last_seen": 1786172809.9370675,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.19",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.19)",
-            "device_type": "unknown",
-            "last_seen": 1786172809.9429085,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.20",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.20)",
-            "device_type": "unknown",
-            "last_seen": 1786172809.952042,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.21",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.21)",
-            "device_type": "unknown",
-            "last_seen": 1786172809.9539857,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.22",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.22)",
-            "device_type": "unknown",
-            "last_seen": 1786172809.9556053,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.23",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.23)",
-            "device_type": "unknown",
-            "last_seen": 1786172809.980498,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.24",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.24)",
-            "device_type": "unknown",
-            "last_seen": 1786172809.9827373,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.25",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.25)",
-            "device_type": "unknown",
-            "last_seen": 1786172809.9848194,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.26",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.26)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.007504,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.27",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.27)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.0089955,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.28",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.28)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.0134702,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.29",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.29)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.0166686,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.30",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.30)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.0192215,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.31",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.31)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.0244572,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.32",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.32)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.027483,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.33",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.33)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.0306196,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.34",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.34)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.0340319,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.35",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.35)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.0363822,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.36",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.36)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.038196,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.37",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.37)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.040526,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.38",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.38)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.0541532,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.39",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.39)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.0562706,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.40",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.40)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.0588284,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.41",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.41)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.0626829,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.42",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.42)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.0656118,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.43",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.43)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.067941,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.44",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.44)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.0708733,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.45",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.45)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.0740235,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.46",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.46)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.0769515,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.47",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.47)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.1020176,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.48",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.48)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.1035461,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.49",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.49)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.1061954,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.50",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.50)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.1085384,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.51",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.51)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.1132417,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.52",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.52)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.1185513,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.53",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.53)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.121155,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.54",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.54)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.1238668,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.55",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.55)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.1414213,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.56",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.56)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.143281,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.57",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.57)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.1460898,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.58",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.58)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.1502578,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.59",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.59)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.1528554,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.60",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.60)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.1552017,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.61",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.61)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.1571524,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.62",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.62)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.1810806,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.63",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.63)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.1842992,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.64",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.64)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.1869955,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.65",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.65)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.1895905,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.66",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.66)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.1921957,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.67",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.67)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.196352,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.68",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.68)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.2191472,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.69",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.69)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.2352974,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.70",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.70)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.237585,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.71",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.71)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.2403998,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.72",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.72)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.243242,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.73",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.73)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.2469907,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.74",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.74)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.252093,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.75",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.75)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.254814,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.76",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.76)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.2576325,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.77",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.77)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.2615016,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.78",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.78)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.264625,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.79",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.79)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.282636,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.80",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.80)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.2846932,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.81",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.81)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.2866893,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.82",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.82)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.2891443,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.83",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.83)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.2914224,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.84",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.84)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.3101149,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.85",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.85)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.3136415,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.86",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.86)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.3175383,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.87",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.87)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.3217673,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.88",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.88)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.3258276,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.89",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.89)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.3316095,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.90",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.90)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.338284,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.91",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.91)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.348751,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.92",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.92)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.3542209,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.93",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.93)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.3596447,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.94",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.94)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.370456,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.95",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.95)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.380035,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.96",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.96)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.3861716,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.97",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.97)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.3932958,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.98",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.98)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.3986766,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.99",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.99)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.4031062,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.100",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.100)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.406312,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.101",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.101)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.4257014,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.102",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.102)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.428516,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.103",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.103)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.4326549,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.104",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.104)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.4356315,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.105",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.105)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.438277,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.106",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.106)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.4565992,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.107",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.107)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.4599237,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.108",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.108)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.4651494,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.109",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.109)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.4691696,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.110",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.110)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.4726968,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.111",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.111)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.4758658,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.112",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.112)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.4856725,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.113",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.113)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.4904854,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.114",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.114)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.4942505,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.115",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.115)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.4992769,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.116",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.116)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.5031545,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.117",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.117)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.5271373,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.118",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.118)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.5302668,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.119",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.119)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.5361588,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.120",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.120)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.5581799,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.121",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.121)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.5628948,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.122",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.122)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.5669203,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.123",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.123)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.590123,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.124",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.124)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.592428,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.125",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.125)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.5967975,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.126",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.126)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.6007514,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.127",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.127)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.6037545,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.128",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.128)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.6071053,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.129",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.129)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.6107059,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.130",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.130)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.6150417,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.131",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.131)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.6198225,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.132",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.132)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.6260202,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.133",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.133)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.6333086,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.134",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.134)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.637044,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.135",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.135)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.6405172,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.136",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.136)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.6444776,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.137",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.137)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.649948,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.138",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.138)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.653549,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.139",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.139)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.6801116,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.140",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.140)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.7011583,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.141",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.141)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.717559,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.142",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.142)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.733223,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.143",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.143)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.7637796,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.144",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.144)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.770785,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.145",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.145)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.804625,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.146",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.146)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.8103716,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.147",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.147)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.8229113,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.148",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.148)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.83227,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.149",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.149)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.8413599,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.150",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.150)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.8491616,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.151",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.151)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.8577304,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.152",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.152)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.867766,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.153",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.153)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.8758786,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.154",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.154)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.884644,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.155",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.155)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.893039,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.156",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.156)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.9140434,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.157",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.157)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.9240713,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.158",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.158)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.9321024,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.159",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.159)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.962222,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.160",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.160)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.9676976,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.161",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.161)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.9744074,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.162",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.162)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.9824836,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.163",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.163)",
-            "device_type": "unknown",
-            "last_seen": 1786172810.9920914,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.164",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.164)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.0034826,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.165",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.165)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.015508,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.166",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.166)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.0410016,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.167",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.167)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.048122,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.168",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.168)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.0547879,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.169",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.169)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.0602202,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.170",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.170)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.070157,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.171",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.171)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.078996,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.172",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.172)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.0896292,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.173",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.173)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.1013467,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.174",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.174)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.1091838,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.175",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.175)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.1195982,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.176",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.176)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.1312244,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.177",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.177)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.15942,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.178",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.178)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.1677544,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.179",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.179)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.181554,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.180",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.180)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.192133,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.181",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.181)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.200205,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.182",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.182)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.2116807,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.183",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.183)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.221765,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.184",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.184)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.2473872,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.185",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.185)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.2567651,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.186",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.186)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.2646885,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.187",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.187)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.2703743,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.188",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.188)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.2948203,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.189",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.189)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.3041048,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.190",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.190)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.324086,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.191",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.191)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.3312643,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.192",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.192)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.3408546,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.193",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.193)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.3473895,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.194",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.194)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.3556798,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.195",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.195)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.3813562,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.196",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.196)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.387713,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.197",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.197)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.3934524,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.198",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.198)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.4128747,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.199",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.199)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.4370382,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.200",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.200)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.4423995,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.201",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.201)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.450307,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.202",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.202)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.4801786,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.203",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.203)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.4890223,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.204",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.204)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.4965088,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.205",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.205)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.5036724,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.206",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.206)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.513026,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.207",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.207)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.5398774,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.208",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.208)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.5687375,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.209",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.209)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.5751493,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.210",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.210)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.5835671,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.211",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.211)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.5898573,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.212",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.212)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.5984175,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.213",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.213)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.6086428,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.214",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.214)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.616629,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.215",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.215)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.6262877,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.216",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.216)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.6362936,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.217",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.217)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.641918,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.218",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.218)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.6507537,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.219",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.219)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.6595564,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.220",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.220)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.6735382,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.221",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.221)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.6814592,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.222",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.222)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.703958,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.223",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.223)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.7101822,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.224",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.224)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.716652,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.225",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.225)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.728939,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.226",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.226)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.7351615,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.227",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.227)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.742421,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.228",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.228)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.7522528,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.229",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.229)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.7739022,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.230",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.230)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.7842996,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.231",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.231)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.809927,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.232",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.232)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.8191497,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.233",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.233)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.8263135,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.234",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.234)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.8367763,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.235",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.235)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.8683572,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.236",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.236)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.878618,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.237",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.237)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.8864748,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.238",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.238)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.8988023,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.239",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.239)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.9085708,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.240",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.240)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.919471,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.241",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.241)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.926388,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.242",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.242)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.9338913,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.243",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.243)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.9435766,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.244",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.244)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.9542432,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.245",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.245)",
-            "device_type": "unknown",
-            "last_seen": 1786172811.967915,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.246",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.246)",
-            "device_type": "unknown",
-            "last_seen": 1786172812.0099845,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.247",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.247)",
-            "device_type": "unknown",
-            "last_seen": 1786172812.0287685,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.248",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.248)",
-            "device_type": "unknown",
-            "last_seen": 1786172812.0361784,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.249",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.249)",
-            "device_type": "unknown",
-            "last_seen": 1786172812.04342,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.250",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.250)",
-            "device_type": "unknown",
-            "last_seen": 1786172812.0547383,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.251",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.251)",
-            "device_type": "unknown",
-            "last_seen": 1786172812.0655084,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.252",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.252)",
-            "device_type": "unknown",
-            "last_seen": 1786172812.071627,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.253",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.253)",
-            "device_type": "unknown",
-            "last_seen": 1786172812.0837455,
-            "is_connected": false,
-            "device_id": ""
-        },
-        {
-            "ip": "198.18.0.254",
-            "port": 8765,
-            "device_name": "Unknown Device (198.18.0.254)",
-            "device_type": "unknown",
-            "last_seen": 1786172812.0905066,
-            "is_connected": false,
-            "device_id": ""
-        }
-    ]
+  "language": "中文",
+  "theme": "System",
+  "model_name": "gemma-4-26B-A4B-it-ultra-uncensored-heretic-Q5_K_S",
+  "model_path": "D:/Humanaize 2.0 Agent/Humanaize2-Project/models/gemma-4-26B-A4B-it-ultra-uncensored-heretic-Q5_K_S.gguf",
+  "openai_enabled": false,
+  "openai_api_key": "",
+  "openai_base_url": "",
+  "openai_model": "",
+  "gan_enabled": true,
+  "auto_break_silence": true,
+  "skills_prompt": "",
+  "llm_server_url": "http://127.0.0.1:8080/completion",
+  "max_tokens": "256",
+  "temperature": "0.7",
+  "guard_enabled": true,
+  "guard_auto_start": false,
+  "guard_interval": "5",
+  "guard_firewall": true,
+  "guard_network_monitor": true,
+  "guard_system_monitor": true,
+  "counter_measure_enabled": true,
+  "counter_lab_mode": true,
+  "counter_max_warnings": "2",
+  "counter_cooldown": "300",
+  "iot_auto_start": true,
+  "iot_host": "0.0.0.0",
+  "iot_port": "8765",
+  "iot_scan_enabled": true,
+  "iot_scan_interval": "30",
+  "iot_discovered_devices": [
+    {
+      "ip": "198.18.0.2",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.2)",
+      "device_type": "unknown",
+      "last_seen": 1786172809.8300807,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.4",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.4)",
+      "device_type": "unknown",
+      "last_seen": 1786172809.8322399,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.5",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.5)",
+      "device_type": "unknown",
+      "last_seen": 1786172809.8557103,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.6",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.6)",
+      "device_type": "unknown",
+      "last_seen": 1786172809.8568075,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.7",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.7)",
+      "device_type": "unknown",
+      "last_seen": 1786172809.8582294,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.8",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.8)",
+      "device_type": "unknown",
+      "last_seen": 1786172809.8599613,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.9",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.9)",
+      "device_type": "unknown",
+      "last_seen": 1786172809.863454,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.10",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.10)",
+      "device_type": "unknown",
+      "last_seen": 1786172809.879171,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.11",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.11)",
+      "device_type": "unknown",
+      "last_seen": 1786172809.8810856,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.12",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.12)",
+      "device_type": "unknown",
+      "last_seen": 1786172809.8851078,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.13",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.13)",
+      "device_type": "unknown",
+      "last_seen": 1786172809.8870673,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.14",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.14)",
+      "device_type": "unknown",
+      "last_seen": 1786172809.8897822,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.15",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.15)",
+      "device_type": "unknown",
+      "last_seen": 1786172809.893023,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.16",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.16)",
+      "device_type": "unknown",
+      "last_seen": 1786172809.8996508,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.17",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.17)",
+      "device_type": "unknown",
+      "last_seen": 1786172809.9207237,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.18",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.18)",
+      "device_type": "unknown",
+      "last_seen": 1786172809.9370675,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.19",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.19)",
+      "device_type": "unknown",
+      "last_seen": 1786172809.9429085,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.20",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.20)",
+      "device_type": "unknown",
+      "last_seen": 1786172809.952042,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.21",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.21)",
+      "device_type": "unknown",
+      "last_seen": 1786172809.9539857,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.22",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.22)",
+      "device_type": "unknown",
+      "last_seen": 1786172809.9556053,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.23",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.23)",
+      "device_type": "unknown",
+      "last_seen": 1786172809.980498,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.24",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.24)",
+      "device_type": "unknown",
+      "last_seen": 1786172809.9827373,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.25",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.25)",
+      "device_type": "unknown",
+      "last_seen": 1786172809.9848194,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.26",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.26)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.007504,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.27",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.27)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.0089955,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.28",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.28)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.0134702,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.29",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.29)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.0166686,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.30",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.30)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.0192215,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.31",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.31)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.0244572,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.32",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.32)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.027483,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.33",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.33)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.0306196,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.34",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.34)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.0340319,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.35",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.35)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.0363822,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.36",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.36)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.038196,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.37",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.37)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.040526,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.38",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.38)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.0541532,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.39",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.39)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.0562706,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.40",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.40)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.0588284,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.41",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.41)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.0626829,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.42",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.42)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.0656118,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.43",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.43)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.067941,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.44",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.44)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.0708733,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.45",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.45)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.0740235,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.46",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.46)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.0769515,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.47",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.47)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.1020176,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.48",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.48)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.1035461,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.49",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.49)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.1061954,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.50",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.50)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.1085384,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.51",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.51)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.1132417,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.52",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.52)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.1185513,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.53",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.53)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.121155,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.54",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.54)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.1238668,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.55",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.55)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.1414213,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.56",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.56)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.143281,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.57",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.57)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.1460898,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.58",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.58)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.1502578,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.59",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.59)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.1528554,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.60",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.60)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.1552017,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.61",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.61)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.1571524,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.62",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.62)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.1810806,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.63",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.63)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.1842992,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.64",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.64)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.1869955,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.65",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.65)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.1895905,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.66",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.66)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.1921957,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.67",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.67)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.196352,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.68",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.68)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.2191472,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.69",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.69)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.2352974,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.70",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.70)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.237585,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.71",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.71)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.2403998,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.72",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.72)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.243242,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.73",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.73)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.2469907,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.74",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.74)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.252093,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.75",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.75)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.254814,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.76",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.76)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.2576325,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.77",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.77)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.2615016,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.78",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.78)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.264625,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.79",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.79)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.282636,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.80",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.80)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.2846932,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.81",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.81)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.2866893,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.82",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.82)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.2891443,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.83",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.83)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.2914224,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.84",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.84)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.3101149,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.85",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.85)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.3136415,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.86",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.86)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.3175383,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.87",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.87)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.3217673,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.88",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.88)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.3258276,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.89",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.89)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.3316095,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.90",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.90)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.338284,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.91",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.91)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.348751,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.92",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.92)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.3542209,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.93",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.93)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.3596447,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.94",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.94)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.370456,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.95",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.95)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.380035,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.96",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.96)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.3861716,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.97",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.97)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.3932958,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.98",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.98)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.3986766,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.99",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.99)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.4031062,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.100",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.100)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.406312,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.101",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.101)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.4257014,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.102",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.102)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.428516,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.103",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.103)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.4326549,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.104",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.104)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.4356315,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.105",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.105)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.438277,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.106",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.106)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.4565992,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.107",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.107)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.4599237,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.108",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.108)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.4651494,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.109",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.109)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.4691696,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.110",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.110)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.4726968,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.111",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.111)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.4758658,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.112",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.112)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.4856725,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.113",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.113)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.4904854,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.114",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.114)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.4942505,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.115",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.115)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.4992769,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.116",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.116)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.5031545,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.117",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.117)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.5271373,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.118",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.118)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.5302668,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.119",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.119)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.5361588,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.120",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.120)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.5581799,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.121",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.121)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.5628948,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.122",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.122)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.5669203,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.123",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.123)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.590123,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.124",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.124)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.592428,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.125",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.125)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.5967975,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.126",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.126)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.6007514,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.127",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.127)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.6037545,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.128",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.128)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.6071053,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.129",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.129)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.6107059,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.130",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.130)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.6150417,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.131",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.131)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.6198225,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.132",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.132)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.6260202,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.133",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.133)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.6333086,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.134",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.134)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.637044,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.135",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.135)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.6405172,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.136",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.136)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.6444776,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.137",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.137)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.649948,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.138",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.138)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.653549,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.139",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.139)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.6801116,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.140",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.140)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.7011583,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.141",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.141)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.717559,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.142",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.142)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.733223,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.143",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.143)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.7637796,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.144",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.144)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.770785,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.145",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.145)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.804625,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.146",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.146)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.8103716,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.147",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.147)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.8229113,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.148",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.148)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.83227,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.149",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.149)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.8413599,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.150",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.150)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.8491616,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.151",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.151)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.8577304,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.152",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.152)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.867766,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.153",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.153)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.8758786,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.154",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.154)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.884644,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.155",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.155)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.893039,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.156",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.156)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.9140434,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.157",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.157)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.9240713,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.158",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.158)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.9321024,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.159",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.159)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.962222,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.160",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.160)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.9676976,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.161",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.161)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.9744074,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.162",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.162)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.9824836,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.163",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.163)",
+      "device_type": "unknown",
+      "last_seen": 1786172810.9920914,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.164",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.164)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.0034826,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.165",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.165)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.015508,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.166",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.166)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.0410016,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.167",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.167)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.048122,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.168",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.168)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.0547879,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.169",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.169)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.0602202,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.170",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.170)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.070157,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.171",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.171)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.078996,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.172",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.172)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.0896292,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.173",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.173)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.1013467,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.174",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.174)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.1091838,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.175",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.175)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.1195982,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.176",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.176)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.1312244,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.177",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.177)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.15942,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.178",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.178)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.1677544,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.179",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.179)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.181554,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.180",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.180)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.192133,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.181",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.181)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.200205,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.182",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.182)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.2116807,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.183",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.183)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.221765,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.184",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.184)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.2473872,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.185",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.185)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.2567651,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.186",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.186)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.2646885,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.187",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.187)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.2703743,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.188",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.188)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.2948203,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.189",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.189)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.3041048,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.190",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.190)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.324086,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.191",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.191)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.3312643,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.192",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.192)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.3408546,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.193",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.193)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.3473895,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.194",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.194)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.3556798,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.195",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.195)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.3813562,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.196",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.196)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.387713,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.197",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.197)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.3934524,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.198",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.198)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.4128747,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.199",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.199)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.4370382,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.200",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.200)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.4423995,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.201",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.201)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.450307,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.202",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.202)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.4801786,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.203",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.203)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.4890223,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.204",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.204)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.4965088,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.205",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.205)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.5036724,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.206",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.206)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.513026,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.207",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.207)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.5398774,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.208",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.208)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.5687375,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.209",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.209)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.5751493,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.210",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.210)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.5835671,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.211",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.211)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.5898573,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.212",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.212)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.5984175,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.213",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.213)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.6086428,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.214",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.214)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.616629,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.215",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.215)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.6262877,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.216",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.216)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.6362936,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.217",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.217)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.641918,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.218",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.218)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.6507537,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.219",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.219)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.6595564,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.220",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.220)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.6735382,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.221",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.221)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.6814592,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.222",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.222)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.703958,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.223",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.223)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.7101822,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.224",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.224)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.716652,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.225",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.225)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.728939,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.226",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.226)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.7351615,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.227",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.227)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.742421,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.228",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.228)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.7522528,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.229",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.229)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.7739022,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.230",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.230)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.7842996,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.231",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.231)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.809927,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.232",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.232)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.8191497,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.233",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.233)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.8263135,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.234",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.234)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.8367763,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.235",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.235)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.8683572,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.236",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.236)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.878618,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.237",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.237)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.8864748,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.238",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.238)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.8988023,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.239",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.239)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.9085708,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.240",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.240)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.919471,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.241",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.241)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.926388,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.242",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.242)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.9338913,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.243",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.243)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.9435766,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.244",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.244)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.9542432,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.245",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.245)",
+      "device_type": "unknown",
+      "last_seen": 1786172811.967915,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.246",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.246)",
+      "device_type": "unknown",
+      "last_seen": 1786172812.0099845,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.247",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.247)",
+      "device_type": "unknown",
+      "last_seen": 1786172812.0287685,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.248",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.248)",
+      "device_type": "unknown",
+      "last_seen": 1786172812.0361784,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.249",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.249)",
+      "device_type": "unknown",
+      "last_seen": 1786172812.04342,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.250",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.250)",
+      "device_type": "unknown",
+      "last_seen": 1786172812.0547383,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.251",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.251)",
+      "device_type": "unknown",
+      "last_seen": 1786172812.0655084,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.252",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.252)",
+      "device_type": "unknown",
+      "last_seen": 1786172812.071627,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.253",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.253)",
+      "device_type": "unknown",
+      "last_seen": 1786172812.0837455,
+      "is_connected": false,
+      "device_id": ""
+    },
+    {
+      "ip": "198.18.0.254",
+      "port": 8765,
+      "device_name": "Unknown Device (198.18.0.254)",
+      "device_type": "unknown",
+      "last_seen": 1786172812.0905066,
+      "is_connected": false,
+      "device_id": ""
+    }
+  ]
 }

@@ -14,16 +14,31 @@ installer_output/
 
 # Python cache
 __pycache__/
+**/__pycache__/
 *.pyc
 *.pyo
 *.pyd
 .Python
+*.bak
 
 # Logs and temporary files
 log/
+logs/
+cache/
+temp/
 *.log
+*.err
+*_build*.log*
+_inno_*.log
+_pyinstaller_*.log
 installer/linux/output/
 model/
+
+# Runtime/generated AI data
+src/core/tools/ai_selfdevelop/learning/*.json
+src/core/tools/ai_selfdevelop/preferences/*.json
+src/core/data/*.json
+src/core/data/**/*.json
 
 # Android build outputs
 android_client/.gradle/

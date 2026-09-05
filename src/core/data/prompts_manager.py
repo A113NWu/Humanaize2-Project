@@ -15,6 +15,7 @@ PROMPTS_DIR = os.path.join(_get_project_root(), "prompt")
 PROMPT_FILES = {
     "should_answer_user": "should_answer_user.txt",
     "should_use_gan": "should_use_gan.txt",
+    "should_use_solve": "should_use_solve.txt",
     "should_reconsider": "should_reconsider.txt",
     "should_proactively_speak": "should_proactively_speak.txt",
     "choose_response_topic": "choose_response_topic.txt",
@@ -102,6 +103,12 @@ def load_should_use_gan_prompt(user_text: str, context: str = "") -> str:
     """加载判断是否使用 GAN 的提示词"""
     template = load_prompt("should_use_gan")
     return template.format(user_text=user_text, context=context)
+
+
+def load_should_use_solve_prompt(user_text: str) -> str:
+    """加载判断是否使用 Solve 经验方案的提示词"""
+    template = load_prompt("should_use_solve")
+    return template.format(user_text=user_text)
 
 
 def load_should_reconsider_prompt(context: str) -> str:

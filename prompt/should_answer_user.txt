@@ -6,4 +6,7 @@
 - 如果朋友说"嗯"、"好的"之类的简单回应 → 可以不回复
 - 如果朋友说了任何值得回应的话 → 回复
 
-你会回复这条消息吗？回答是或否。
+只输出一个合法 JSON 对象，不要 Markdown，不要额外文字：
+{"decision":"answer","reason":"简短原因"}
+
+其中 decision 只能是 "answer" 或 "continue_gan"。如果值得直接回复，使用 answer；如果不应直接回复、应继续内部 GAN 思考，使用 continue_gan。

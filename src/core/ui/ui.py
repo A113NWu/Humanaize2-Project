@@ -821,23 +821,31 @@ class HumanaizeUI:
         
         def check_for_updates():
             status_label.configure(text="Checking for updates...")
-            self.settings_window.update()
-            
-            result = updater.check_for_updates()
-            
-            if result.get("error"):
-                status_label.configure(text=f"Error: {result['error']}", text_color="#ef4444")
-            elif result.get("has_update"):
-                # 直接使用 check_for_updates 返回的标准 release tag，避免再拼 v
-                status_label.configure(
-                    text=f"Update available: {result['latest_tag']} (you have {result['current_tag']})",
-                    text_color="#10b981"
-                )
-            else:
-                status_label.configure(
-                    text=f"You are up to date ({result['current_tag']})",
-                    text_color="#9ca3af"
-                )
+            check_btn.configure(state="disabled")
+
+            def finish_check(result):
+                if not self.settings_window.winfo_exists():
+                    return
+                check_btn.configure(state="normal")
+                if result.get("error"):
+                    status_label.configure(text=f"Error: {result['error']}", text_color="#ef4444")
+                elif result.get("has_update"):
+                    # 直接使用 check_for_updates 返回的标准 release tag，避免再拼 v
+                    status_label.configure(
+                        text=f"Update available: {result['latest_tag']} (you have {result['current_tag']})",
+                        text_color="#10b981"
+                    )
+                else:
+                    status_label.configure(
+                        text=f"You are up to date ({result['current_tag']})",
+                        text_color="#9ca3af"
+                    )
+
+            def check_in_background():
+                result = updater.check_for_updates()
+                self.settings_window.after(0, lambda: finish_check(result))
+
+            threading.Thread(target=check_in_background, daemon=True).start()
         
         def download_update():
             def progress_callback(message):
@@ -1165,9 +1173,9 @@ class HumanaizeUI:
         self.chat_box.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 16))
         self.chat_box.configure(state="disabled")
         self.chat_box.tag_config("thinking", foreground="#6b7280")
-        self.chat_box.tag_config("autonomous", foreground="#a78bfa")
-        self.chat_box.tag_config("command", foreground="#60a5fa")
-        self.chat_box.tag_config("error", foreground="#f87171")
+        self.chat_box.tag_config("autonomous", foreground="#22d3ee")
+        self.chat_box.tag_config("command", foreground="#fbbf24")
+        self.chat_box.tag_config("error", foreground="#fb7185")
         self.chat_box.bind("<MouseWheel>", self._on_chat_scroll)
         self.chat_box.bind("<Enter>", lambda e: self._set_focused_textbox(self.chat_box))
         self.chat_box.bind("<Leave>", lambda e: self._set_focused_textbox(None))
@@ -1531,8 +1539,6 @@ class HumanaizeUI:
             self.idle_engine.pause()
         self.autonomous_engine.on_user_message()
 
-        # 用户直接输入总是回答，跳过 should_answer 决策
-        # should_answer 决策适用于自动思考场景（AI是否主动发起对话）
         context = self._build_context()
         prompt = f"""{context}\n\nUser: {text}\nAssistant:"""
 
@@ -1546,41 +1552,30 @@ class HumanaizeUI:
 
         self._ui_timeout_id = self.root.after(180000, timeout_handler)
 
-        def on_gan_decision(gan_result):
-            # 取消超时定时器
-            if hasattr(self, '_ui_timeout_id'):
-                self.root.after_cancel(self._ui_timeout_id)
+        def on_answer_decision(decision_result):
+            should_answer, reason = decision_result
+            logger.info(f"Answer decision: should_answer={should_answer}, reason={reason[:100] if reason else 'None'}")
 
-            should_use_gan, gan_decision_reason = gan_result
-            logger.info(f"GAN decision: should_use_gan={should_use_gan}, reason={gan_decision_reason[:100] if gan_decision_reason else 'None'}")
-
-            # 使用 root.after() 确保在主线程执行UI更新
-            def update_ui_gan():
-                if should_use_gan:
-                    self._add_chat_message(self._t("gan_chosen"), "autonomous")
-                    self._add_chat_message(f"System: AI decided to use GAN thinking before answering.", "autonomous")
+            def queue_next_step():
+                if should_answer:
+                    logger.info("Answer decision is answer; queueing direct response")
+                    self.thinking_engine.queue_user_chat_task(prompt, memory=self.memory, user_text=text)
                 else:
-                    self._add_chat_message(self._t("gan_skipped"), "autonomous")
-
-                try:
-                    if self.gan_enabled:
-                        self.thinking_engine.queue_chat_task(prompt, memory=self.memory, use_gan_decision=True, user_text=text)
-                    else:
-                        self.thinking_engine.queue_chat_task(prompt, memory=self.memory)
-                except TypeError:
-                    self.thinking_engine.queue_chat_task(prompt)
-
-                # 用户输入已提交，清除待处理标记
+                    logger.info("Answer decision is continue_gan; queueing GAN response")
+                    self.thinking_engine.queue_chat_task(
+                        prompt,
+                        memory=self.memory,
+                        use_gan_decision=True,
+                        user_text=text,
+                        gan_decision=True,
+                        gan_decision_reason=reason,
+                    )
                 self._pending_input = None
 
-            # 使用 root.after() 确保在主线程执行
-            self.root.after(0, update_ui_gan)
+            self.root.after(0, queue_next_step)
 
-        if self.gan_enabled:
-            logger.info("Requesting GAN decision...")
-            self.thinking_engine.should_use_gan_async(text, context, on_gan_decision)
-        else:
-            on_gan_decision((False, "GAN disabled"))
+        logger.info("Requesting JSON answer decision")
+        self.thinking_engine.should_answer_user_async(text, on_answer_decision)
 
     def clear_chat(self):
         self.chat_box.configure(state="normal")
@@ -1608,19 +1603,8 @@ class HumanaizeUI:
         return context
 
     def _add_chat_message(self, text: str, message_type: str = "normal"):
-        # Chat区域只显示：1) 用户消息 2) AI回复 3) AI打破沉默的消息
-        # 过滤掉系统消息、错误信息、命令执行消息等
-        
-        # 只允许以下类型的消息显示在Chat区域
-        allowed_types = ["normal", "thinking_placeholder", "autonomous"]  # normal包含用户消息和AI回复
-        
-        # 检查消息内容是否为允许的类型
-        if message_type not in allowed_types:
-            # 检查是否是AI打破沉默的消息（以"📢 AI decided to speak proactively"开头）
-            if not text.startswith("📢 AI decided to speak proactively"):
-                # 其他系统消息、错误消息等不在Chat区域显示
-                logger.info(f"Filtered message from Chat area: type={message_type}, text={text[:50]}...")
-                return
+        if message_type in ("autonomous", "error", "command", "thinking"):
+            text = self._format_system_message(text, message_type)
         
         # Direct call for faster UI update (avoid after(0) delay)
         try:
@@ -1628,6 +1612,22 @@ class HumanaizeUI:
         except Exception as e:
             # Fallback to after(0) if direct call fails
             self.root.after(0, lambda: self._unsafe_add_chat_message(text, message_type))
+
+    def _format_system_message(self, text: str, message_type: str) -> str:
+        """统一系统提示格式，便于区分状态、命令和错误。"""
+        text = text.strip()
+        if text.startswith("System:"):
+            text = text[len("System:"):].strip()
+        if text.startswith("[Humanaize SYS Message]"):
+            return text
+
+        labels = {
+            "autonomous": "[Humanaize SYS Message]",
+            "thinking": "[Humanaize SYS Message][THINKING]",
+            "command": "[Humanaize SYS Message][COMMAND]",
+            "error": "[Humanaize SYS Message][ERROR]",
+        }
+        return f"{labels.get(message_type, '[Humanaize SYS Message]')} {text}"
 
     def _add_thought_message(self, text: str, thought_type: str = "internal"):
         try:

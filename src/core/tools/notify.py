@@ -7,6 +7,7 @@ Humanaize v2.0 - 桌面通知模块
 import subprocess
 import sys
 import os
+from xml.sax.saxutils import escape as xml_escape
 from typing import Optional
 
 
@@ -76,6 +77,9 @@ class Notifier:
             
             elif self._method == "windows":
                 # Windows PowerShell
+                safe_title = xml_escape(str(title))
+                safe_message = xml_escape(str(message))
+                safe_app_name = str(self.app_name).replace('"', '`"')
                 ps_script = f'''
                 [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
                 [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null
@@ -83,8 +87,8 @@ class Notifier:
                 <toast>
                     <visual>
                         <binding template="ToastText02">
-                            <text id="1">{title}</text>
-                            <text id="2">{message}</text>
+                            <text id="1">{safe_title}</text>
+                            <text id="2">{safe_message}</text>
                         </binding>
                     </visual>
                 </toast>
@@ -92,9 +96,19 @@ class Notifier:
                 $xml = New-Object Windows.Data.Xml.Dom.XmlDocument
                 $xml.LoadXml($template)
                 $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
-                [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("{self.app_name}").Show($toast)
+                [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("{safe_app_name}").Show($toast)
                 '''
-                subprocess.run(["powershell", "-Command", ps_script], check=True, capture_output=True)
+                result = subprocess.run(
+                    ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+                if result.returncode != 0:
+                    details = (result.stderr or result.stdout or "unknown PowerShell error").strip()
+                    raise RuntimeError(f"PowerShell exit code {result.returncode}: {details[:500]}")
                 return True
             
         except Exception as e:

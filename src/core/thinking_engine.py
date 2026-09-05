@@ -25,6 +25,7 @@ from Prompt.chat_prompt import get_break_silence_prompt
 from data.prompts_manager import (
     load_should_answer_user_prompt,
     load_should_use_gan_prompt,
+    load_should_use_solve_prompt,
     load_should_reconsider_prompt,
     load_should_proactively_speak_prompt,
     load_choose_response_topic_prompt,
@@ -122,9 +123,12 @@ class ThinkingEngine:
 
         try:
             logger.info(f"Calling LLM for should_answer decision (text: {user_text[:50] if user_text else 'None'})")
-            response = chat(decision_prompt, max_tokens=100, temperature=0.3).strip()
+            response = chat(decision_prompt, max_tokens=100, temperature=0.3, timeout=30, max_retries=0).strip()
             logger.info(f"should_answer LLM response: {response[:100] if response else 'Empty'}")
-            should_answer = "是" in response or "YES" in response.upper() or "会" in response
+            decision = self._parse_json_decision(response)
+            should_answer = decision.get("decision") == "answer"
+            if not decision:
+                should_answer = "是" in response or "YES" in response.upper() or "会" in response
             # 发送AI决策通知
             decision = "YES" if should_answer else "NO"
             notify_ai_decision(decision, response)
@@ -142,13 +146,49 @@ class ThinkingEngine:
 
         try:
             logger.info(f"Calling LLM for GAN decision (text: {user_text[:50] if user_text else 'None'})")
-            response = chat(decision_prompt, max_tokens=100, temperature=0.3).strip()
+            response = chat(decision_prompt, max_tokens=100, temperature=0.3, timeout=30, max_retries=0).strip()
             logger.info(f"GAN decision LLM response: {response[:100] if response else 'Empty'}")
-            should_use_gan = "是" in response or "YES" in response.upper()
+            decision = self._parse_json_decision(response)
+            should_use_gan = bool(decision.get("use_gan")) if decision else ("是" in response or "YES" in response.upper())
             return (should_use_gan, response)
         except Exception as e:
             logger.error(f"GAN decision LLM error: {e}")
             return (False, f"Error: {e} (defaulting to no GAN)")
+
+    def _should_use_solve_sync(self, user_text):
+        """请求 AI 判断是否允许使用经验库中的 Solve 快速方案。"""
+        from llm import chat
+
+        decision_prompt = load_should_use_solve_prompt(user_text)
+        try:
+            logger.info(f"Calling LLM for Solve decision (text: {user_text[:50] if user_text else 'None'})")
+            response = chat(decision_prompt, max_tokens=100, temperature=0.3, timeout=30, max_retries=0).strip()
+            decision = self._parse_json_decision(response)
+            should_use_solve = bool(decision.get("use_solve")) if decision else False
+            logger.info(
+                f"Solve decision: use_solve={should_use_solve}, "
+                f"reason={decision.get('reason', response[:100] if response else 'Empty')}"
+            )
+            return should_use_solve
+        except Exception as e:
+            logger.error(f"Solve decision LLM error: {e}")
+            return False
+
+    @staticmethod
+    def _parse_json_decision(response):
+        """从模型输出中提取严格 JSON 决策对象。"""
+        try:
+            payload = json.loads(response)
+            return payload if isinstance(payload, dict) else {}
+        except (TypeError, json.JSONDecodeError):
+            match = re.search(r"\{.*\}", response or "", flags=re.DOTALL)
+            if not match:
+                return {}
+            try:
+                payload = json.loads(match.group(0))
+                return payload if isinstance(payload, dict) else {}
+            except json.JSONDecodeError:
+                return {}
     
     def should_answer_user_async(self, user_text, callback):
         """Asynchronously decide if AI should answer the user"""
@@ -195,7 +235,10 @@ class ThinkingEngine:
         # 添加人格信息到提示词
         if personality:
             try:
-                from personality import get_personality_context
+                try:
+                    from core.personality import get_personality_context
+                except ImportError:
+                    from personality import get_personality_context
                 personality_context = get_personality_context(personality)
                 prompt = personality_context + "\n\n" + prompt
             except Exception as e:
@@ -216,9 +259,62 @@ class ThinkingEngine:
             prompt += "\n\n# Skills configuration\n" + skills_prompt.strip()
         return prompt
 
+    def _build_model_prompt(self, main_prompt, memory, user_question, gan_prompt="", other_prompts=None):
+        """Build the English-labeled prompt contract used for user responses."""
+        memory_messages = (memory or {}).get("messages", []) if isinstance(memory, dict) else []
+        memory_lines = []
+        for message in memory_messages[-20:]:
+            if not isinstance(message, dict):
+                continue
+            role = message.get("role", "unknown")
+            content = message.get("content", "")
+            if content:
+                memory_lines.append(f"{role}: {content}")
+
+        memory_text = "\n".join(memory_lines) or "No previous memory."
+        other_text = "\n\n".join(str(item).strip() for item in (other_prompts or []) if str(item).strip())
+        other_text = other_text or "None."
+        gan_text = str(gan_prompt or "").strip() or "None."
+
+        return (
+            "MAIN PROMPT:\n"
+            f"{str(main_prompt or '').strip()}\n\n"
+            "MEMORY DATABASE:\n"
+            f"{memory_text}\n\n"
+            "CURRENT USER QUESTION:\n"
+            f"{str(user_question or '').strip()}\n\n"
+            "GAN PROMPT:\n"
+            f"{gan_text}\n\n"
+            "OTHER PROMPTS:\n"
+            f"{other_text}\n\n"
+            "Respond concisely. Respond in the same language as the user's input."
+        )
+
+    def _build_response_prompt(self, exec_instr, prompt, memory, user_text):
+        """Place task-specific context into the standard response prompt."""
+        prompt_text = str(prompt or "")
+        gan_prompt = ""
+        other_prompts = [prompt_text]
+        if "[GAN synthesis:" in prompt_text or "[GAN topic:" in prompt_text:
+            gan_prompt = prompt_text
+            other_prompts = []
+        return self._build_model_prompt(exec_instr, memory, user_text, gan_prompt, other_prompts)
+
     def _extract_thought_and_response(self, text: str):
         if not text:
             return None, ""
+
+        try:
+            payload = json.loads(text)
+            if isinstance(payload, dict) and "skill" not in payload:
+                thought = payload.get("thought")
+                response = payload.get("response", payload.get("message", payload.get("content", "")))
+                if isinstance(response, dict):
+                    response = response.get("content", response.get("message", ""))
+                if isinstance(response, str):
+                    return thought if isinstance(thought, str) else None, response
+        except (TypeError, json.JSONDecodeError):
+            pass
 
         pattern = re.compile(r"(?si)(THOUGHT|RESPONSE)\s*:\s*")
         segments = []
@@ -279,7 +375,7 @@ class ThinkingEngine:
                 # reflection task - internal thought only
                 self._handle_reflection_task(prompt, memory, emotion_monitor, exec_instr)
             elif task_type == "chat_with_gan_decision":
-                self._handle_chat_with_gan_decision_task(prompt, memory, emotion_monitor, exec_instr, user_text)
+                self._handle_chat_with_gan_decision_task(task, prompt, memory, emotion_monitor, exec_instr, user_text)
             elif task_type == "chat_stream":
                 # 流式聊天任务 - 实时发送句子（包含GAN决策）
                 target_info = task.get("target_info")
@@ -292,12 +388,15 @@ class ThinkingEngine:
 
     def _handle_chat_task(self, prompt, memory, emotion_monitor, exec_instr):
         """Handle a normal chat task."""
+        final_reply = ""
         logger.info(f"Handling chat task, prompt length: {len(prompt) if prompt else 0}")
         # First check if web search is needed
         user_text = self._extract_user_text_from_prompt(prompt)
         
         # Solve模式：先尝试从经验数据库快速查找解决方案
-        quick_solution = self.optimizer.solve_problem(user_text)
+        quick_solution = None
+        if self._should_use_solve_sync(user_text):
+            quick_solution = self.optimizer.solve_problem(user_text)
         if quick_solution:
             logger.info(f"Solve mode: Found quick solution for '{user_text[:30]}'")
             if self.on_response:
@@ -337,7 +436,8 @@ class ThinkingEngine:
                 logger.info(f"Web search performed for: {user_text}")
         
         logger.info("Calling generate_with_emotion_feedback")
-        reply, adaptation = generate_with_emotion_feedback(exec_instr + "\n\n" + prompt, emotion_monitor)
+        model_prompt = self._build_response_prompt(exec_instr, prompt, memory, user_text)
+        reply, adaptation = generate_with_emotion_feedback(model_prompt, emotion_monitor)
         logger.info(f"LLM reply received: {reply[:200] if reply else 'Empty'}...")
         
         thought, target_reply = self._extract_thought_and_response(reply)
@@ -403,7 +503,8 @@ class ThinkingEngine:
                 try:
                     followup_prompt = load_followup_prompt(out, user_text)
                     logger.info("Generating followup response after command execution")
-                    freply, fadapt = generate_with_emotion_feedback(exec_instr + "\n\n" + followup_prompt, emotion_monitor)
+                    followup_model_prompt = self._build_response_prompt(exec_instr, followup_prompt, memory, user_text)
+                    freply, fadapt = generate_with_emotion_feedback(followup_model_prompt, emotion_monitor)
                     logger.info(f"Followup reply: {freply[:200] if freply else 'Empty'}")
                     if memory is not None:
                         add(memory, "assistant", freply, source="ai_response")
@@ -433,7 +534,12 @@ class ThinkingEngine:
                     # 发送AI回复通知
                     notify_ai_response(final_reply)
                 else:
-                    logger.info("AI reply was filtered out, not sending")
+                    logger.warning("AI reply was filtered out; sending fallback response")
+                    if self.on_response:
+                        self.on_response({
+                            "type": "chat_response",
+                            "reply": "抱歉，我暂时无法生成有效回复，请稍后再试。"
+                        })
         except Exception as e:
             logger.error(f"Error in _handle_chat_task: {e}")
             if self.on_response:
@@ -498,7 +604,9 @@ class ThinkingEngine:
         
         user_text = user_text or self._extract_user_text_from_prompt(prompt)
         
-        quick_solution = self.optimizer.solve_problem(user_text)
+        quick_solution = None
+        if self._should_use_solve_sync(user_text):
+            quick_solution = self.optimizer.solve_problem(user_text)
         if quick_solution:
             logger.info(f"Solve mode: Found quick solution for '{user_text[:30]}'")
             if self.on_response:
@@ -538,7 +646,8 @@ class ThinkingEngine:
         sent_sentences = []
         
         try:
-            for token in generate_with_emotion_feedback_stream(exec_instr + "\n\n" + prompt, emotion_monitor):
+            model_prompt = self._build_response_prompt(exec_instr, prompt, memory, user_text)
+            for token in generate_with_emotion_feedback_stream(model_prompt, emotion_monitor):
                 if token:
                     full_reply += token
                     current_buffer += token
@@ -620,7 +729,8 @@ class ThinkingEngine:
                     try:
                         followup_prompt = load_followup_prompt(out, user_text)
                         logger.info("Generating followup response after command execution")
-                        freply, fadapt = generate_with_emotion_feedback(exec_instr + "\n\n" + followup_prompt, emotion_monitor)
+                        followup_model_prompt = self._build_response_prompt(exec_instr, followup_prompt, memory, user_text)
+                        freply, fadapt = generate_with_emotion_feedback(followup_model_prompt, emotion_monitor)
                         logger.info(f"Followup reply: {freply[:200] if freply else 'Empty'}")
                         
                         if memory is not None:
@@ -833,12 +943,17 @@ class ThinkingEngine:
         except Exception:
             return None, ""
 
-    def _handle_chat_with_gan_decision_task(self, prompt, memory, emotion_monitor, exec_instr, user_text):
+    def _handle_chat_with_gan_decision_task(self, task, prompt, memory, emotion_monitor, exec_instr, user_text):
         logger.info(f"Handling chat_with_gan_decision task, user_text: {user_text[:50] if user_text else 'None'}")
+        decision_override = task.get("gan_decision")
         try:
             from tools.gan_iteration import GANIteration
             gan = GANIteration()
-            should_use_gan, decision_text = gan.decide_use_gan(user_text, exec_instr)
+            if decision_override is None:
+                should_use_gan, decision_text = gan.decide_use_gan(user_text, exec_instr)
+            else:
+                should_use_gan = bool(decision_override)
+                decision_text = task.get("gan_decision_reason", "")
             logger.info(f"GAN decision: should_use_gan={should_use_gan}, decision_text={decision_text[:100] if decision_text else 'None'}")
         except Exception as e:
             logger.error(f"GAN decision error: {e}")
@@ -1217,7 +1332,7 @@ class ThinkingEngine:
                 "thought": f"[Reflection] {content}"
             })
 
-    def queue_chat_task(self, prompt, memory=None, emotion_monitor=None, use_gan_decision=False, user_text=None, personality=None):
+    def queue_chat_task(self, prompt, memory=None, emotion_monitor=None, use_gan_decision=False, user_text=None, personality=None, gan_decision=None, gan_decision_reason=""):
         task_type = "chat_with_gan_decision" if use_gan_decision else "chat"
         task = {
             "type": task_type,
@@ -1226,8 +1341,19 @@ class ThinkingEngine:
             "emotion_monitor": emotion_monitor,
             "user_text": user_text,
             "personality": personality,
+            "gan_decision": gan_decision,
+            "gan_decision_reason": gan_decision_reason,
         }
         self.queue.put(task)
+
+    def queue_user_chat_task(self, prompt, memory=None, emotion_monitor=None, user_text=None, personality=None):
+        """立即处理用户消息，避免被后台 GAN 或反思任务阻塞。"""
+        def process_user_message():
+            exec_instr = self._load_agent_prompt(personality)
+            logger.info(f"Processing user chat directly, prompt_length={len(prompt) if prompt else 0}")
+            self._handle_chat_task(prompt, memory, emotion_monitor, exec_instr)
+
+        threading.Thread(target=process_user_message, daemon=True).start()
 
     def queue_chat_stream_task(self, prompt, memory=None, emotion_monitor=None, user_text=None, personality=None, target_info=None):
         """队列流式聊天任务 - 实时发送句子"""

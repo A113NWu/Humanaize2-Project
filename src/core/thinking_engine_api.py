@@ -18,6 +18,7 @@ import threading
 import os
 import sys
 import re
+import traceback
 try:
     from http.server import ThreadingHTTPServer as HTTPServer, BaseHTTPRequestHandler
 except ImportError:
@@ -275,11 +276,29 @@ class ResponseCollector:
         return self._thoughts
 
 
+EMPTY_REPLY_ERROR = "錯誤：AI 沒有產生任何有效內容"
+
+
 class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
     """OpenAI兼容的API处理器"""
 
     def log_message(self, format, *args):
-        logger.info(f"[ThinkingEngine API] {args[0]}")
+        logger.info(f"[HTTP] client={self.client_address[0]} request={args[0]}")
+
+    def _log_request(self, method, path):
+        self._request_started_at = time.perf_counter()
+        logger.info(
+            f"[HTTP] start method={method} path={path} client={self.client_address[0]} "
+            f"content_length={self.headers.get('Content-Length', '0')} "
+            f"user_agent={self.headers.get('User-Agent', '-')[:120]}"
+        )
+
+    def finish(self):
+        try:
+            duration_ms = (time.perf_counter() - getattr(self, '_request_started_at', time.perf_counter())) * 1000
+            logger.info(f"[HTTP] finish method={self.command} path={self.path} duration_ms={duration_ms:.1f}")
+        finally:
+            super().finish()
 
     def _send_json(self, data, status=200):
         """发送JSON响应"""
@@ -306,22 +325,115 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         """处理GET请求"""
         parsed = urlparse(self.path)
+        self._log_request("GET", parsed.path)
 
         if parsed.path == '/v1/models':
             self._handle_list_models()
-        elif parsed.path == '/health' or parsed.path == '/':
+        elif parsed.path == '/health':
             self._send_json({"status": "ok", "service": "thinking-engine-api"})
+        elif parsed.path == '/api/settings':
+            self._send_json(self._load_settings())
+        elif parsed.path == '/api/status':
+            self._send_json(self._status_payload())
+        elif parsed.path == '/':
+            self._send_static_file("index.html", "text/html; charset=utf-8")
+        elif parsed.path.startswith('/assets/'):
+            asset_name = parsed.path.removeprefix('/assets/')
+            asset_types = {"styles.css": "text/css; charset=utf-8", "app.js": "application/javascript; charset=utf-8"}
+            if asset_name in asset_types:
+                self._send_static_file(asset_name, asset_types[asset_name])
+            else:
+                self._send_error("Not found", 404)
         else:
             self._send_error("Not found", 404)
+
+    def _send_static_file(self, file_name, content_type):
+        """返回浏览器管理面板静态资源"""
+        dashboard_path = os.path.join(os.path.dirname(__file__), "web", file_name)
+        if not os.path.exists(dashboard_path) and hasattr(sys, "_MEIPASS"):
+            dashboard_path = os.path.join(sys._MEIPASS, "web", file_name)
+        try:
+            with open(dashboard_path, "rb") as static_file:
+                body = static_file.read()
+        except OSError:
+            self._send_error("Static file not found", 500)
+            return
+
+        self.send_response(200)
+        self.send_header('Content-Type', content_type)
+        self.send_header('Content-Length', str(len(body)))
+        self.send_header('Cache-Control', 'no-cache')
+        self.end_headers()
+        self.wfile.write(body)
 
     def do_POST(self):
         """处理POST请求"""
         parsed = urlparse(self.path)
+        self._log_request("POST", parsed.path)
 
-        if parsed.path == '/v1/chat/completions':
+        if parsed.path in ('/api/chat', '/v1/chat/completions'):
             self._handle_chat_completions()
+        elif parsed.path == '/api/settings':
+            self._handle_save_settings()
         else:
             self._send_error("Not found", 404)
+
+    def _settings_path(self):
+        return os.path.join(os.path.dirname(__file__), "ui", "data", "ui_settings.json")
+
+    def _status_payload(self):
+        memory = ThinkingEngineState().get_memory() or {}
+        settings = self._load_settings()
+        return {
+            "status": "ok",
+            "model": settings.get("openai_model") if settings.get("openai_enabled") and settings.get("openai_api_key") == "configured" else settings.get("model_name", "local"),
+            "messages": memory.get("messages", [])[-100:],
+            "thoughts": memory.get("thoughts", [])[-100:],
+            "decisions": memory.get("decisions", [])[-100:],
+        }
+
+    def _load_settings(self):
+        defaults = {
+            "language": "中文", "theme": "Liquid Glass", "model_name": "tinyllama",
+            "model_path": "", "openai_enabled": False, "openai_api_key": "", "openai_base_url": "https://api.openai.com/v1", "openai_model": "gpt-4o-mini", "gan_enabled": True, "auto_break_silence": True,
+            "skills_prompt": "", "llm_server_url": "http://127.0.0.1:8080",
+            "max_tokens": 256, "temperature": 0.7, "guard_enabled": False,
+            "guard_auto_start": False, "guard_interval": 5, "guard_firewall": True,
+            "guard_network_monitor": True, "guard_system_monitor": True,
+            "counter_measure_enabled": True, "counter_lab_mode": False,
+            "counter_max_warnings": 2, "counter_cooldown": 300, "iot_auto_start": True,
+            "iot_host": "0.0.0.0", "iot_port": 8765, "iot_scan_enabled": True,
+            "iot_scan_interval": 30, "iot_discovered_devices": []
+        }
+        try:
+            with open(self._settings_path(), "r", encoding="utf-8") as settings_file:
+                values = json.load(settings_file)
+            if isinstance(values, dict):
+                defaults.update(values)
+        except (OSError, ValueError):
+            pass
+        if defaults.get("openai_api_key"):
+            defaults["openai_api_key"] = "configured"
+        return defaults
+
+    def _handle_save_settings(self):
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            values = json.loads(self.rfile.read(content_length).decode('utf-8'))
+            if not isinstance(values, dict):
+                raise ValueError("settings must be an object")
+            settings = self._load_settings()
+            allowed = set(settings)
+            updates = {key: value for key, value in values.items() if key in allowed}
+            if updates.get("openai_api_key") == "configured":
+                updates.pop("openai_api_key")
+            settings.update(updates)
+            os.makedirs(os.path.dirname(self._settings_path()), exist_ok=True)
+            with open(self._settings_path(), "w", encoding="utf-8") as settings_file:
+                json.dump(settings, settings_file, ensure_ascii=False, indent=2)
+            self._send_json({"status": "ok", "settings": settings})
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            self._send_error(f"Invalid settings: {error}")
 
     def _handle_list_models(self):
         """返回可用模型列表"""
@@ -349,6 +461,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             body_data = self.rfile.read(content_length)
             body = json.loads(body_data.decode('utf-8'))
         except Exception as e:
+            logger.warning(f"[Chat] invalid request body size={content_length if 'content_length' in locals() else 0} error={e}")
             self._send_error(f"Invalid JSON body: {e}")
             return
 
@@ -356,6 +469,11 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         stream = body.get('stream', False)
         max_tokens = body.get('max_tokens', 512)
         temperature = body.get('temperature', 0.7)
+
+        logger.info(
+            f"[Chat] parsed path={urlparse(self.path).path} messages={len(messages)} "
+            f"stream={stream} max_tokens={max_tokens} temperature={temperature}"
+        )
 
         if not messages:
             self._send_error("messages is required")
@@ -369,6 +487,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
 
         # 必须有ThinkingEngine实例
         if not thinking_engine:
+            logger.error("[Chat] rejected because ThinkingEngine is not initialized")
             self._send_error("ThinkingEngine not available", 503)
             return
 
@@ -400,7 +519,10 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         prompt_parts.append(build_prompt_from_messages(messages, ""))
         full_prompt = "\n\n".join(prompt_parts)
 
-        logger.info(f"[ThinkingEngine API] Request: user_text='{user_text[:50]}...', stream={stream}")
+        logger.info(
+            f"[Chat] dispatch user_text_length={len(user_text)} prompt_length={len(full_prompt)} "
+            f"memory_available={bool(memory)} personality_available={bool(personality)} stream={stream}"
+        )
 
         # 创建响应收集器
         collector = ResponseCollector(timeout=300)
@@ -420,6 +542,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                     user_text=user_text,
                     target_info=None
                 )
+                logger.debug("[Chat] stream task queued")
                 self._handle_stream_response(collector, state)
             else:
                 # 通过ThinkingEngine队列提交聊天任务
@@ -427,8 +550,10 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                     full_prompt,
                     memory=memory,
                     user_text=user_text,
-                    personality=personality
+                    personality=personality,
+                    use_gan_decision=True
                 )
+                logger.debug("[Chat] sync task queued")
                 self._handle_sync_response(collector, user_text, memory, state)
         finally:
             # 恢复原始回调
@@ -457,10 +582,10 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             collector.set_finished()
 
             # 清理回复
-            cleaned_reply = clean_reply(full_reply)
+            cleaned_reply = clean_reply(full_reply) if full_reply else ""
 
             if not cleaned_reply:
-                cleaned_reply = "嗯，我在想呢～"
+                raise ValueError(EMPTY_REPLY_ERROR)
 
             # 通知QQ UI更新（显示Aize发送的消息）
             qq_callback = state.get_qq_ui_callback()
@@ -504,7 +629,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._send_json(response)
 
         except Exception as e:
-            logger.error(f"[ThinkingEngine API] Sync error: {e}")
+            logger.error(f"[Chat] sync response error type={type(e).__name__} error={e}\n{traceback.format_exc()}")
+            error_message = str(e) if str(e) else "抱歉，AI 沒有產生任何有效內容。"
             self._send_json({
                 "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
                 "object": "chat.completion",
@@ -515,7 +641,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                         "index": 0,
                         "message": {
                             "role": "assistant",
-                            "content": f"抱歉，我刚才走神了～能再说一遍吗？😊"
+                            "content": error_message
                         },
                         "finish_reason": "stop"
                     }
@@ -614,12 +740,31 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                     break
                     
                 elif chunk["type"] == "done":
-                    # 任务完成，退出循环
-                    logger.info("[ThinkingEngine API] Task completed naturally")
+                    if not full_reply:
+                        error_content = EMPTY_REPLY_ERROR
+                        logger.warning("[ThinkingEngine API] Stream completed without any content; likely no LLM output was produced.")
+                        error_chunk = {
+                            "id": chat_id,
+                            "object": "chat.completion.chunk",
+                            "created": created,
+                            "model": "thinking-engine",
+                            "choices": [
+                                {
+                                    "index": 0,
+                                    "delta": {"content": error_content},
+                                    "finish_reason": "stop"
+                                }
+                            ]
+                        }
+                        try:
+                            self.wfile.write(f"data: {json.dumps(error_chunk, ensure_ascii=False)}\n\n".encode('utf-8'))
+                        except BrokenPipeError:
+                            pass
+                    else:
+                        logger.info("[ThinkingEngine API] Task completed naturally with %d chars of output", len(full_reply))
                     break
                 elif chunk["type"] == "timeout":
-                    # 发送超时消息
-                    timeout_content = "抱歉，我刚才走神了～能再说一遍吗？😊"
+                    timeout_content = "錯誤：AI 回應超時，沒有產生有效內容"
                     full_reply += timeout_content
                     timeout_chunk = {
                         "id": chat_id,

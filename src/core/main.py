@@ -2,7 +2,8 @@
 Humanaize v2.0 - 主要進入點
 
 命令:
-    python main.py boot         - 啟動 CLI 聊天介面
+    python main.py boot         - 啟動瀏覽器管理面板
+    python main.py boot -m cli  - 啟動 CLI 聊天介面
     python main.py boot -m gui  - 啟動 GUI 介面
     python main.py boot -m win-gui  - 啟動 Windows 現代化 GUI 介面
     python main.py boot -m solve -r <file> -enable HSN - 啟動解決模式
@@ -17,6 +18,7 @@ import os
 import random
 import subprocess
 import threading
+import json
 from typing import Dict
 
 # 添加项目根目录和 src 目录到 Python 路径
@@ -578,6 +580,43 @@ def boot_cli():
     cli.run()
 
 
+def boot_web_dashboard():
+    """启动本地服务并打开浏览器管理面板。"""
+    _check_and_start_server()
+    _auto_start_iot_network()
+    _check_updates_background()
+
+    from memory.memory import load_memory
+    try:
+        from core.personality import load_personality
+        from core.thinking_engine import ThinkingEngine
+    except ImportError:
+        from personality import load_personality
+        from thinking_engine import ThinkingEngine
+    from thinking_engine_api import ThinkingEngineState, start_api_server
+    import webbrowser
+    import time
+
+    memory = load_memory()
+    personality = load_personality()
+    thinking_engine = ThinkingEngine()
+    thinking_engine.set_language("zh")
+    state = ThinkingEngineState()
+    state.set_thinking_engine(thinking_engine)
+    state.set_memory(memory)
+    state.set_personality(personality)
+    server = start_api_server(host="127.0.0.1", port=8082)
+    dashboard_url = f"http://{server.host}:{server.port}/"
+    print(f"[INFO] Browser dashboard started: {dashboard_url}")
+    webbrowser.open(dashboard_url)
+
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        server.stop()
+
+
 def _check_updates_background():
     """后台检查更新并发送通知"""
     import threading
@@ -869,7 +908,8 @@ def main():
     if not args:
         print(__doc__)
         print("Usage:")
-        print("  humanaize2 boot         - Start CLI chat interface")
+        print("  humanaize2 boot         - Start browser dashboard")
+        print("  humanaize2 boot -m cli  - Start CLI chat interface")
         print("  humanaize2 boot -m gui  - Start GUI interface")
         print("  humanaize2 boot -m win-gui  - Start Windows modern GUI interface")
         print("  humanaize2 boot -m solve [--hsn] [--sandbox <dir>] [-gan] - Start problem solving mode")
@@ -884,6 +924,7 @@ def main():
         print("  --start-when-boot     Enable auto-start on system boot")
         print("\nOr use directly:")
         print("  python main.py boot")
+        print("  python main.py boot -m cli")
         print("  python main.py boot -m gui")
         print("  python main.py boot -m win-gui")
         print("  python main.py boot -m solve")
@@ -916,7 +957,10 @@ def main():
                     break
             i += 1
         
-        if mode == "gui":
+        if mode == "cli":
+            print("Starting CLI chat interface...")
+            boot_cli()
+        elif mode == "gui":
             choice = random.randint(0, 4)
             if choice == 3 and ascii_art:
                 print(ascii_art)
@@ -953,8 +997,8 @@ def main():
                 print(ascii_art)
             else:
                 print(speeches[choice])
-            print("Starting CLI chat interface...")
-            boot_cli()
+            print("Starting browser dashboard...")
+            boot_web_dashboard()
     elif command == "settings":
         choice = random.randint(0, 4)
         if choice == 3 and ascii_art:
@@ -975,7 +1019,8 @@ def main():
     else:
         print(f"Unknown command: {command}")
         print("Usage:")
-        print("  humanaize2 boot         - Start CLI chat interface")
+        print("  humanaize2 boot         - Start browser dashboard")
+        print("  humanaize2 boot -m cli  - Start CLI chat interface")
         print("  humanaize2 boot -m gui  - Start GUI interface")
         print("  humanaize2 boot -m solve [--hsn] [--sandbox <dir>] [-gan] - Start problem solving mode")
         print("  humanaize2 boot -m iot [--host <ip>] [--port <n>] - Start IoT compute network")

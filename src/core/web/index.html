@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Humanaize</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+  <style>:root{--bg:#dcecea;--panel:rgba(247,253,251,.86);--line:rgba(25,62,64,.26);--text:#102d31;--muted:#3f6264;--accent:#087f73;--shadow:0 18px 55px rgba(49,91,91,.16)}body{background:radial-gradient(circle at 14% 0,rgba(255,178,145,.34),transparent 30%),radial-gradient(circle at 90% 20%,rgba(133,220,201,.34),transparent 32%),linear-gradient(135deg,#e9f4ef,#c9e2df)}.sidebar{background:rgba(246,253,251,.78)}.panel{box-shadow:var(--shadow),inset 1px 1px 0 rgba(255,255,255,.8)}.nav-item{color:#34575a}.nav-item.active,.nav-item:hover{color:#102d31}.muted{color:#3f6264}.log-output{color:#173f41}.settings-content input,.settings-content select,.settings-content textarea,.composer textarea{background:rgba(255,255,255,.72);color:var(--text);border-color:rgba(25,62,64,.3)}</style>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-top"><div class="brand-mark">H</div><span class="brand-name">HUMANAIZE</span><button class="icon-button" id="collapse-sidebar" type="button" aria-label="收合侧边栏">‹</button></div>
+      <nav class="nav" aria-label="主导航">
+        <button class="nav-item active" data-view="chat"><span class="nav-icon">◌</span><span>对话</span></button>
+        <button class="nav-item" data-view="thoughts"><span class="nav-icon">◈</span><span>GAN 思考</span></button>
+        <button class="nav-item" data-view="skills"><span class="nav-icon">⌘</span><span>Skill 输出</span></button>
+        <button class="nav-item" data-view="status"><span class="nav-icon">▦</span><span>系统状态</span></button>
+      </nav>
+      <div class="sidebar-bottom"><button class="nav-item" data-view="settings"><span class="nav-icon">⚙</span><span>设置</span></button><div class="connection"><i class="status-dot"></i><span id="status">检查中</span></div></div>
+    </aside>
+    <main class="workspace">
+      <header class="workspace-header"><button class="mobile-menu" id="open-sidebar" type="button">☰</button><div><div class="breadcrumb">LOCAL SERVICE / <span id="view-label">对话</span></div><h1 id="page-title">对话</h1></div><span class="service-address">127.0.0.1:8082</span></header>
+      <section class="view active" id="view-chat"><div class="chat-panel panel"><div class="panel-header"><span>Thinking Engine</span><span class="muted">OpenAI compatible</span></div><div id="messages" class="messages"><div class="message assistant">你好，我已准备好。</div></div><form id="chat-form" class="composer"><textarea id="prompt" placeholder="输入消息..." required></textarea><button type="submit">发送</button></form></div></section>
+      <section class="view" id="view-thoughts"><div class="panel log-panel"><div class="panel-header"><span>GAN 思考</span><span class="muted">实时输出</span></div><pre id="thought-output" class="log-output">等待思考事件...</pre></div></section>
+      <section class="view" id="view-skills"><div class="panel log-panel"><div class="panel-header"><span>Skill 执行输出</span><span class="muted">运行日志</span></div><pre id="skill-output" class="log-output">暂无 Skill 输出。</pre></div></section>
+      <section class="view" id="view-status"><div class="status-grid"><div class="panel status-card"><span class="muted">API 服务</span><strong id="api-health">检查中</strong></div><div class="panel status-card"><span class="muted">模型</span><strong id="model-name">读取中</strong></div><div class="panel status-card"><span class="muted">消息数量</span><strong id="message-count">0</strong></div></div></section>
+      <section class="view settings-view" id="view-settings"><div class="settings-layout"><aside class="settings-nav panel"><button class="settings-tab active" data-section="display">显示风格</button><button class="settings-tab" data-section="basic">基本配置</button><button class="settings-tab" data-section="security">安全性</button></aside><div class="panel settings-content"><form id="settings-form"><div class="settings-section active" data-section-view="display"><h2>显示风格</h2><p class="muted">调整面板的显示方式。</p><label>语言<select name="language"><option>中文</option><option>English</option></select></label><label>主题<select name="theme"><option>Liquid Glass</option><option>Dark</option><option>Light</option><option>System</option></select></label></div><div class="settings-section" data-section-view="basic"><h2>基本配置</h2><p class="muted">模型、推理和连接参数。</p><label>模型名称<input name="model_name"></label><label>自定义模型路径<input name="model_path"></label><label>LLM 服务 URL<input name="llm_server_url"></label><div class="form-row"><label>最大 Tokens<input name="max_tokens" type="number" min="1"></label><label>Temperature<input name="temperature" type="number" min="0" max="2" step=".1"></label></div><label>技能提示词<textarea name="skills_prompt"></textarea></label><div class="checks"><label><input name="gan_enabled" type="checkbox">启用 GAN 思考</label><label><input name="auto_break_silence" type="checkbox">主动打破沉默</label><label><input name="iot_auto_start" type="checkbox">IoT 自动启动</label><label><input name="iot_scan_enabled" type="checkbox">IoT 自动扫描</label></div><div class="form-row"><label>IoT 主机<input name="iot_host"></label><label>IoT 端口<input name="iot_port" type="number" min="1" max="65535"></label></div><label>扫描间隔（秒）<input name="iot_scan_interval" type="number" min="5"></label></div><div class="settings-section" data-section-view="security"><h2>安全性</h2><p class="muted">Guard 与反制措施的运行策略。</p><div class="checks"><label><input name="guard_enabled" type="checkbox">启用 Guard</label><label><input name="guard_auto_start" type="checkbox">Guard 自动启动</label><label><input name="guard_firewall" type="checkbox">Guard 防火墙</label><label><input name="guard_network_monitor" type="checkbox">网络监控</label><label><input name="guard_system_monitor" type="checkbox">系统监控</label><label><input name="counter_measure_enabled" type="checkbox">启用反制措施</label><label><input name="counter_lab_mode" type="checkbox">反制实验室模式</label></div><div class="form-row"><label>Guard 间隔（秒）<input name="guard_interval" type="number" min="1"></label><label>最大警告数<input name="counter_max_warnings" type="number" min="0"></label></div><label>反制冷却（秒）<input name="counter_cooldown" type="number" min="0"></label></div><div class="save-row"><span id="settings-notice" class="notice"></span><button type="submit">保存设置</button></div></form></div></div></section>
+    </main>
+  </div>
+  <script src="/assets/app.js"></script>
+</body>
+</html>

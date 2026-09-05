@@ -52,8 +52,14 @@ class IoTDeviceScanner:
     """
     
     def __init__(self, port: int = 8765, scan_interval: int = 30):
-        self.port = port
-        self.scan_interval = scan_interval
+        try:
+            self.port = max(1, min(65535, int(port)))
+        except (TypeError, ValueError):
+            self.port = 8765
+        try:
+            self.scan_interval = max(5, min(300, int(scan_interval)))
+        except (TypeError, ValueError):
+            self.scan_interval = 30
         self._devices: Dict[str, DiscoveredDevice] = {}
         self._scanning = False
         self._scan_thread: Optional[threading.Thread] = None
