@@ -64,6 +64,13 @@ def _get_llama_server_path():
                 return path
     
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    roots = [base_dir, os.path.dirname(os.path.abspath(sys.executable))]
+    if getattr(sys, "_MEIPASS", None):
+        roots.insert(0, sys._MEIPASS)
+    for root in roots:
+        candidate = os.path.join(root, "llama", "llama-server.exe" if sys.platform == "win32" else "llama-server")
+        if os.path.exists(candidate):
+            return candidate
     llama_dir = os.path.join(base_dir, "llama")
 
     if sys.platform == "win32":
@@ -413,6 +420,7 @@ def init_msf_database(host: str = "127.0.0.1", port: int = 5432, database: str =
 def _get_model_path():
     """取得當前平台的模型路徑"""
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    executable_dir = os.path.dirname(os.path.abspath(sys.executable))
     
     settings_path = os.path.join(base_dir, "src", "core", "ui", "data", "ui_settings.json")
     if os.path.exists(settings_path):
@@ -429,12 +437,12 @@ def _get_model_path():
                     else:
                         print(f"[WARN] Custom model path not found: {custom_model_path}, falling back to default")
                 else:
-                    abs_path = os.path.join(base_dir, custom_model_path)
-                    if os.path.exists(abs_path):
-                        print(f"[INFO] Using custom model path from settings: {abs_path}")
-                        return abs_path
-                    else:
-                        print(f"[WARN] Custom model path not found: {abs_path}, falling back to default")
+                    candidate_paths = [os.path.join(executable_dir, custom_model_path), os.path.join(base_dir, custom_model_path)]
+                    for abs_path in candidate_paths:
+                        if os.path.exists(abs_path):
+                            print(f"[INFO] Using custom model path from settings: {abs_path}")
+                            return abs_path
+                    print(f"[WARN] Custom model path not found: {candidate_paths[0]}, falling back to default")
         except Exception as e:
             print(f"[WARN] Failed to read settings: {e}")
     
@@ -443,19 +451,20 @@ def _get_model_path():
         print(f"[INFO] Using model path from environment: {env_model_path}")
         return env_model_path
     
-    for model_dir_name in ["model", "models"]:
-        model_dir = os.path.join(base_dir, model_dir_name)
+    for root in [executable_dir, base_dir]:
+        for model_dir_name in ["model", "models"]:
+            model_dir = os.path.join(root, model_dir_name)
 
-        exact_path = os.path.join(model_dir, "tinyllama.gguf")
-        if os.path.exists(exact_path):
-            return exact_path
+            exact_path = os.path.join(model_dir, "tinyllama.gguf")
+            if os.path.exists(exact_path):
+                return exact_path
 
-        if os.path.exists(model_dir):
-            for f in os.listdir(model_dir):
-                if f.endswith('.gguf'):
-                    return os.path.join(model_dir, f)
+            if os.path.exists(model_dir):
+                for f in os.listdir(model_dir):
+                    if f.endswith('.gguf'):
+                        return os.path.join(model_dir, f)
 
-    return os.path.join(base_dir, "model", "tinyllama.gguf")
+    return os.path.join(executable_dir, "model", "tinyllama.gguf")
 
 
 def _is_port_in_use(port: int = 8080) -> bool:

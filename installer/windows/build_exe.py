@@ -57,7 +57,7 @@ def get_main_script():
     return "src/core/main.py"
 
 
-def build_exe(arch="x86_64", create_zip=False, create_installer=False):
+def build_exe(arch="x86_64", create_zip=False, create_installer=False, onefile=False):
     """Build executable for specified architecture"""
     app_name = "Humanaize2"
     version = get_version()
@@ -96,12 +96,10 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False):
         print(f"[CLEAN] Removed previous output: {output_dir}")
 
     # Build PyInstaller command
-    # 使用 --onedir 模式：比 --onefile 快很多（不需要压缩成单文件）
-    # 安装包由 Inno Setup 打包整个目录
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--name", app_name,
-        "--onedir",
+        "--onefile" if onefile else "--onedir",
         "--noconfirm",
         # Note: 不使用 --clean，让 PyInstaller 复用缓存加速构建
         "--distpath", output_dir,
@@ -211,6 +209,9 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False):
         "--exclude-module", "pkg_resources",
     ]
 
+    if onefile:
+        cmd.extend(["--add-data", f"llama{DATA_SEP}llama"])
+
     # Platform-specific options
     if IS_WINDOWS:
         icon_ico = os.path.join(PROJECT_ROOT, "installer", "windows", "icon.ico")
@@ -266,10 +267,9 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False):
     else:
         exe_name = app_name
 
-    # --onedir 模式下，exe 在子目录中
     onedir_path = os.path.join(output_dir, app_name)
-    exe_path = os.path.join(onedir_path, exe_name)
-    if not os.path.exists(exe_path):
+    exe_path = os.path.join(output_dir, exe_name) if onefile else os.path.join(onedir_path, exe_name)
+    if not os.path.exists(exe_path) and not onefile:
         # fallback: 检查 output_dir 根目录
         exe_path = os.path.join(output_dir, exe_name)
         onedir_path = output_dir
@@ -286,14 +286,18 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False):
     print(f"  Path: {exe_path}")
     print(f"  Size: {exe_size_mb:.2f} MB")
 
-    # 复制整个 onedir 目录到 installer_output（Inno Setup 打包整个目录）
     installer_output_dir = os.path.join(PROJECT_ROOT, "installer_output", arch)
-    dst_dir = os.path.join(installer_output_dir, app_name)
-    if os.path.exists(dst_dir):
-        shutil.rmtree(dst_dir)
     os.makedirs(installer_output_dir, exist_ok=True)
-    shutil.copytree(onedir_path, dst_dir)
-    print(f"[COPY] Copied to installer_output: {dst_dir}")
+    if onefile:
+        dst_path = os.path.join(installer_output_dir, exe_name)
+        shutil.copy2(exe_path, dst_path)
+        print(f"[COPY] Copied to installer_output: {dst_path}")
+    else:
+        dst_dir = os.path.join(installer_output_dir, app_name)
+        if os.path.exists(dst_dir):
+            shutil.rmtree(dst_dir)
+        shutil.copytree(onedir_path, dst_dir)
+        print(f"[COPY] Copied to installer_output: {dst_dir}")
 
     # Create portable zip
     if create_zip:
@@ -454,20 +458,21 @@ def _create_installer(arch, version, exe_path, output_dir):
         print(f"  [WARN] Installer creation failed: {e}")
 
 
-def build_all(create_zip=False, create_installer=False):
+def build_all(create_zip=False, create_installer=False, onefile=False):
     """Build all architectures"""
     architectures = ["x86_64", "arm64"]
     for arch in architectures:
         print(f"\n{'='*60}")
         print(f"  Building {arch} version...")
         print(f"{'='*60}")
-        build_exe(arch, create_zip=create_zip, create_installer=create_installer)
+        build_exe(arch, create_zip=create_zip, create_installer=create_installer, onefile=onefile)
 
 
 if __name__ == "__main__":
     arch = "x86_64"
     create_zip = False
     create_installer = False
+    onefile = False
 
     for arg in sys.argv[1:]:
         if arg == "--zip":
@@ -476,14 +481,16 @@ if __name__ == "__main__":
             create_installer = True
         elif arg == "--skip-installer":
             create_installer = False
+        elif arg == "--onefile":
+            onefile = True
         elif arg in ("all", "x86_64", "arm64"):
             arch = arg
         else:
             print(f"Unknown argument: {arg}")
-            print(f"Usage: python build_exe.py [x86_64|arm64|all] [--zip] [--installer] [--skip-installer]")
+            print(f"Usage: python build_exe.py [x86_64|arm64|all] [--zip] [--installer] [--skip-installer] [--onefile]")
             sys.exit(1)
 
     if arch == "all":
-        build_all(create_zip=create_zip, create_installer=create_installer)
+        build_all(create_zip=create_zip, create_installer=create_installer, onefile=onefile)
     else:
-        build_exe(arch, create_zip=create_zip, create_installer=create_installer)
+        build_exe(arch, create_zip=create_zip, create_installer=create_installer, onefile=onefile)
