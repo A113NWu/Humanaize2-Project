@@ -1266,6 +1266,8 @@ def main():
         print("  humanaize2 boot -m solve [--hsn] [--sandbox <dir>] [-gan] - Start problem solving mode")
         print("  humanaize2 boot -m guard [--background] [--start-when-boot] - Start guard mode")
         print("  humanaize2 settings     - Open settings interface")
+        print("  humanaize2 check-server - Check the local llama-server")
+        print("  humanaize2 init-msf-db  - Initialize the MSF PostgreSQL schema")
         print("\nOptions for solve mode:")
         print("  --hsn          Enable HSN (Human Swarm Network)")
         print("  --sandbox <dir>  Enable sandbox mode, restrict AI to specified directory")
@@ -1358,6 +1360,17 @@ def main():
             print(speeches[choice])
         print("Opening settings interface...")
         open_settings()
+    elif command == "check-server":
+        print("Checking local llama-server...")
+        success = check_llm_server_status()
+        if not success:
+            print("[ERROR] LLM server did not become ready")
+            raise SystemExit(1)
+    elif command == "init-msf-db":
+        print("Initializing MSF database...")
+        success = init_msf_database()
+        if not success:
+            raise SystemExit(1)
     elif command == "skills":
         handle_skills()
     elif command == "update":
@@ -1376,6 +1389,8 @@ def main():
         print("  humanaize2 boot -m solve [--hsn] [--sandbox <dir>] [-gan] - Start problem solving mode")
         print("  humanaize2 boot -m iot [--host <ip>] [--port <n>] - Start IoT compute network")
         print("  humanaize2 settings     - Open settings interface")
+        print("  humanaize2 check-server - Check the local llama-server")
+        print("  humanaize2 init-msf-db  - Initialize the MSF PostgreSQL schema")
         print("  humanaize2 skills      - Manage skills")
         print("  humanaize2 update      - Check for and install updates")
         print("  humanaize2 update -f   - Force update even if already up to date")
