@@ -34,8 +34,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "addtopath"; Description: "Add to PATH environment variable (use 'humanaize2' command anywhere)"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-; 主程式（PyInstaller --onedir，整個目錄自包含）
-Source: "installer_output\x86_64\Humanaize2\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; 主程式（PyInstaller --onefile，使用最新已驗證的 EXE）
+Source: "installer_output\x86_64\Humanaize2.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; humanaize2 命令啟動腳本（讓用戶可在任意目錄使用 'humanaize2' 命令）
 Source: "installer\windows\humanaize2.cmd"; DestDir: "{app}"; Flags: ignoreversion
 ; Skills 目錄（可寫，供運行時安裝/更新技能）

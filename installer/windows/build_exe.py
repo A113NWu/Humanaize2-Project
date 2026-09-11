@@ -90,10 +90,14 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False, onefile=F
         print("[ERROR] PyInstaller not found. Install with: pip install pyinstaller")
         sys.exit(1)
 
-    # Clean previous output only (keep build dir for PyInstaller cache reuse)
+    # Clean the output and onefile analysis cache. Stale TOC entries can keep
+    # unrelated DLL/PYD files in the archive after an exclude is added.
     if os.path.exists(output_dir):
         shutil.rmtree(output_dir)
         print(f"[CLEAN] Removed previous output: {output_dir}")
+    if onefile and os.path.exists(build_dir):
+        shutil.rmtree(build_dir)
+        print(f"[CLEAN] Removed onefile analysis cache: {build_dir}")
 
     # Build PyInstaller command
     cmd = [
@@ -104,10 +108,10 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False, onefile=F
         # Note: 不使用 --clean，让 PyInstaller 复用缓存加速构建
         "--distpath", output_dir,
         "--workpath", build_dir,
+        "--paths", os.path.join(PROJECT_ROOT, "src", "core"),
         # Data files
         "--add-data", f"src/core/ui/data{DATA_SEP}src/core/ui/data",
         "--add-data", f"src/core/web{DATA_SEP}web",
-        "--add-data", f"src/core/tools{DATA_SEP}src/core/tools",
         "--add-data", f"prompt{DATA_SEP}prompt",
         "--add-data", f"languages{DATA_SEP}languages",
         "--add-data", f"config/version.json{DATA_SEP}config",
@@ -122,19 +126,45 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False, onefile=F
         "--hidden-import", "tkinter.ttk",
         "--hidden-import", "PIL",
         "--hidden-import", "PIL.Image",
+        "--hidden-import", "sqlmodel",
+        "--hidden-import", "sqlmodel.main",
+        "--hidden-import", "pydantic",
+        "--hidden-import", "pydantic_core",
         "--hidden-import", "sqlalchemy",
         "--hidden-import", "sqlalchemy.ext.asyncio",
         "--hidden-import", "sqlalchemy.orm",
         "--hidden-import", "requests",
+        "--hidden-import", "apscheduler",
+        "--hidden-import", "apscheduler.schedulers",
+        "--hidden-import", "apscheduler.schedulers.asyncio",
+        "--hidden-import", "apscheduler.triggers",
+        "--hidden-import", "apscheduler.triggers.interval",
         "--hidden-import", "aiohttp",
         "--hidden-import", "aiohttp.connector",
         "--hidden-import", "aiohttp.web",
+        "--collect-submodules", "aiohttp",
         "--hidden-import", "logging",
         "--hidden-import", "json",
         "--hidden-import", "threading",
         "--hidden-import", "queue",
         "--hidden-import", "socket",
         "--hidden-import", "asyncio",
+        "--hidden-import", "tools",
+        "--hidden-import", "tools.logger",
+        # Runtime features import tools.* lazily (updates, notifications,
+        # solve/guard modes, IoT and GAN). Collect the package as a unit so
+        # onefile builds do not fail on the first optional code path used.
+        "--collect-submodules", "tools",
+        "--hidden-import", "core.tools",
+        "--collect-submodules", "core.tools",
+        "--hidden-import", "core.llm",
+        "--collect-submodules", "core.llm",
+        "--hidden-import", "core.memory",
+        "--collect-submodules", "core.memory",
+        "--hidden-import", "core.Prompt",
+        "--collect-submodules", "core.Prompt",
+        "--hidden-import", "core.data",
+        "--collect-submodules", "core.data",
         # Exclude heavy unneeded modules (transitive deps not used by core app)
         "--exclude-module", "transformers",
         "--exclude-module", "torch",
@@ -167,7 +197,6 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False, onefile=F
         "--exclude-module", "lxml",
         "--exclude-module", "lz4",
         "--exclude-module", "pydub",
-        "--exclude-module", "apscheduler",
         "--exclude-module", "aiofiles",
         "--exclude-module", "dashscope",
         "--exclude-module", "openai",
@@ -202,17 +231,55 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False, onefile=F
         "--exclude-module", "ormsgpack",
         "--exclude-module", "jinja2",
         "--exclude-module", "cryptography",
-        "--exclude-module", "pydantic",
         "--exclude-module", "speech_recognition",
         "--exclude-module", "tensorflow",
         "--exclude-module", "keras",
         "--exclude-module", "tensorboard",
         "--exclude-module", "setuptools",
         "--exclude-module", "pkg_resources",
+        # Not used by the Windows core; excluding these prevents their native
+        # DLL/PYD payloads from entering the onefile extraction archive.
+        "--exclude-module", "Cython",
+        "--exclude-module", "cython",
+        # Optional packages that pull unrelated native DLL/PYD files into
+        # the onefile archive through ctypes/import scanning.
+        "--exclude-module", "pysilk",
+        "--exclude-module", "fontTools",
+        "--exclude-module", "fonttools",
+        "--exclude-module", "jedi",
+        "--exclude-module", "IPython",
+        "--exclude-module", "jupyter",
+        "--exclude-module", "notebook",
+        "--exclude-module", "qtpy",
+        "--exclude-module", "pyromark",
+        "--exclude-module", "python_ripgrep",
+        # The QQ/AstrBot integration is intentionally not part of the core
+        # Windows app; excluding its ecosystem prevents unrelated native
+        # extensions and JDK runtime DLLs from being auto-collected.
+        "--exclude-module", "astrbot",
+        "--exclude-module", "mcp",
+        "--exclude-module", "markitdown",
+        "--exclude-module", "google.genai",
+        "--exclude-module", "pypdf",
+        "--exclude-module", "discord",
+        "--exclude-module", "telegram",
+        "--exclude-module", "lark_oapi",
+        "--exclude-module", "quart",
+        "--exclude-module", "hypercorn",
+        "--exclude-module", "faiss",
+        "--exclude-module", "faiss_cpu",
+        "--exclude-module", "PySide6",
+        "--exclude-module", "PySide2",
+        "--exclude-module", "shiboken6",
     ]
 
     if onefile:
-        cmd.extend(["--add-data", f"llama{DATA_SEP}llama"])
+        cmd.extend([
+            "--add-data", f"llama{DATA_SEP}llama",
+            # Use a stable per-application extraction directory. This avoids
+            # onefile temp-folder races and antivirus locks on native files.
+            "--runtime-tmpdir", ".humanaize2_runtime",
+        ])
 
     # Platform-specific options
     if IS_WINDOWS:
@@ -225,10 +292,42 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False, onefile=F
 
     cmd.append(main_script)
 
+    # Do not let a user's global PYTHONPATH inject removed integrations or
+    # unrelated native extensions into the packaged application.
+    build_env = os.environ.copy()
+    build_env.pop("PYTHONPATH", None)
+    build_env.pop("PYTHONHOME", None)
+    # PyInstaller inherits interpreter search paths, including stale .pth or
+    # IDE-added paths. Remove deleted integrations before starting analysis.
+    build_env["PYTHONPATH"] = os.path.join(PROJECT_ROOT, "src")
+    build_env["PYTHONNOUSERSITE"] = "1"
+    path_entries = build_env.get("PATH", "").split(os.pathsep)
+    build_env["PATH"] = os.pathsep.join(
+        entry for entry in path_entries
+        if not any(token in entry.lower() for token in ("java", "jdk", "eclipse", "adoptium"))
+    )
+
     print(f"\n[BUILD] Running PyInstaller...")
     print(f"  Command: pyinstaller {' '.join(cmd[6:12])} ...")
 
     log_file = os.path.join(PROJECT_ROOT, f"build_log_{arch}.txt")
+    disabled_pth_files = []
+    site_packages = os.path.join(os.path.dirname(sys.executable), "Lib", "site-packages")
+    if os.path.isdir(site_packages):
+        for pth_name in os.listdir(site_packages):
+            if not pth_name.lower().endswith(".pth"):
+                continue
+            pth_path = os.path.join(site_packages, pth_name)
+            try:
+                with open(pth_path, "r", encoding="utf-8", errors="ignore") as handle:
+                    pth_contents = handle.read().lower()
+                if any(token in pth_contents for token in ("qq-chat", "astrbot")):
+                    disabled_path = pth_path + ".build-disabled"
+                    os.replace(pth_path, disabled_path)
+                    disabled_pth_files.append((pth_path, disabled_path))
+                    print(f"[CLEAN] Temporarily disabled stale path file: {pth_name}")
+            except OSError:
+                pass
     try:
         with open(log_file, 'w') as log_f:
             log_f.write(f"Building {app_name} v{version} for {arch}\n")
@@ -237,6 +336,7 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False, onefile=F
             result = subprocess.run(
                 cmd,
                 cwd=PROJECT_ROOT,
+                env=build_env,
                 stdout=log_f,
                 stderr=subprocess.STDOUT,
                 timeout=5400
@@ -260,8 +360,38 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False, onefile=F
         print(f"\n[ERROR] Build failed: {e}")
         print(f"  Full log: {log_file}")
         sys.exit(1)
+    finally:
+        for original_path, disabled_path in disabled_pth_files:
+            try:
+                os.replace(disabled_path, original_path)
+            except OSError:
+                print(f"[WARN] Could not restore path file: {original_path}")
 
     print(f"  [OK] PyInstaller completed (log: {log_file})")
+
+    # Fail early if optional native payloads leak into a onefile build.
+    if onefile:
+        analysis_dir = os.path.join(build_dir, app_name)
+        analysis_files = [
+            os.path.join(analysis_dir, "Analysis-00.toc"),
+            os.path.join(analysis_dir, "PKG-00.toc"),
+        ]
+        forbidden_payloads = ("Code.cp313-win_amd64.pyd", "runtime_bootstrap.py")
+        leaked_payloads = []
+        for analysis_file in analysis_files:
+            if not os.path.exists(analysis_file):
+                continue
+            with open(analysis_file, "r", encoding="utf-8", errors="replace") as handle:
+                contents = handle.read().lower()
+            leaked_payloads.extend(
+                payload for payload in forbidden_payloads
+                if payload.lower() in contents and payload not in leaked_payloads
+            )
+        if leaked_payloads:
+            print(f"\n[ERROR] Unwanted native payloads found: {', '.join(leaked_payloads)}")
+            print("  Remove the source package or update the exclude list before distributing.")
+            sys.exit(1)
+        print("  [OK] Native payload audit passed")
 
     # Verify output (--onedir 模式: dist/x86_64/Humanaize2/Humanaize2.exe)
     if IS_WINDOWS:
