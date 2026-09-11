@@ -10,6 +10,21 @@ if sys.stdout is None:
 if sys.stderr is None:
     sys.stderr = open(os.devnull, "w")
 
+# 打包（onefile）環境：把捆綁的 ui_settings.json 補到各模組以 __file__ 相對路徑查找的位置，
+# 否則 llm/ui/cli_settings/thinking_engine 等在解包目錄中讀不到設定。
+if getattr(sys, "_MEIPASS", None):
+    import shutil as _shutil
+    _bundled_settings = os.path.join(sys._MEIPASS, "src", "core", "ui", "data", "ui_settings.json")
+    if os.path.exists(_bundled_settings):
+        for _rel in ("core/ui/data/ui_settings.json", "data/ui_settings.json", "ui/data/ui_settings.json"):
+            _dst = os.path.join(sys._MEIPASS, *_rel.split("/"))
+            try:
+                if not os.path.exists(_dst):
+                    _shutil.copy2(_bundled_settings, _dst)
+            except OSError:
+                pass
+
+
 def _sanitize_sys_path():
     """避免脏的旧 QQ/AstrBot 路径覆盖项目本身的 main 模块。"""
     blocked_tokens = ("qq-chat", "astrbot")

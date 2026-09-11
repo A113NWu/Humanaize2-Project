@@ -34,15 +34,33 @@ except ImportError:  # pragma: no cover
     psycopg2 = None
     psycopg2_errors = None
 
-# 添加项目根目录和 src 目录到 Python 路径
-src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-project_root = os.path.dirname(src_dir)
-sys.path.insert(0, project_root)
-sys.path.insert(0, src_dir)
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+def _sanitize_sys_path():
+    """确保项目根目录优先于旧的 QQ/AstrBot 路径，避免误导入外部模块。"""
+    blocked_tokens = ("qq-chat", "astrbot")
+    cleaned = []
+    for entry in sys.path:
+        if not entry:
+            continue
+        normalized = os.path.normcase(os.path.normpath(entry))
+        if any(token in normalized for token in blocked_tokens):
+            continue
+        cleaned.append(entry)
+    sys.path[:] = cleaned
 
-# 导入并初始化日志模块
-from tools.logger import get_logger
+    src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    project_root = os.path.dirname(src_dir)
+    sys.path.insert(0, project_root)
+    sys.path.insert(0, src_dir)
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+
+_sanitize_sys_path()
+
+# 导入并初始化日志模块。打包后同时支持 core.main 和顶层 main 两种模块名。
+try:
+    from tools.logger import get_logger
+except ModuleNotFoundError:
+    from core.tools.logger import get_logger
 logger = get_logger()
 logger.redirect_output()
 logger.info("Humanaize v2.0 starting...")
@@ -417,12 +435,25 @@ def init_msf_database(host: str = "127.0.0.1", port: int = 5432, database: str =
         return False
 
 
+def _get_ui_settings_path() -> str:
+    """取得 ui_settings.json 路徑；打包（onefile）時優先查 _MEIPASS 內的捆綁副本。"""
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    candidates = [os.path.join(base_dir, "src", "core", "ui", "data", "ui_settings.json")]
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.insert(0, os.path.join(meipass, "src", "core", "ui", "data", "ui_settings.json"))
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return candidates[-1]
+
+
 def _get_model_path():
     """取得當前平台的模型路徑"""
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     executable_dir = os.path.dirname(os.path.abspath(sys.executable))
     
-    settings_path = os.path.join(base_dir, "src", "core", "ui", "data", "ui_settings.json")
+    settings_path = _get_ui_settings_path()
     if os.path.exists(settings_path):
         try:
             import json
@@ -654,6 +685,61 @@ def _detect_hardware() -> Dict:
     return result
 
 
+def _select_model_fitting_ram(model_path: str, hw_info: Dict) -> str:
+    """模型大小超過實體記憶體時，自動退回能放進記憶體的最大 .gguf（避免 OOM）。"""
+    total_gb = hw_info.get("ram_total_gb", 0) or 0
+    if not total_gb:
+        return model_path
+    limit_gb = total_gb * 0.9
+
+    size_gb = 0
+    if os.path.exists(model_path):
+        try:
+            size_gb = os.path.getsize(model_path) / (1024**3)
+        except OSError:
+            return model_path
+        if size_gb <= limit_gb:
+            return model_path
+        print(f"[WARN] 模型 {os.path.basename(model_path)} ({size_gb:.1f} GB) 超過實體記憶體 ({total_gb:.1f} GB)，自動選擇較小的模型")
+    else:
+        print(f"[WARN] 模型文件不存在: {model_path}，嘗試搜尋可用的替代模型")
+
+    search_dirs = []
+    preferred_dir = os.path.dirname(os.path.abspath(model_path))
+    if preferred_dir:
+        search_dirs.append(preferred_dir)
+    executable_dir = os.path.dirname(os.path.abspath(sys.executable))
+    for d in ("model", "models"):
+        search_dirs.append(os.path.join(executable_dir, d))
+
+    candidates = []
+    seen = set()
+    for d in search_dirs:
+        key = os.path.normcase(os.path.abspath(d))
+        if not os.path.isdir(d) or key in seen:
+            continue
+        seen.add(key)
+        for f in os.listdir(d):
+            if not f.lower().endswith(".gguf"):
+                continue
+            p = os.path.join(d, f)
+            try:
+                s = os.path.getsize(p) / (1024**3)
+            except OSError:
+                continue
+            if s <= limit_gb:
+                candidates.append((s, p))
+
+    if not candidates:
+        print("[ERROR] 找不到任何能放進記憶體的 .gguf 模型，請在設定中指定較小的模型路徑")
+        return model_path
+
+    candidates.sort(reverse=True)
+    chosen_size, chosen = candidates[0]
+    print(f"[INFO] 改用模型: {os.path.basename(chosen)} ({chosen_size:.1f} GB)")
+    return chosen
+
+
 def _build_llm_args(server_path, model_path, hw_info, ctx_size=4096, max_tokens=256):
     """根据硬件情况构建 llama-server 启动参数"""
     ngl = 999 if hw_info.get("has_gpu", False) else 0
@@ -665,6 +751,19 @@ def _build_llm_args(server_path, model_path, hw_info, ctx_size=4096, max_tokens=
         "--port", "8080",
         "-n", str(max_tokens),
     ]
+
+
+def _get_llama_server_environment(server_path):
+    """让 llama-server 及其子 DLL 在 PyInstaller 解包目录中可被找到。"""
+    server_dir = os.path.dirname(os.path.abspath(server_path))
+    environment = os.environ.copy()
+    environment["PATH"] = server_dir + os.pathsep + environment.get("PATH", "")
+    if os.name == "nt" and hasattr(os, "add_dll_directory"):
+        try:
+            os.add_dll_directory(server_dir)
+        except OSError:
+            pass
+    return environment
 
 
 def _check_and_start_server(max_wait: int = 120, force_restart: bool = False) -> bool:
@@ -714,6 +813,8 @@ def _check_and_start_server(max_wait: int = 120, force_restart: bool = False) ->
 
     server_path = _get_llama_server_path()
     model_path = target_model_path
+    # 模型必須能放進實體記憶體，否則 llama-server 會 OOM（CPU 模式尤其如此）
+    model_path = _select_model_fitting_ram(model_path, hw_info)
 
     if not os.path.exists(server_path):
         print("[ERROR] llama-server not found at:", server_path)
@@ -788,6 +889,7 @@ def _check_and_start_server(max_wait: int = 120, force_restart: bool = False) ->
             process = subprocess.Popen(
                 args,
                 cwd=os.path.dirname(server_path),
+                env=_get_llama_server_environment(server_path),
                 stdout=server_log_file,
                 stderr=subprocess.STDOUT,
                 creationflags=creation_flags,
