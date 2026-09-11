@@ -13,6 +13,11 @@ if not exist "%EXE_PATH%" (
     exit /b 1
 )
 
+REM Switch to the install directory so the onefile runtime extracts
+REM (and the app writes data/logs) next to the installation, regardless
+REM of the caller's current directory.
+cd /d "%SCRIPT_DIR%"
+
 REM Pass all arguments to the main program
 "%EXE_PATH%" %*
 
