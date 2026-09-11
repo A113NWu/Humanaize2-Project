@@ -10,15 +10,68 @@ if sys.stdout is None:
 if sys.stderr is None:
     sys.stderr = open(os.devnull, "w")
 
-# 添加 src 和 core 目录到 Python 路径
-src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, src_dir)
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+def _sanitize_sys_path():
+    """避免脏的旧 QQ/AstrBot 路径覆盖项目本身的 main 模块。"""
+    blocked_tokens = ("qq-chat", "astrbot")
+    cleaned = []
+    for entry in sys.path:
+        if not entry:
+            continue
+        normalized = os.path.normcase(os.path.normpath(entry))
+        if any(token in normalized for token in blocked_tokens):
+            continue
+        cleaned.append(entry)
+    sys.path[:] = cleaned
+
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    src_dir = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, project_root)
+    sys.path.insert(0, src_dir)
+
+
+_sanitize_sys_path()
+
+# Source modules use both ``tools.*`` and ``core.tools.*`` depending on the
+# startup path. Keep one package identity in the frozen Windows process.
+try:
+    import core.tools as _core_tools
+    sys.modules.setdefault("tools", _core_tools)
+except ImportError:
+    pass
+
+for _package_name in ("llm", "memory", "Prompt", "data", "config"):
+    try:
+        _package = __import__(f"core.{_package_name}", fromlist=[_package_name])
+        sys.modules.setdefault(_package_name, _package)
+    except ImportError:
+        pass
+
+
+def _attach_parent_console():
+    """打包的 --windowed exe 沒有控制台，CLI 模式需附加父進程控制台並重開標準流。"""
+    import ctypes
+    try:
+        if not ctypes.windll.kernel32.AttachConsole(-1):  # ATTACH_PARENT_PROCESS
+            return
+        sys.stdin = open("CONIN$", "r", encoding="utf-8", errors="replace")
+        sys.stdout = open("CONOUT$", "w", encoding="utf-8", buffering=1, errors="replace")
+        sys.stderr = open("CONOUT$", "w", encoding="utf-8", buffering=1, errors="replace")
+    except Exception:
+        pass
+
 
 def main():
-    """启动后端服务并打开浏览器管理面板。"""
+    """啟動後端服務並打開瀏覽器管理面板；帶參數時路由到 core.main 的模式分發。"""
+    # 帶參數（boot -m cli / boot -m gui / settings / solve 等）時交給 core/main.py
+    # 的 dispatch，修復打包版 CLI 模式無法啟動的問題（argv 之前被完全忽略）。
+    if len(sys.argv) > 1:
+        _attach_parent_console()
+        from main import main as core_main
+        core_main()
+        return
+
     # 检查并启动 LLM 服务器
-    from main import _check_and_start_server
+    from core.main import _check_and_start_server
     _check_and_start_server()
     
     # 后台检查更新
@@ -38,12 +91,8 @@ def main():
         pass
     
     from memory.memory import load_memory
-    try:
-        from core.personality import load_personality
-        from core.thinking_engine import ThinkingEngine
-    except ImportError:
-        from personality import load_personality
-        from thinking_engine import ThinkingEngine
+    from core.personality import load_personality
+    from core.thinking_engine import ThinkingEngine
     from thinking_engine_api import ThinkingEngineState, start_api_server
     import webbrowser
 
