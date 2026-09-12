@@ -290,6 +290,11 @@ EMPTY_REPLY_ERROR = "錯誤：AI 沒有產生任何有效內容"
 class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
     """OpenAI兼容的API处理器"""
 
+    # 聊天互斥鎖：ThinkingEngine 只有一個 worker，任務串行處理。
+    # 若允許第二個聊天請求進入，它的 collector 會熱頂替引擎的全局 on_response，
+    # 從而把前一個任務正在生成的內容串給新客戶端（且新任務的回答無人接收）。
+    _chat_lock = threading.Lock()
+
     def log_message(self, format, *args):
         logger.info(f"[HTTP] client={self.client_address[0]} request={args[0]}")
 
@@ -532,12 +537,18 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             f"memory_available={bool(memory)} personality_available={bool(personality)} stream={stream}"
         )
 
+        # 單 worker 串行：上一個聊天還在生成時直接禮貌拒絕，避免 collector 互相頂替
+        if not self._chat_lock.acquire(blocking=False):
+            logger.warning("[Chat] rejected: another chat task is still being processed")
+            self._send_error("AI 正在思考中，請等待當前回覆完成後再發送", 409)
+            return
+
         # 创建响应收集器
         collector = ResponseCollector(timeout=300)
-        
+
         # 保存原始on_response回调
         original_on_response = thinking_engine.on_response
-        
+
         # 设置临时回调
         thinking_engine.on_response = collector.callback
 
@@ -566,6 +577,10 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         finally:
             # 恢复原始回调
             thinking_engine.on_response = original_on_response
+            try:
+                self._chat_lock.release()
+            except RuntimeError:
+                pass
 
     def _handle_sync_response(self, collector, user_text, memory, state):
         """处理同步（非流式）响应 - 通过ResponseCollector收集ThinkingEngine的响应"""

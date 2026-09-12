@@ -12,3 +12,4 @@
 .thought-line.t-solve_mode{color:#3fd6e0}
 .thought-line.t-error{color:#ff5b5b;font-weight:600}
 .reply-text{white-space:pre-wrap;word-break:break-word}
+.message.assistant.busy-notice{color:#ff9d4d;font-weight:600}
