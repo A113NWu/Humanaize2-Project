@@ -1,5 +1,5 @@
 {
-  "version": "2.2.8",
-  "last_updated": "2026-09-12T00:00:00.000000",
-  "release_notes": "v2.2.8：修复 aiohttp 打包缺失、CLI 模式控制台与输入、模型路径解析与内存自适应回退、GAN 决策回归 AI 判定、聊天思考日志分色显示，并修复并发聊天串流问题。"
+  "version": "2.2.9",
+  "last_updated": "2026-09-13T00:00:00.000000",
+  "release_notes": "v2.2.9：CLI 模式改為在當前命令行窗口內直接啟動（不再彈出新窗口）；CLI 界面屏蔽後台 IoT 網絡日誌（仍完整寫入日誌文件）；網頁管理面板升級為 Liquid Glass 玻璃擬態風格，支持 Assets/Background.jpg|png 自定義背景圖。"
 }
