@@ -768,7 +768,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                         except BrokenPipeError:
                             pass
                     else:
-                        logger.info("[ThinkingEngine API] Task completed naturally with %d chars of output", len(full_reply))
+                        logger.info(f"[ThinkingEngine API] Task completed naturally with {len(full_reply)} chars of output")
                     break
                 elif chunk["type"] == "timeout":
                     timeout_content = "錯誤：AI 回應超時，沒有產生有效內容"
