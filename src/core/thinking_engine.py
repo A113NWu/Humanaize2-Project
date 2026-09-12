@@ -11,9 +11,13 @@ sys.path.insert(0, core_dir)
 try:
     from tools.logger import get_logger
     logger = get_logger()
-except ImportError:
-    import logging
-    logger = logging.getLogger(__name__)
+except ModuleNotFoundError:
+    try:
+        from core.tools.logger import get_logger
+        logger = get_logger()
+    except ModuleNotFoundError:
+        import logging
+        logger = logging.getLogger(__name__)
 
 from memory import add, add_thought, save_memory
 from llm.llm_enhanced import generate_with_emotion_feedback, generate_with_emotion_feedback_stream
@@ -159,8 +163,8 @@ class ThinkingEngine:
         """请求 AI 判断是否允许使用经验库中的 Solve 快速方案。"""
         from llm import chat
 
-        decision_prompt = load_should_use_solve_prompt(user_text)
         try:
+            decision_prompt = load_should_use_solve_prompt(user_text)
             logger.info(f"Calling LLM for Solve decision (text: {user_text[:50] if user_text else 'None'})")
             response = chat(decision_prompt, max_tokens=100, temperature=0.3, timeout=30, max_retries=0).strip()
             decision = self._parse_json_decision(response)
@@ -824,6 +828,14 @@ class ThinkingEngine:
     def _record_and_learn(self, user_input, ai_response, command_result=None, command_success=True):
         """Record interaction and run continuous learning"""
         try:
+            bug_report = self.optimizer.handle_bug_report(user_input)
+            if bug_report and self.on_response:
+                self.on_response({
+                    "type": "bug_repair",
+                    "status": bug_report["status"],
+                    "message": bug_report["repair"],
+                })
+
             # 记录交互到自我优化器
             self.optimizer.record_interaction(
                 user_input=user_input,
