@@ -42,13 +42,22 @@ from tools.tools import SimpleLogger, check_llm_server
 from core.voice.voice_service import VoiceService
 import config
 
-try:
-    import importlib
-    qq_module = importlib.import_module('skills.qq-chat')
-    _qq_skill = qq_module._qq_skill
-    QQ_SKILL_AVAILABLE = True
-except ImportError:
-    QQ_SKILL_AVAILABLE = False
+def _load_qq_skill():
+    """Optional QQ skill is intentionally never required for the core app."""
+    try:
+        import importlib.util
+        spec = importlib.util.find_spec('skills.qq-chat')
+        if spec is None:
+            return None
+        import importlib
+        qq_module = importlib.import_module('skills.qq-chat')
+        return getattr(qq_module, '_qq_skill', None)
+    except Exception:
+        return None
+
+
+_qq_skill = _load_qq_skill()
+QQ_SKILL_AVAILABLE = _qq_skill is not None
 
 
 class HumanaizeUI:
@@ -1796,6 +1805,10 @@ class HumanaizeUI:
         
         if update_type == "chat_response":
             self._handle_chat_response_update(update)
+        elif update_type == "bug_repair":
+            status = update.get("status", "reported")
+            message = update.get("message", "已记录问题。")
+            self._add_chat_message(f"System: bug 状态={status}，{message}", "normal")
         elif update_type == "error":
             self._handle_error_update(update)
         elif update_type == "internal_thought":

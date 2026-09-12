@@ -1,6 +1,6 @@
 {
   "language": "中文",
-  "theme": "System",
+  "theme": "Liquid Glass",
   "model_name": "gemma-4-26B-A4B-it-ultra-uncensored-heretic-Q5_K_S",
   "model_path": "D:/Humanaize 2.0 Agent/Humanaize2-Project/models/gemma-4-26B-A4B-it-ultra-uncensored-heretic-Q5_K_S.gguf",
   "openai_enabled": false,

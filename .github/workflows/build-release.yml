@@ -32,7 +32,7 @@ jobs:
       
       - name: Build executable + portable zip
         run: |
-          python installer/windows/build_exe.py x86_64 --zip
+          python installer/windows/build_exe.py x86_64 --onefile --zip
       
       - name: Upload executable
         uses: actions/upload-artifact@v4

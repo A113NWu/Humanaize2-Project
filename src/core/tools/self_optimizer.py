@@ -27,6 +27,59 @@ from data.prompts_manager import (
 )
 
 
+class BugReportManager:
+    """Detect and handle user bug reports with an auditable safe-repair path."""
+
+    REPORT_MARKERS = (
+        "bug", "error", "exception", "traceback", "crash", "崩溃", "报错",
+        "错误", "故障", "不能用", "无法使用", "不工作", "闪退"
+    )
+
+    def __init__(self, base_dir: str):
+        self.report_file = os.path.join(base_dir, "bug_reports.json")
+        self.reports: List[Dict] = []
+        self._load()
+
+    def looks_like_report(self, text: str) -> bool:
+        lowered = (text or "").lower()
+        return any(marker in lowered for marker in self.REPORT_MARKERS)
+
+    def handle(self, text: str, experience: "Experience") -> Dict:
+        """Record a report and return a safe, user-facing repair result."""
+        report = {
+            "timestamp": datetime.now().isoformat(),
+            "message": (text or "")[:4000],
+            "status": "reported",
+            "repair": None,
+        }
+        known_solution = experience.find_solution(text or "")
+        if known_solution:
+            report["status"] = "known_solution"
+            report["repair"] = known_solution[:2000]
+        else:
+            report["status"] = "needs_diagnosis"
+            report["repair"] = "已记录问题，暂时没有经过验证的安全修复方案。"
+        self.reports.append(report)
+        self._save()
+        return report
+
+    def _load(self):
+        try:
+            if os.path.exists(self.report_file):
+                with open(self.report_file, "r", encoding="utf-8") as handle:
+                    self.reports = json.load(handle)
+        except (OSError, ValueError):
+            self.reports = []
+
+    def _save(self):
+        try:
+            os.makedirs(os.path.dirname(self.report_file), exist_ok=True)
+            with open(self.report_file, "w", encoding="utf-8") as handle:
+                json.dump(self.reports[-200:], handle, indent=2, ensure_ascii=False)
+        except OSError:
+            pass
+
+
 class Experience:
     """经验数据库 - 存储问题解决经验、成功模式、解决方案"""
     
@@ -782,6 +835,9 @@ class SelfOptimizer:
         self.optimization_history: List[Dict] = []
         self.web_search_enabled = False
         self.web_search_module = None
+        self.bug_reports = BugReportManager(
+            os.path.join(os.path.dirname(__file__), "ai_selfdevelop", "learning")
+        )
         
         self.allowed_dirs = [
             os.path.join(os.path.dirname(__file__), "ai_selfdevelop", "skills"),
@@ -941,6 +997,17 @@ class SelfOptimizer:
         self.memory.record_sentiment(user_input, sentiment)
         
         self._save_data()
+
+    def handle_bug_report(self, user_input: str) -> Optional[Dict]:
+        """Detect a reported bug and attempt only a known, auditable repair."""
+        if not self.bug_reports.looks_like_report(user_input):
+            return None
+        result = self.bug_reports.handle(user_input, self.experience)
+        self.experience.record_problem_solution(
+            user_input, result["repair"], success=result["status"] == "known_solution"
+        )
+        self._save_data()
+        return result
     
     def record_solve_interaction(self, problem: str, solution: str, success: bool = True, confidence: float = 0.8):
         """Record a problem-solving interaction (Solve模式) - 只保存到Experience"""

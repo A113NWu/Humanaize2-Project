@@ -109,9 +109,9 @@ def build_windows(skip_installer=False):
         installer_flag = "--installer"
 
     success = run_command(
-        [sys.executable, build_script, "x86_64", zip_flag] +
+        [sys.executable, build_script, "x86_64", "--onefile", zip_flag] +
         ([installer_flag] if installer_flag else []),
-        timeout=600
+        timeout=5400
     )
 
     if success:

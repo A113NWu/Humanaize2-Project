@@ -549,13 +549,16 @@ def _create_installer(arch, version, exe_path, output_dir):
 
     # 带版本号的输出文件名
     tag = get_release_tag(version)
+    # Use an absolute /O path: a relative one is resolved against the ISCC
+    # working directory and would nest installer\windows twice.
+    installer_output_path = os.path.join(PROJECT_ROOT, "installer", "windows", "output")
     try:
         result = subprocess.run(
             [
                 iscc_path,
                 f"/DAppVersion={version}",
                 f"/DReleaseTag={tag}",
-                f"/Oinstaller\\windows\\output",
+                f"/O{installer_output_path}",
                 iss_file,
             ],
             cwd=os.path.join(PROJECT_ROOT, "installer", "windows"),
