@@ -934,6 +934,8 @@ def _check_and_start_server(max_wait: int = 120, force_restart: bool = False) ->
 
                 if check_llm_server():
                     print(f"[INFO] LLM server started successfully! (ctx={ctx_size})")
+                    # 讓客戶端 llm.py 用與服務器一致的上下文預算，避免按預設 512 腰斬 prompt
+                    os.environ["HUMANIZE2_LLM_CONTEXT_TOKENS"] = str(ctx_size)
                     server_log_file.close()
                     return True
 
