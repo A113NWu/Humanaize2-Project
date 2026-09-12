@@ -3,9 +3,13 @@
 Humanaize 2.0 聊天对话 Prompt - 从 txt 文件加载
 """
 import os
+import sys
 
 def _get_prompts_dir():
-    """获取提示词目录（项目根目录的prompt文件夹）"""
+    """获取提示词目录（打包 onefile 時在 _MEIPASS\\prompt，開發時在項目根目錄/prompt）"""
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        return os.path.join(meipass, "prompt")
     return os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "prompt")
 
 def _load_prompt(filename: str) -> str:

@@ -3,10 +3,14 @@
 提示词管理器 - 从 txt 文件加载所有提示词
 """
 import os
+import sys
 from typing import Optional
 
 def _get_project_root():
-    """获取项目根目录"""
+    """获取项目根目录（打包 onefile 時提示詞捆綁在 _MEIPASS 根目錄）"""
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        return meipass
     return os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 PROMPTS_DIR = os.path.join(_get_project_root(), "prompt")
