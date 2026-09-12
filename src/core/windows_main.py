@@ -135,28 +135,35 @@ def _enable_ansi_colors():
 def _attach_parent_console():
     """打包的 --windowed exe 沒有控制台，CLI 模式需附加調用者所在的控制台，
     優先附加進程樹上的 cmd/PowerShell（兼容 onefile bootloader 派生場景），
-    其次 ATTACH_PARENT_PROCESS；都失敗時才 AllocConsole 新建窗口。"""
+    其次 ATTACH_PARENT_PROCESS；都失敗時才 AllocConsole 新建窗口。
+
+    注意：通過 `start /b` 啟動時進程可能已直接繼承 cmd 的控制台，此時
+    AttachConsole 會報 ERROR_ACCESS_DENIED——用 GetConsoleWindow 判斷，
+    已擁有控制台就跳過附加，統一走後面的重開標準流邏輯。"""
     import ctypes
     kernel32 = ctypes.windll.kernel32
-    targets = [pid for pid in (_find_ancestor_console_pid(),) if pid]
-    targets.append(-1)  # ATTACH_PARENT_PROCESS
-    attached = False
-    for target in targets:
-        try:
-            if kernel32.AttachConsole(target):
-                attached = True
-                break
-        except Exception:
-            continue
-    if not attached:
-        try:
-            attached = bool(kernel32.AllocConsole())
-            if attached:
-                kernel32.SetConsoleTitleW("Humanaize2 CLI")
-        except Exception:
-            attached = False
-    if not attached:
-        return False
+
+    if not kernel32.GetConsoleWindow():
+        targets = [pid for pid in (_find_ancestor_console_pid(),) if pid]
+        targets.append(-1)  # ATTACH_PARENT_PROCESS
+        attached = False
+        for target in targets:
+            try:
+                if kernel32.AttachConsole(target):
+                    attached = True
+                    break
+            except Exception:
+                continue
+        if not attached:
+            try:
+                attached = bool(kernel32.AllocConsole())
+                if attached:
+                    kernel32.SetConsoleTitleW("Humanaize2 CLI")
+            except Exception:
+                attached = False
+        if not attached:
+            return False
+
     try:
         sys.stdin = open("CONIN$", "r", encoding="utf-8", errors="replace")
         sys.stdout = open("CONOUT$", "w", encoding="utf-8", buffering=1, errors="replace")
