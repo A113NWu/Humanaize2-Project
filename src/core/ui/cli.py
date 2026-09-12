@@ -13,13 +13,22 @@ from memory import load_memory, save_memory, add
 from core.personality import load_personality
 from ui.idle import IdleEngine
 
-try:
-    import importlib
-    qq_module = importlib.import_module('skills.qq-chat')
-    _qq_skill = qq_module._qq_skill
-    QQ_SKILL_AVAILABLE = True
-except ImportError:
-    QQ_SKILL_AVAILABLE = False
+def _load_qq_skill():
+    """Optional QQ skill is intentionally never required for CLI startup."""
+    try:
+        import importlib.util
+        spec = importlib.util.find_spec('skills.qq-chat')
+        if spec is None:
+            return None
+        import importlib
+        qq_module = importlib.import_module('skills.qq-chat')
+        return getattr(qq_module, '_qq_skill', None)
+    except Exception:
+        return None
+
+
+_qq_skill = _load_qq_skill()
+QQ_SKILL_AVAILABLE = _qq_skill is not None
 
 
 class Colors:
@@ -448,6 +457,12 @@ class HumanaizeCLI:
                     self._add_chat(f"{self._t('ai')}: {r}")
             self._resume()
             self._add_system_log("success", self._t("response_generated"))
+
+        elif rtype == "bug_repair":
+            status = response.get("status", "reported")
+            message = response.get("message", "已记录问题。")
+            self._add_chat(f"{self._t('system')}: bug 状态={status}，{message}")
+            self._add_system_log("info", f"bug report handled: {status}")
         
         elif rtype == "chat":
             r = response.get("response", "")
@@ -678,23 +693,30 @@ class HumanaizeCLI:
             self.thinking_engine.queue_chat_task(prompt)
 
     def run(self):
+        if sys.stdin is None:
+            print("無法取得控制台輸入。請在命令提示符（cmd）中執行：humanaize2 boot -m cli")
+            return
         self._render()
-        
+
         while self.running:
             try:
                 user_input = input()
-                
+
                 if not user_input.strip():
                     self._render()
                     continue
-                
+
                 if user_input.startswith("/"):
                     self._cmd(user_input)
                     self._render()
                 else:
                     self.send(user_input)
-                    
+
             except (KeyboardInterrupt, EOFError):
+                break
+            except RuntimeError:
+                # input(): lost sys.stdin — 控制台句柄不可用
+                print("控制台輸入已斷開，請在命令提示符（cmd）中重新執行：humanaize2 boot -m cli")
                 break
 
         self._shutdown()

@@ -151,18 +151,16 @@ class GANIteration:
         """
         self._reset()
         self.user_context = user_text
-        
-        # Simple heuristic: skip GAN for simple questions
-        if len(user_text) < 20 or user_text.endswith("?") and len(user_text.split()) < 5:
-            return False, "Simple question, direct answer sufficient"
-        
+
+        # 是否進行 GAN 思考完全由 AI（LLM）依 prompt 判定，
+        # 不再使用文本長度/標點之類的系統啟發式規則替 AI 做決定。
         decision_prompt = load_gan_decide_prompt(user_text)
-        
+
         reply = self._safe_call(decision_prompt, max_tokens=100, temperature=0.3)
-        
+
         if not reply:
-            return False, "Decision failed"
-        
+            return False, "AI decision unavailable (no LLM response), answering directly"
+
         # Parse decision
         is_yes = "yes" in reply.lower()[:10] or "是" in reply[:5]
         return is_yes, reply

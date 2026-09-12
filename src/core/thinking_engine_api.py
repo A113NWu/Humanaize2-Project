@@ -229,9 +229,10 @@ class ResponseCollector:
             self._queue.put({"type": "chunk", "content": reply})
         elif response.get("type") == "internal_thought":
             thought = response.get("thought", "")
+            thought_type = response.get("thought_type", "")
             self._thoughts.append(thought)
             logger.info(f"[ThinkingEngine] Internal thought: {thought[:100]}...")
-            self._queue.put({"type": "thought", "content": thought})
+            self._queue.put({"type": "thought", "content": thought, "thought_type": thought_type})
         elif response.get("type") == "gan_complete":
             pass
         elif response.get("type") == "error":
@@ -704,15 +705,19 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                         
                 elif chunk["type"] == "thought":
                     thought_content = chunk["content"]
+                    thought_type = chunk.get("thought_type", "")
                     thought_chunk = {
                         "id": chat_id,
                         "object": "chat.completion.chunk",
                         "created": created,
                         "model": "thinking-engine",
+                        # 前端依 thought/thought_type 把該幀渲染成彩色日誌行，而非回覆正文
+                        "thought": True,
+                        "thought_type": thought_type,
                         "choices": [
                             {
                                 "index": 0,
-                                "delta": {"content": f"\n[思考] {thought_content}"},
+                                "delta": {"content": thought_content},
                                 "finish_reason": None
                             }
                         ]
@@ -732,6 +737,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                         "object": "chat.completion.chunk",
                         "created": created,
                         "model": "thinking-engine",
+                        "error": True,
                         "choices": [
                             {
                                 "index": 0,

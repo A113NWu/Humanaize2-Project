@@ -63,16 +63,31 @@ for _package_name in ("llm", "memory", "Prompt", "data", "config"):
 
 
 def _attach_parent_console():
-    """打包的 --windowed exe 沒有控制台，CLI 模式需附加父進程控制台並重開標準流。"""
+    """打包的 --windowed exe 沒有控制台，CLI 模式需附加父進程控制台（cmd 內運行），
+    失敗時自行 AllocConsole 新建一個（雙擊啟動等無父控制台場景），然後重開標準流。"""
     import ctypes
+    kernel32 = ctypes.windll.kernel32
+    attached = False
     try:
-        if not ctypes.windll.kernel32.AttachConsole(-1):  # ATTACH_PARENT_PROCESS
-            return
+        attached = bool(kernel32.AttachConsole(-1))  # ATTACH_PARENT_PROCESS
+    except Exception:
+        attached = False
+    if not attached:
+        try:
+            attached = bool(kernel32.AllocConsole())
+            if attached:
+                kernel32.SetConsoleTitleW("Humanaize2 CLI")
+        except Exception:
+            attached = False
+    if not attached:
+        return False
+    try:
         sys.stdin = open("CONIN$", "r", encoding="utf-8", errors="replace")
         sys.stdout = open("CONOUT$", "w", encoding="utf-8", buffering=1, errors="replace")
         sys.stderr = open("CONOUT$", "w", encoding="utf-8", buffering=1, errors="replace")
+        return True
     except Exception:
-        pass
+        return False
 
 
 def main():
