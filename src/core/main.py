@@ -1,16 +1,20 @@
 """
-Humanaize v2.0 - 主要進入點
+Humanaize - 主要進入點
 
 命令:
-    python main.py boot         - 啟動瀏覽器管理面板
-    python main.py boot -m cli  - 啟動 CLI 聊天介面
-    python main.py boot -m gui  - 啟動 GUI 介面
-    python main.py boot -m win-gui  - 啟動 Windows 現代化 GUI 介面
-    python main.py boot -m solve -r <file> -enable HSN - 啟動解決模式
-    python main.py boot -m guard [--background] [--start-when-boot] - 啟動守護模式
-    python main.py boot -m iot [--host <ip>] [--port <n>] - 啟動 IoT 算力網絡
-    python main.py settings     - 開啟設定介面
-    python main.py update       - 檢查並安裝更新
+    humanaize2 boot               - 啟動瀏覽器管理面板（默認模式）
+    humanaize2 boot -m cli        - 啟動 CLI 聊天介面（同窗口交互）
+    humanaize2 boot -m gui        - 啟動 GUI 介面
+    humanaize2 boot -m win-gui    - 啟動 Windows 現代化 GUI 介面
+    humanaize2 boot -m solve [-r <file>] [--hsn] [-gan] [--sandbox <dir>] [problem]
+                                  - 啟動解決模式
+    humanaize2 boot -m guard [--background|-b] [--start-when-boot|-s] - 啟動守護模式
+    humanaize2 boot -m iot [--host <ip>] [--port <n>] - 啟動 IoT 算力網絡
+    humanaize2 settings           - 開啟設定介面
+    humanaize2 check-server       - 檢查本地 llama-server
+    humanaize2 skills -list | -enable <name> | -disable <name> | -install <zip> - 管理技能
+    humanaize2 update [-f]        - 檢查並安裝更新
+    humanaize2 help               - 顯示命令說明
 """
 
 import sys
@@ -1377,39 +1381,52 @@ def handle_update(args):
         print("Use 'humanaize2 update -f' to force update.")
 
 
+def _print_usage():
+    """列印 humanaize 命令說明（help / 無參數 / 未知命令共用）"""
+    print(f"Humanaize v{get_version()} - Command Reference")
+    print("Usage:")
+    print("  humanaize2 boot             - Start browser dashboard (default)")
+    print("  humanaize2 boot -m cli      - Start CLI chat interface (same-window interaction)")
+    print("  humanaize2 boot -m gui      - Start GUI interface")
+    print("  humanaize2 boot -m win-gui  - Start Windows modern GUI interface")
+    print("  humanaize2 boot -m solve [-r <file>] [--hsn] [-gan] [--sandbox <dir>] [problem]")
+    print("                              - Start problem solving mode")
+    print("  humanaize2 boot -m guard [--background|-b] [--start-when-boot|-s]")
+    print("                              - Start guard mode")
+    print("  humanaize2 boot -m iot [--host <ip>] [--port <n>]")
+    print("                              - Start IoT compute network")
+    print("  humanaize2 settings         - Open settings interface")
+    print("  humanaize2 check-server     - Check the local llama-server")
+    print("  humanaize2 init-msf-db      - Initialize the MSF PostgreSQL schema")
+    print("  humanaize2 skills -list | -enable <name> | -disable <name> | -install <zip>")
+    print("                              - Manage skills")
+    print("  humanaize2 update [-f]      - Check for and install updates (-f forces even if up to date)")
+    print("  humanaize2 help             - Show this help")
+    print("\nOptions for solve mode:")
+    print("  -r, --reference <file>  Attach a reference file to the problem")
+    print("  --hsn                   Enable HSN (Human Swarm Network)")
+    print("  -gan, --enhanced-gan    Enable enhanced GAN mode")
+    print("  --sandbox <dir>         Restrict AI file access to the specified directory")
+    print("\nOptions for guard mode:")
+    print("  --background, -b        Run in background mode")
+    print("  --start-when-boot, -s   Enable auto-start on system boot")
+    print("\nOptions for IoT mode:")
+    print("  --host <ip>             Bind address (default: 127.0.0.1)")
+    print("  --port <n>              Bind port (default: 8080)")
+
+
 def main():
     args = sys.argv[1:]
-    
+
     if not args:
-        print(__doc__)
-        print("Usage:")
-        print("  humanaize2 boot         - Start browser dashboard")
-        print("  humanaize2 boot -m cli  - Start CLI chat interface")
-        print("  humanaize2 boot -m gui  - Start GUI interface")
-        print("  humanaize2 boot -m win-gui  - Start Windows modern GUI interface")
-        print("  humanaize2 boot -m solve [--hsn] [--sandbox <dir>] [-gan] - Start problem solving mode")
-        print("  humanaize2 boot -m guard [--background] [--start-when-boot] - Start guard mode")
-        print("  humanaize2 settings     - Open settings interface")
-        print("  humanaize2 check-server - Check the local llama-server")
-        print("  humanaize2 init-msf-db  - Initialize the MSF PostgreSQL schema")
-        print("\nOptions for solve mode:")
-        print("  --hsn          Enable HSN (Human Swarm Network)")
-        print("  --sandbox <dir>  Enable sandbox mode, restrict AI to specified directory")
-        print("  -gan           Enable enhanced GAN mode")
-        print("\nOptions for guard mode:")
-        print("  --background          Run in background mode")
-        print("  --start-when-boot     Enable auto-start on system boot")
-        print("\nOr use directly:")
-        print("  python main.py boot")
-        print("  python main.py boot -m cli")
-        print("  python main.py boot -m gui")
-        print("  python main.py boot -m win-gui")
-        print("  python main.py boot -m solve")
-        print("  python main.py boot -m guard")
-        print("  python main.py settings")
+        _print_usage()
         return
-    
+
     command = args[0].lower()
+
+    if command in ("help", "--help", "-h"):
+        _print_usage()
+        return
     
     speeches = [
         "Android or Apple, this is a question.",
@@ -1506,18 +1523,8 @@ def main():
         handle_update(args[1:])
     else:
         print(f"Unknown command: {command}")
-        print("Usage:")
-        print("  humanaize2 boot         - Start browser dashboard")
-        print("  humanaize2 boot -m cli  - Start CLI chat interface")
-        print("  humanaize2 boot -m gui  - Start GUI interface")
-        print("  humanaize2 boot -m solve [--hsn] [--sandbox <dir>] [-gan] - Start problem solving mode")
-        print("  humanaize2 boot -m iot [--host <ip>] [--port <n>] - Start IoT compute network")
-        print("  humanaize2 settings     - Open settings interface")
-        print("  humanaize2 check-server - Check the local llama-server")
-        print("  humanaize2 init-msf-db  - Initialize the MSF PostgreSQL schema")
-        print("  humanaize2 skills      - Manage skills")
-        print("  humanaize2 update      - Check for and install updates")
-        print("  humanaize2 update -f   - Force update even if already up to date")
+        print("Run 'humanaize2 help' for the command reference.\n")
+        _print_usage()
 
 
 if __name__ == "__main__":

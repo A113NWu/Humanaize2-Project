@@ -1,4 +1,4 @@
-# Humanaize v2.2
+# Humanaize v2.3
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
@@ -7,15 +7,22 @@
 
 > [English](./README_en.md) | 中文
 
-Humanaize v2.2 是一款**本地自治 AI 代理**，具有现代化的图形界面。它完全在本地运行，通过本地 LLM 服务器提供注重隐私的 AI 交互，支持记忆系统、人格引擎和可扩展的技能框架。
+Humanaize v2.3 是一款**本地自治 AI 代理**，提供现代化的网页管理面板与多模式界面。它完全在本地运行，通过本地 LLM 服务器提供注重隐私的 AI 交互，支持记忆系统、人格引擎、可扩展的技能框架、流式语音对话（STT + TTS）以及 IoT 算力网络。
 
-**v2.2 新功能：**
+**v2.3 新功能：**
+- 🎙️ 网页端语音对话：一键开关（输入框右下角麦克风按钮），说话即转文字发送，AI 回复流式朗读
+- 🔊 流式 TTS：AI 边输出边逐句合成语音（基于 edge-tts，支持 zh/en 多音色），代码块自动跳过朗读
+- 🏷️ 版本号统一管理：所有界面版本号均从 `config/version.json` 读取，一处修改全局生效
+- 🖥️ CLI 同窗口交互：CLI 聊天直接运行在启动它的终端内（Windows），支持 `/help`、`/mem`、`/status`、`/gan`、`/clear`、`/quit` 内置命令
+- 🧹 IoT 算力网络日志过滤：仅记录关键事件，避免日志刷屏
+- 🌊 网页面板 Liquid Glass（液态玻璃）风格界面
+
+**v2.2 功能：**
+- ✨ 浏览器管理面板：流式聊天、实时思考过程、状态监控
 - ✨ Windows 现代化 GUI 界面（卡片式设计）
 - ✨ AI 自我发展模块（用户个性化定制，更新时保留）
 - ✨ 自我优化系统（AI 空闲时间自动分析优化）
 - ✨ 用户行为模式分析
-- ✨ 性能监控和优化建议
-- ✨ CLI/Solve 模式日志修复
 - ✨ AI 视觉交互技能（屏幕捕获、摄像头调用、图像识别）
 - ✨ Skill 安装器（支持从压缩包安装自定义技能）
 - ✨ 集中式提示词管理（所有提示词存储在 prompt/ 文件夹中）
@@ -25,71 +32,60 @@ Humanaize v2.2 是一款**本地自治 AI 代理**，具有现代化的图形界
 | 类别 | 功能 |
 |------|------|
 | **核心 AI** | 本地聊天界面、记忆系统、人格引擎、GAN 风格自我辩论 |
-| **技能框架** | OpenClaw 兼容的技能系统，包含 10 个内置技能 |
-| **用户界面** | 基于 CustomTkinter 的现代 GUI、CLI 支持、深色/浅色主题 |
+| **技能框架** | OpenClaw 兼容的技能系统，包含 9 个内置技能 |
+| **网页面板** | 流式聊天、实时思考过程、语音对话（STT + 流式 TTS）、状态监控、Liquid Glass 风格、自定义壁纸 |
+| **用户界面** | 浏览器管理面板、Windows 现代 GUI、传统 GUI、CLI（同窗口交互）、深色/浅色主题 |
 | **多语言** | 支持英语和中文，自动检测语言 |
+| **语音** | 网页端麦克风语音输入（Web Speech API）、AI 回复流式朗读（edge-tts） |
 | **自治能力** | 线程安全架构、后台任务处理、空闲思考 |
-| **视觉能力** | 屏幕捕获、摄像头调用、图像分析、文本识别 |
+| **网络** | IoT 算力网络（可加入分布式计算节点） |
 | **维护** | GitHub 自动更新、systemd 服务支持（Linux） |
-
----
-
-## 📖 文档导航
-
-欢迎！以下是帮助您快速上手的文档文件：
-
-### 🚀 快速开始
-- **[英文版文档](./README_en.md)** - English documentation
-
-### 📦 安装指南
-- **[APT 安装指南](./APT_INSTALL.md)** - Linux APT仓库安装详细步骤
-- **[构建指南](./BUILDING.md)** - 从源码构建安装包
-- **[Windows 构建指南](./WINDOWS_BUILD_GUIDE.md)** - Windows平台构建说明
-- **[Linux 部署指南](./DEPLOY_LINUX.md)** - Linux服务器部署教程
-
-### 🛠️ 故障排除 & 参考
-- **[故障排除](./TROUBLESHOOTING_LINUX.md)** - 常见问题与解决方案
-- **[目录结构](./DIRECTORY_STRUCTURE.md)** - 项目目录说明
-- **[版本管理](./VERSION_MANAGEMENT.md)** - 版本号统一管理说明
 
 ---
 
 ## 🌟 核心能力
 
-### 1. 本地聊天界面
+### 1. 网页管理面板
+- 运行 `humanaize2 boot` 后自动打开浏览器面板（默认 `http://127.0.0.1:8082`）
+- 流式聊天：AI 回复逐字输出，实时显示内部思考过程
+- Liquid Glass（液态玻璃）视觉风格，支持自定义背景壁纸
+- 状态页实时显示运行状态、模型信息与程序版本号
+- 内置 REST API（`/api/chat`、`/api/tts`、`/api/status` 等），便于二次开发
+
+### 2. 网页语音对话
+- 点击输入框右下角的麦克风按钮开启（按钮变红并脉动表示开启中）
+- 语音输入：基于浏览器 Web Speech API（推荐 Chrome / Edge），说话实时转文字
+- 语音回复：AI 回复流式输出时逐句合成并播放语音（基于 edge-tts，默认中文音色 `zh-CN-XiaoxiaoNeural`）
+- 智能朗读：自动跳过代码块、链接等不需要朗读的内容；再次点击麦克风按钮即可停止朗读
+- 注意：语音识别依赖浏览器支持；语音合成需要联网访问微软 TTS 服务
+
+### 3. 本地聊天界面
 - 基于 CustomTkinter 的现代 UI，带聊天历史
 - 实时显示 AI 的内部推理过程
 - 支持 GUI 和 CLI 两种模式
 - 技能执行结果输出面板
 
-### 2. 记忆系统
+### 4. 记忆系统
 - 跨会话持久化对话记忆
 - 思考过程和决策记录
 - 高效上下文管理的记忆摘要
 - 可配置的内存限制（默认：100 条消息）
 
-### 3. 人格引擎
-- 最小化身份定义，让 AI 自主发展人格
+### 5. 人格引擎
+- 可定制的 AI 人格特质（好奇心、同理心、创造力）
 - 基于交互的动态人格适应
-- 可自定义初始提示词（存储在 prompt/ 文件夹中）
+- 可自定义初始提示词
 
-### 4. GAN 风格自我辩论
+### 6. GAN 风格自我辩论
 - 内部论证以提升回复质量
 - 自动决定何时使用深度反思
 - 多视角综合分析
 
-### 5. 技能系统（OpenClaw 兼容）
+### 7. 技能系统（OpenClaw 兼容）
 - 可扩展的技能框架
 - 支持自定义技能开发
 - 技能启用/禁用管理
 - 基于 JSON 的技能调用
-- 支持从压缩包安装技能
-
-### 6. AI 视觉交互
-- 屏幕捕获功能，AI 可按需查看当前屏幕内容
-- 摄像头调用机制，支持用户指向提问和自动触发
-- 图像识别能力，包含物体识别、场景理解和文本识别
-- 视觉分析窗口，实时显示识别结果和解决方案
 
 ---
 
@@ -106,7 +102,6 @@ Humanaize v2.2 是一款**本地自治 AI 代理**，具有现代化的图形界
 | `web-fetch` | 获取 URL 内容 | 低 |
 | `detect-emotion` | 通过摄像头分析用户面部表情 | 中 |
 | `humanaize-society-network` | 连接其他 Humanaize AI | 中 |
-| `vision` | 屏幕捕获、摄像头调用、图像识别和分析 | 中 |
 
 ---
 
@@ -115,31 +110,81 @@ Humanaize v2.2 是一款**本地自治 AI 代理**，具有现代化的图形界
 ```
 Humanaize_2_1/
 ├── src/
-│   ├── ai_selfdevelop/     # AI可修改文件（更新时保留）
-│   │   ├── skills/        # AI开发的自定义技能
-│   │   ├── preferences/   # 用户偏好设置
-│   │   ├── learning/      # 学习数据和模型
-│   │   └── customizations/# UI主题和响应模板
-│   └── core/              # 核心应用模块（通过更新更新）
-│       ├── Agent.py       # 主要代理类
-│       ├── main.py        # 应用入口点
-│       ├── windows_main.py# Windows特定入口点
-│       ├── thinking_engine.py
-│       ├── personality.py
-│       ├── autonomous.py
-│       ├── internal_state.py
-│       ├── Prompt/        # 提示词加载模块
-│       ├── config/        # 配置管理
-│       ├── llm/           # LLM集成
-│       ├── memory/        # 记忆系统
-│       ├── tools/         # 实用工具（含skill_installer）
-│       ├── ui/            # UI组件
-│       └── utils/         # 工具（自动更新器）
-├── skills/                # 内置技能（OpenClaw兼容）
-├── prompt/                # 集中式提示词文件（所有提示词）
-├── config/                # 全局配置
+│   ├── core/              # 核心组件
+│   │   ├── main.py        # 应用入口
+│   │   ├── Agent.py       # 代理执行引擎
+│   │   ├── thinking_engine.py  # 异步任务处理
+│   │   ├── thinking_engine_api.py  # 网页管理面板 HTTP API
+│   │   ├── version.py     # 版本号读取（config/version.json）
+│   │   ├── web/           # 网页管理面板前端（index.html / app.js / styles.css）
+│   │   ├── voice/         # 语音合成（edge-tts 流式 TTS）
+│   │   ├── autonomous.py  # 自治决策引擎
+│   │   ├── personality.py # 人格系统
+│   │   ├── reflection.py  # 反思系统
+│   │   └── internal_state.py   # 内部状态管理
+│   ├── llm/               # LLM 通信
+│   │   ├── llm.py         # 基础 LLM 客户端
+│   │   ├── llm_enhanced.py # 带情感反馈的增强 LLM
+│   │   ├── prompt_builder.py  # 提示词构建
+│   │   ├── response_validator.py # 响应验证
+│   │   └── model_downloader.py # 模型下载工具
+│   ├── memory/            # 记忆管理
+│   │   ├── memory.py      # 核心记忆操作
+│   │   └── memory_summarizer.py # 记忆摘要
+│   ├── config/            # 配置
+│   │   ├── config.py      # 全局设置
+│   │   └── language_adapter.py # 语言检测
+│   ├── tools/             # 工具和实用程序
+│   │   ├── skills_manager.py # 技能框架
+│   │   ├── skills_cli.py  # 技能 CLI 管理
+│   │   ├── gan_iteration.py # GAN 自我辩论
+│   │   ├── solve_mode.py  # 问题解决模式
+│   │   ├── vision.py      # 摄像头/视觉支持
+│   │   └── tools.py       # 通用工具
+│   ├── ui/                # 用户界面
+│   │   ├── ui.py          # 主 GUI 界面
+│   │   ├── cli.py         # CLI 界面
+│   │   ├── cli_settings.py # 设置 CLI
+│   │   └── idle.py        # 空闲引擎
+│   └── utils/             # 实用程序模块
+│       └── auto_updater.py # 自动更新功能
+├── skills/                # 技能目录
+│   ├── shell/
+│   ├── file-read/
+│   ├── file-write/
+│   ├── memory/
+│   ├── reminder/
+│   ├── web-search/
+│   ├── web-fetch/
+│   ├── detect-emotion/
+│   └── HumanaizeSocietyNetwork/
+├── data/                  # 运行时数据存储
 ├── docs/                  # 文档
-└── installer/             # 构建脚本和安装程序
+│   ├── DEPLOY_LINUX.md
+│   ├── DIRECTORY_STRUCTURE.md
+│   └── TROUBLESHOOTING_LINUX.md
+├── installer/             # 安装脚本
+│   ├── linux/             # Debian/RPM 包构建器
+│   │   ├── debian/        # Debian 包结构
+│   │   ├── build_deb.sh  # 构建 Debian 包
+│   │   └── build_rpm.sh   # 构建 RPM 包
+│   └── windows/           # Windows 安装程序
+│       ├── build_all.bat  # 构建 Windows 安装程序
+│       ├── build_exe.py   # Python 构建脚本
+│       └── humanaize2.iss # Inno Setup 脚本
+├── Humanaize2/            # 虚拟环境
+├── models/                 # LLM 模型文件
+├── llama/                  # Llama.cpp 可执行文件
+├── config/                # 配置文件
+│   └── version.json       # 版本信息（全程序版本号唯一来源）
+├── requirements.txt       # Python 依赖
+├── pyproject.toml         # 构建配置
+├── humanaize2.sh          # Linux 启动脚本
+├── humanaize2.bat         # Windows 启动脚本
+├── humanaize2.service.template # systemd 服务模板
+├── Humanaize2.spec        # RPM spec 文件
+├── LICENSE                # MIT 许可证
+└── README_zh.md           # 本文件
 ```
 
 ---
@@ -309,17 +354,26 @@ humanaize2
 
 ## 🚀 快速开始
 
+### 使用网页管理面板（推荐）
+```bash
+# Windows 安装包默认启动网页面板，浏览器自动打开
+humanaize2 boot
+
+# 从源代码启动：
+python src/core/main.py boot
+```
+
 ### 使用 Windows 现代化 GUI
 ```bash
-# Windows 安装包默认启动现代化 GUI
-# 从源代码启动：
+humanaize2 boot -m win-gui
+# 或
 python src/core/main.py boot -m win-gui
 ```
 
 ### 使用传统 GUI
 ```bash
 # Linux
-humanaize2
+humanaize2 boot -m gui
 # 或
 ./humanaize2.sh boot -m gui
 
@@ -329,18 +383,34 @@ humanaize2.bat boot -m gui
 python src/core/main.py boot -m gui
 ```
 
-### 使用 CLI
+### 使用 CLI（同窗口交互）
 ```bash
-# Linux
-humanaize2 boot
-# 或
-./humanaize2.sh boot
+# Windows（CLI 直接运行在当前终端窗口内）
+humanaize2 boot -m cli
 
-# Windows
-humanaize2.bat boot
+# Linux
+./humanaize2.sh boot -m cli
 # 或
-python src/core/main.py boot
+python src/core/main.py boot -m cli
 ```
+
+### 命令参考
+| 命令 | 说明 |
+|------|------|
+| `humanaize2 boot` | 启动浏览器管理面板（默认模式） |
+| `humanaize2 boot -m cli` | 启动 CLI 聊天界面（同窗口交互） |
+| `humanaize2 boot -m gui` | 启动传统 GUI 界面 |
+| `humanaize2 boot -m win-gui` | 启动 Windows 现代 GUI 界面 |
+| `humanaize2 boot -m solve [-r <file>] [--hsn] [-gan] [--sandbox <dir>] [problem]` | 启动问题解决模式 |
+| `humanaize2 boot -m guard [--background\|-b] [--start-when-boot\|-s]` | 启动守护模式 |
+| `humanaize2 boot -m iot [--host <ip>] [--port <n>]` | 启动 IoT 算力网络 |
+| `humanaize2 settings` | 打开设置界面 |
+| `humanaize2 check-server` | 检查本地 llama-server |
+| `humanaize2 skills -list \| -enable <name> \| -disable <name> \| -install <zip>` | 管理技能 |
+| `humanaize2 update [-f]` | 检查并安装更新（`-f` 强制更新） |
+| `humanaize2 help` | 显示命令说明 |
+
+> 完整选项说明可随时运行 `humanaize2 help` 查看（版本号随程序自动显示）。
 
 ### 管理技能
 ```bash
@@ -353,20 +423,8 @@ python src/core/main.py skills -enable shell
 # 禁用技能
 python src/core/main.py skills -disable shell
 
-# 从压缩包安装技能
+# 从文件安装技能
 python src/core/main.py skills -install skill.zip
-```
-
-### 安装自定义技能
-
-将技能压缩包解包后，代码会自动放入 `skills/<name>/` 文件夹，提示词文件会放入 `prompt/` 文件夹：
-
-```bash
-# 安装技能压缩包
-python src/core/main.py skills -install my-skill.zip
-
-# 或使用技能安装器
-python -m src.core.tools.skill_installer --install my-skill.zip
 ```
 
 ### 自动更新
@@ -388,10 +446,35 @@ python src/core/main.py settings
 ## 🎮 使用
 
 ### 开始对话
-1. 以 GUI 或 CLI 模式启动应用程序
+1. 以网页面板、GUI 或 CLI 模式启动应用程序
 2. 在输入框中输入您的消息
 3. 按 Enter 或点击发送
-4. AI 将通过思考和答案进行回复
+4. AI 将通过思考和答案进行回复（网页面板为流式输出）
+
+### 语音对话（网页面板）
+1. 点击输入框**右下角的麦克风按钮**（按钮变红并脉动表示已开启）
+2. 首次使用请允许浏览器访问麦克风
+3. 直接对着麦克风说话，语音会实时转成文字填入输入框
+4. 停顿约 1 秒后自动发送，AI 回复的同时会**逐句朗读**出来
+5. 再次点击麦克风按钮即可关闭语音模式并停止朗读
+
+### CLI 内置命令
+CLI 聊天界面中可随时使用以下命令：
+
+| 命令 | 说明 |
+|------|------|
+| `/help` | 显示帮助 |
+| `/mem` | 查看/管理对话记忆 |
+| `/status` | 查看运行状态 |
+| `/gan` | 开关 GAN 自我辩论 |
+| `/clear` | 清空当前对话 |
+| `/quit` | 退出程序 |
+
+### 自定义网页背景壁纸
+1. 在安装目录（或项目根目录）下创建 `Assets` 文件夹
+2. 放入一张图片并命名为 `Background.jpg`、`Background.jpeg` 或 `Background.png`
+3. 刷新浏览器页面即可生效（无需重启程序）
+4. 未提供壁纸时自动使用 Liquid Glass 渐变背景
 
 ### 使用技能
 技能可以通过自然语言调用。例如：
@@ -400,20 +483,6 @@ python src/core/main.py settings
 "今天天气怎么样？"
 "5分钟后设置一个提醒。"
 "执行：ls -la"
-"这张图片里有什么？"
-"帮我看看屏幕上显示的内容"
-```
-
-### 使用视觉技能
-```
-# 屏幕捕获分析
-"帮我分析一下当前屏幕显示的内容"
-
-# 摄像头调用
-"打开摄像头，看看我手里拿的是什么"
-
-# 图像识别
-"分析这张图片中的文字内容"
 ```
 
 ### 配置设置
@@ -442,7 +511,7 @@ python src/core/main.py boot -m solve
 |------|--------|------|
 | `LLAMA_SERVER_URL` | `http://127.0.0.1:8080/completion` | LLM 服务器端点 |
 
-### 配置文件（`src/core/config/config.py`）
+### 配置文件（`src/config/config.py`）
 
 ```python
 # LLM 配置
@@ -463,8 +532,8 @@ MAX_MEMORY = 100
 
 # 人格配置
 DEFAULT_PERSONALITY = {
-    "name": "Aize",
-    "description": "一个真实的女孩"
+    "traits": {"curiosity": 0.7, "empathy": 0.5, "creativity": 0.6},
+    "initial_prompt": "You are a friendly helpful AI."
 }
 
 # 自治行为
@@ -472,21 +541,6 @@ SCREENSHOT_INTERVAL = 300  # 秒
 REFLECTION_INTERVAL = 1800
 AUTONOMOUS_CHECK_INTERVAL = 300
 ```
-
-### 提示词配置
-
-所有提示词文件存储在 `prompt/` 文件夹中，便于修改和管理：
-
-| 文件 | 用途 |
-|------|------|
-| `chat.txt` | 聊天提示词 |
-| `chat_template.txt` | 聊天模板 |
-| `system_prompt.txt` | 系统提示词 |
-| `agent_prompt.txt` | Agent 提示词 |
-| `should_answer_user.txt` | 回复决策提示词 |
-| `should_use_gan.txt` | GAN 使用决策提示词 |
-| `vision_prompt.txt` | 视觉分析提示词 |
-| `solve_prompt.txt` | 解决模式提示词 |
 
 ---
 
@@ -533,19 +587,6 @@ def execute(input_data):
     return {"status": "success", "result": "output"}
 ```
 
-### 技能安装包格式
-
-创建技能压缩包时，代码文件放在根目录，提示词文件放在 `prompts/` 子目录：
-
-```
-my-skill.zip/
-├── SKILL.md
-├── __init__.py
-├── prompts/
-│   └── my_skill_prompt.txt
-└── other_resource.py
-```
-
 ---
 
 ## 🧠 架构
@@ -555,11 +596,9 @@ my-skill.zip/
 1. **ThinkingEngine** - 用于聊天、GAN 和反思的线程安全异步任务处理器
 2. **Agent** - 执行技能和 shell 命令
 3. **SkillsManager** - 加载和管理技能生命周期
-4. **SkillInstaller** - 从压缩包安装技能，自动分离代码和提示词
-5. **Memory** - 持久化对话历史和思考
-6. **Personality** - 管理 AI 角色身份（最小化定义，支持自主发展）
-7. **VisionEngine** - 处理视觉相关操作（屏幕捕获、摄像头、图像识别）
-8. **AutoUpdater** - 管理 GitHub 软件更新
+4. **Memory** - 持久化对话历史和思考
+5. **Personality** - 管理 AI 角色特质
+6. **AutoUpdater** - 管理 GitHub 软件更新
 
 ### 线程架构
 
@@ -649,7 +688,7 @@ dist/humanaize2-*.rpm
 
 ### LLM 服务器无响应
 - 确保 llama.cpp 服务器正在运行
-- 检查 `src/core/config/config.py` 中的服务器 URL
+- 检查 `src/config/config.py` 中的服务器 URL
 - 验证模型文件路径是否正确
 - 确保防火墙未阻止 8080 端口
 
@@ -658,15 +697,10 @@ dist/humanaize2-*.rpm
 - 检查 `data/skills_config.json` 中的技能配置
 - 确保技能执行器模块具有正确的 `execute` 函数
 
-### 摄像头访问错误（detect-emotion / vision）
+### 摄像头访问错误（detect-emotion）
 - 确保没有其他应用程序正在使用摄像头
 - 授予 Python 摄像头权限
 - 检查 OpenCV 安装：`pip install opencv-python`
-
-### 视觉技能问题
-- 检查 Tkinter 安装：`python -c "import tkinter"`
-- 确保屏幕捕获工具可用（PIL/Pillow）
-- 检查摄像头驱动是否正常
 
 ### GUI 问题
 - 更新 CustomTkinter：`pip install --upgrade customtkinter`
@@ -718,8 +752,6 @@ Linux 特定故障排除，请参阅 [docs/TROUBLESHOOTING_LINUX.md](docs/TROUBL
 - [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) - 现代 Python UI
 - [DeepFace](https://github.com/serengil/deepface) - 人脸分析
 - [OpenClaw](https://github.com/secondself/openclaw) - 技能框架灵感
-- [Pillow](https://github.com/python-pillow/Pillow) - 图像处理
-- [pytesseract](https://github.com/madmaze/pytesseract) - 光学字符识别
 
 ---
 

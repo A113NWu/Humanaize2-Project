@@ -87,6 +87,7 @@ models/
 *.gguf
 
 # Runtime data
+.humanaize2_runtime/
 data/memory.json
 data/cmd_config.json
 src/core/data/gan_results.json
