@@ -18,7 +18,16 @@ REM (and the app writes data/logs) next to the installation, regardless
 REM of the caller's current directory.
 cd /d "%SCRIPT_DIR%"
 
-REM Pass all arguments to the main program
-"%EXE_PATH%" %*
+REM Pass all arguments to the main program.
+REM The exe is built as a GUI-subsystem app, so a bare invocation returns to
+REM the prompt immediately and the CLI would lose the console. With args
+REM (boot -m cli / settings / solve ...) use `start /wait` so the program
+REM attaches to THIS window and cmd waits for it to exit; no-arg dashboard
+REM launch stays non-blocking.
+if "%~1"=="" (
+    "%EXE_PATH%"
+) else (
+    start "Humanaize2" /b /wait "%EXE_PATH%" %*
+)
 
 endlocal

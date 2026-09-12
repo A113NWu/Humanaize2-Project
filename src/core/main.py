@@ -1028,9 +1028,9 @@ def _auto_start_iot_network():
                 print(f"[IoT] 設備掃描已啟動（間隔: {scan_interval}s）")
             
         except ImportError as e:
-            logger.debug(f"IoT network dependencies not available: {e}")
+            logger.debug(f"[IoT] network dependencies not available: {e}")
         except Exception as e:
-            logger.error(f"Auto start IoT network failed: {e}")
+            logger.error(f"[IoT] auto start failed: {e}")
     
     thread = threading.Thread(target=_start, daemon=True)
     thread.start()
@@ -1038,6 +1038,11 @@ def _auto_start_iot_network():
 
 def boot_cli():
     _check_and_start_server()
+    # CLI 界面屏蔽後台 IoT 網絡日誌（仍完整寫入日誌文件）。
+    # [iot] 覆蓋所有 IoT 模組的 print；iot_ 覆蓋 stdlib logging 經
+    # lastResort 打到 stderr 的 logger 名（tools.iot_*）；websockets
+    # 覆蓋 IoT 服務器依賴庫的警告。顯式 `boot -m iot` 不走此函數，保留全部輸出。
+    logger.suppress_console_patterns(["[iot]", "iot_", "websockets"])
     _auto_start_iot_network()
     from ui.cli import HumanaizeCLI
     cli = HumanaizeCLI()

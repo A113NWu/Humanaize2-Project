@@ -30,7 +30,10 @@ class Logger:
         self._original_stdout = sys.stdout
         self._original_stderr = sys.stderr
         self._redirected = False
-        
+        # 控制台輸出抑制規則（小寫子串匹配）；命中的內容仍寫入日誌文件，
+        # 只是不顯示在控制台。CLI 模式用於屏蔽 IoT 網絡的後台噪音。
+        self._console_suppress_patterns = []
+
         self._lock = threading.Lock()
         self._writing = False
     
@@ -84,7 +87,9 @@ class Logger:
         
         with self._lock:
             self._write_log_line(log_line)
-            
+
+            if self._console_suppressed(message):
+                return
             try:
                 self._original_stdout.write(log_line)
                 self._original_stdout.flush()
@@ -120,26 +125,54 @@ class Logger:
         self._redirected = True
         
         class LoggingStream:
+            """按行緩衝的輸出流：每行都寫入日誌文件；命中控制台抑制
+            規則的行只寫文件、不顯示到控制台。內部按行緩衝可正確處理
+            print() 把文本和換行分兩次 write 的情況。"""
             def __init__(self, logger, original_stream, prefix=""):
                 self.logger = logger
                 self.original_stream = original_stream
                 self.prefix = prefix
-            
+                self._buffer = ""
+
+            def _emit_line(self, line):
+                # 空行不進日誌文件，但保留控制台排版
+                if not line.strip():
+                    try:
+                        self.original_stream.write("\n")
+                        self.original_stream.flush()
+                    except Exception:
+                        pass
+                    return
+
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                log_line = f"[{timestamp}] [INFO] {self.prefix}{line.strip()}\n"
+
+                with self.logger._lock:
+                    self.logger._write_log_line(log_line)
+                    if self.logger._console_suppressed(line):
+                        return
+                    try:
+                        self.original_stream.write(line + "\n")
+                        self.original_stream.flush()
+                    except Exception:
+                        pass
+
             def write(self, message):
-                if message.strip():
-                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-                    log_line = f"[{timestamp}] [INFO] {self.prefix}{message.strip()}\n"
-                    
-                    with self.logger._lock:
-                        self.logger._write_log_line(log_line)
-                
-                try:
-                    self.original_stream.write(message)
-                    self.original_stream.flush()
-                except:
-                    pass
+                if not message:
+                    return
+                self._buffer += message
+                while "\n" in self._buffer:
+                    line, self._buffer = self._buffer.split("\n", 1)
+                    self._emit_line(line)
+                # 防止無換行的長殘片長期滯留緩衝區
+                if len(self._buffer) > 8192:
+                    self._emit_line(self._buffer)
+                    self._buffer = ""
             
             def flush(self):
+                if self._buffer:
+                    self._emit_line(self._buffer)
+                    self._buffer = ""
                 try:
                     self.original_stream.flush()
                 except:
@@ -151,6 +184,11 @@ class Logger:
     def restore_output(self):
         """恢复stdout和stderr"""
         if self._redirected:
+            try:
+                sys.stdout.flush()
+                sys.stderr.flush()
+            except Exception:
+                pass
             sys.stdout = self._original_stdout
             sys.stderr = self._original_stderr
             self._redirected = False
@@ -162,6 +200,25 @@ class Logger:
     def disable(self):
         """禁用日志记录"""
         self._enabled = False
+
+    def suppress_console_patterns(self, patterns):
+        """設置控制台輸出抑制規則（小寫子串匹配，不分大小寫）。
+
+        命中任意規則的輸出仍會寫入日誌文件，但不會顯示在控制台上。
+        典型用途：CLI 模式屏蔽後台 IoT 網絡日誌。
+        """
+        self._console_suppress_patterns = [str(p).lower() for p in patterns if p]
+
+    def clear_console_suppression(self):
+        """清除控制台輸出抑制規則。"""
+        self._console_suppress_patterns = []
+
+    def _console_suppressed(self, text: str) -> bool:
+        """判斷一行文本是否應抑制控制台輸出。"""
+        if not self._console_suppress_patterns:
+            return False
+        low = (text or "").lower()
+        return any(p in low for p in self._console_suppress_patterns)
     
     def get_log_file_path(self) -> str:
         """获取日志文件路径"""

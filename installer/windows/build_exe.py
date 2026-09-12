@@ -273,6 +273,12 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False, onefile=F
         "--exclude-module", "shiboken6",
     ]
 
+    # 可選的 Assets 目錄（網頁自定義背景 Assets/Background.jpg|png 等），
+    # 存在才打包；用戶也可以直接把圖片放到安裝目錄的 Assets 下，無需重裝。
+    assets_dir = os.path.join(PROJECT_ROOT, "Assets")
+    if os.path.isdir(assets_dir):
+        cmd.extend(["--add-data", f"Assets{DATA_SEP}Assets"])
+
     if onefile:
         cmd.extend([
             "--add-data", f"llama{DATA_SEP}llama",

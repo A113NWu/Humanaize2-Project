@@ -62,16 +62,92 @@ for _package_name in ("llm", "memory", "Prompt", "data", "config"):
         pass
 
 
+def _find_ancestor_console_pid():
+    """沿進程樹向上尋找命令列 shell（cmd/powershell/WindowsTerminal）的 PID。
+
+    onefile 的 bootloader 會派生真正的應用進程，此時直接 AttachConsole(-1)
+    只會附加到沒有控制台的 bootloader，導彈新窗口。跳過它附加到調用者的
+    cmd/PowerShell 控制台，才能在原窗口內運行 CLI。
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    TH32CS_SNAPPROCESS = 0x00000002
+    INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+    kernel32 = ctypes.windll.kernel32
+
+    class PROCESSENTRY32W(ctypes.Structure):
+        _fields_ = [
+            ("dwSize", wintypes.DWORD),
+            ("cntUsage", wintypes.DWORD),
+            ("th32ProcessID", wintypes.DWORD),
+            ("th32DefaultHeapID", ctypes.POINTER(ctypes.c_ulong)),
+            ("th32ModuleID", wintypes.DWORD),
+            ("cntThreads", wintypes.DWORD),
+            ("th32ParentProcessID", wintypes.DWORD),
+            ("pcPriClassBase", ctypes.c_long),
+            ("dwFlags", wintypes.DWORD),
+            ("szExeFile", ctypes.c_wchar * 260),
+        ]
+
+    snap = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+    if not snap or snap == INVALID_HANDLE_VALUE:
+        return None
+
+    parents = {}
+    names = {}
+    try:
+        entry = PROCESSENTRY32W()
+        entry.dwSize = ctypes.sizeof(PROCESSENTRY32W)
+        ok = kernel32.Process32FirstW(snap, ctypes.byref(entry))
+        while ok:
+            parents[entry.th32ProcessID] = entry.th32ParentProcessID
+            names[entry.th32ProcessID] = entry.szExeFile.lower()
+            ok = kernel32.Process32NextW(snap, ctypes.byref(entry))
+    finally:
+        kernel32.CloseHandle(snap)
+
+    shell_names = ("cmd.exe", "powershell.exe", "pwsh.exe", "windowsterminal.exe")
+    pid = kernel32.GetCurrentProcessId()
+    for _ in range(8):
+        pid = parents.get(pid)
+        if not pid:
+            break
+        if names.get(pid) in shell_names:
+            return pid
+    return None
+
+
+def _enable_ansi_colors():
+    """附加到既有控制台後開啟 VT 轉義，保證 CLI 顏色正常。"""
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+        handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+        mode = ctypes.c_ulong()
+        if kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+            kernel32.SetConsoleMode(handle, mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING)
+    except Exception:
+        pass
+
+
 def _attach_parent_console():
-    """打包的 --windowed exe 沒有控制台，CLI 模式需附加父進程控制台（cmd 內運行），
-    失敗時自行 AllocConsole 新建一個（雙擊啟動等無父控制台場景），然後重開標準流。"""
+    """打包的 --windowed exe 沒有控制台，CLI 模式需附加調用者所在的控制台，
+    優先附加進程樹上的 cmd/PowerShell（兼容 onefile bootloader 派生場景），
+    其次 ATTACH_PARENT_PROCESS；都失敗時才 AllocConsole 新建窗口。"""
     import ctypes
     kernel32 = ctypes.windll.kernel32
+    targets = [pid for pid in (_find_ancestor_console_pid(),) if pid]
+    targets.append(-1)  # ATTACH_PARENT_PROCESS
     attached = False
-    try:
-        attached = bool(kernel32.AttachConsole(-1))  # ATTACH_PARENT_PROCESS
-    except Exception:
-        attached = False
+    for target in targets:
+        try:
+            if kernel32.AttachConsole(target):
+                attached = True
+                break
+        except Exception:
+            continue
     if not attached:
         try:
             attached = bool(kernel32.AllocConsole())
@@ -85,6 +161,7 @@ def _attach_parent_console():
         sys.stdin = open("CONIN$", "r", encoding="utf-8", errors="replace")
         sys.stdout = open("CONOUT$", "w", encoding="utf-8", buffering=1, errors="replace")
         sys.stderr = open("CONOUT$", "w", encoding="utf-8", buffering=1, errors="replace")
+        _enable_ansi_colors()
         return True
     except Exception:
         return False

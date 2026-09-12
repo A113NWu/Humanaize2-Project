@@ -350,6 +350,13 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._send_json(self._status_payload())
         elif parsed.path == '/':
             self._send_static_file("index.html", "text/html; charset=utf-8")
+        elif parsed.path == '/background':
+            found = self._find_background_image()
+            if found is None:
+                self._send_error("Not found", 404)
+            else:
+                image_path, image_type = found
+                self._send_file_path(image_path, image_type)
         elif parsed.path.startswith('/assets/'):
             asset_name = parsed.path.removeprefix('/assets/')
             asset_types = {"styles.css": "text/css; charset=utf-8", "app.js": "application/javascript; charset=utf-8"}
@@ -365,8 +372,12 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         dashboard_path = os.path.join(os.path.dirname(__file__), "web", file_name)
         if not os.path.exists(dashboard_path) and hasattr(sys, "_MEIPASS"):
             dashboard_path = os.path.join(sys._MEIPASS, "web", file_name)
+        self._send_file_path(dashboard_path, content_type)
+
+    def _send_file_path(self, file_path, content_type):
+        """按絕對路徑返回二進制文件內容"""
         try:
-            with open(dashboard_path, "rb") as static_file:
+            with open(file_path, "rb") as static_file:
                 body = static_file.read()
         except OSError:
             self._send_error("Static file not found", 500)
@@ -378,6 +389,38 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-cache')
         self.end_headers()
         self.wfile.write(body)
+
+    def _find_background_image(self):
+        """查找網頁自定義背景圖 Assets/Background.{jpg,jpeg,png}。
+
+        查找順序：打包後的安裝目錄（用戶放入圖片即可生效，無需重裝）
+        → 開發態項目根目錄 → onefile 解包目錄（安裝包內置默認圖）。
+        返回 (絕對路徑, MIME) 或 None。
+        """
+        roots = []
+        if getattr(sys, "frozen", False):
+            roots.append(os.path.dirname(os.path.abspath(sys.executable)))
+        roots.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            roots.append(meipass)
+
+        candidates = (
+            ("Background.jpg", "image/jpeg"),
+            ("Background.jpeg", "image/jpeg"),
+            ("Background.png", "image/png"),
+        )
+        seen = set()
+        for root in roots:
+            if not root or root in seen:
+                continue
+            seen.add(root)
+            assets_dir = os.path.join(root, "Assets")
+            for name, mime in candidates:
+                image_path = os.path.join(assets_dir, name)
+                if os.path.isfile(image_path):
+                    return image_path, mime
+        return None
 
     def do_POST(self):
         """处理POST请求"""
