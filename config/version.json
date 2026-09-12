@@ -1,5 +1,5 @@
 {
-  "version": "2.2.7",
-  "last_updated": "2026-08-24T00:00:00.000000",
-  "release_notes": "v2.2.7：修复 Windows Gradle Wrapper，并整合当前 Android、TTS、启动路径和安装器改进。"
+  "version": "2.2.8",
+  "last_updated": "2026-09-12T00:00:00.000000",
+  "release_notes": "v2.2.8：修复 aiohttp 打包缺失、CLI 模式控制台与输入、模型路径解析与内存自适应回退、GAN 决策回归 AI 判定、聊天思考日志分色显示，并修复并发聊天串流问题。"
 }
