@@ -34,13 +34,18 @@ from ui.idle import IdleEngine
 from tools.tools import SimpleLogger, check_llm_server
 import config
 
+try:
+    from version import get_version
+except ImportError:
+    from core.version import get_version
+
 
 class ModernWindowsUI:
     """Windows 专属现代化 GUI 界面"""
     
     def __init__(self, root):
         self.root = root
-        self.title = getattr(config, "UI_TITLE", "Humanaize v2.0")
+        self.title = getattr(config, "UI_TITLE", f"Humanaize v{get_version()}")
         self.width = getattr(config, "UI_WIDTH", 1280)
         self.height = getattr(config, "UI_HEIGHT", 800)
         
@@ -704,8 +709,8 @@ class ModernWindowsUI:
     def _add_welcome_message(self):
         """添加欢迎消息"""
         welcome_text = {
-            "中文": "欢迎使用 Humanaize v2.0！\n\n我是您的AI助手，可以帮助您解决问题、获取信息和完成任务。\n\n请输入您的问题，我会尽力为您解答。",
-            "English": "Welcome to Humanaize v2.0!\n\nI am your AI assistant, here to help you solve problems, gather information, and complete tasks.\n\nPlease enter your question, and I will do my best to assist you."
+            "中文": f"欢迎使用 Humanaize v{get_version()}！\n\n我是您的AI助手，可以帮助您解决问题、获取信息和完成任务。\n\n请输入您的问题，我会尽力为您解答。",
+            "English": f"Welcome to Humanaize v{get_version()}!\n\nI am your AI assistant, here to help you solve problems, gather information, and complete tasks.\n\nPlease enter your question, and I will do my best to assist you."
         }
         
         self.chat_box.configure(state="normal")

@@ -16,6 +16,11 @@ from typing import List, Dict, Optional, Any
 # Add core to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+try:
+    from version import get_version
+except ImportError:
+    from core.version import get_version
+
 from llm import chat, chat_stream
 from .gan_iteration import GANIteration
 from .enhanced_gan import EnhancedGAN
@@ -163,7 +168,7 @@ class SolveModeStatusBar:
         if self.use_color:
             # 状态标签
             status_left = f"{Colors.BOLD}{Colors.INDIGO}Humanaize{Colors.RESET}"
-            status_left += f" {Colors.DIM}v2.1{Colors.RESET}"
+            status_left += f" {Colors.DIM}v{get_version()}{Colors.RESET}"
             status_left += f" {Colors.BOLD}[{Colors.TEAL}SOLVE{Colors.RESET}{Colors.BOLD}]{Colors.RESET}"
             
             # 进度条
@@ -214,7 +219,7 @@ class SolveModeStatusBar:
             
         else:
             # 无颜色版本
-            status_line = f"  Humanaize v2.1 [SOLVE]"
+            status_line = f"  Humanaize v{get_version()} [SOLVE]"
             progress_bar = f"[{'#' * filled}{'-' * empty}]"
             progress_text = f"{int(progress * 100)}%"
             task_stats = f"Tasks: {completed}/{total}"

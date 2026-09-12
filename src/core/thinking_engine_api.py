@@ -46,6 +46,11 @@ except ModuleNotFoundError:
         logger = logging.getLogger(__name__)
         logging.basicConfig(level=logging.INFO)
 
+try:
+    from version import get_version
+except ModuleNotFoundError:
+    from core.version import get_version
+
 # 延迟导入llm模块，避免循环依赖
 _generate_with_emotion_feedback = None
 _generate_with_emotion_feedback_stream = None
@@ -348,6 +353,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._send_json(self._load_settings())
         elif parsed.path == '/api/status':
             self._send_json(self._status_payload())
+        elif parsed.path == '/api/voice/capabilities':
+            self._handle_voice_capabilities()
         elif parsed.path == '/':
             self._send_static_file("index.html", "text/html; charset=utf-8")
         elif parsed.path == '/background':
@@ -431,6 +438,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._handle_chat_completions()
         elif parsed.path == '/api/settings':
             self._handle_save_settings()
+        elif parsed.path == '/api/tts':
+            self._handle_tts()
         else:
             self._send_error("Not found", 404)
 
@@ -442,6 +451,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         settings = self._load_settings()
         return {
             "status": "ok",
+            "version": get_version(),
             "model": settings.get("openai_model") if settings.get("openai_enabled") and settings.get("openai_api_key") == "configured" else settings.get("model_name", "local"),
             "messages": memory.get("messages", [])[-100:],
             "thoughts": memory.get("thoughts", [])[-100:],
@@ -490,6 +500,70 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._send_json({"status": "ok", "settings": settings})
         except (OSError, ValueError, json.JSONDecodeError) as error:
             self._send_error(f"Invalid settings: {error}")
+
+    def _handle_voice_capabilities(self):
+        """告知網頁端語音能力：TTS 引擎是否可用及默認音色。
+        STT 使用瀏覽器內建 Web Speech API，由前端自行探測。"""
+        tts_available = False
+        default_voice = "zh-CN-XiaoxiaoNeural"
+        try:
+            import edge_tts  # noqa: F401
+            tts_available = True
+        except Exception:
+            tts_available = False
+        self._send_json({
+            "tts_available": tts_available,
+            "default_voice": default_voice,
+            "stt": "webspeech",
+        })
+
+    def _handle_tts(self):
+        """將文本合成為語音音頻（預設 edge-tts，返回 audio/mpeg）。
+
+        請求體: {"text": "...", "voice"?: "zh-CN-XiaoxiaoNeural"}
+        網頁端按句調用，配合流式對話實現「AI 輸出多少就朗讀多少」。
+        """
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = json.loads(self.rfile.read(content_length).decode('utf-8'))
+        except Exception as e:
+            self._send_error(f"Invalid JSON body: {e}")
+            return
+
+        text = (body.get("text") or "").strip() if isinstance(body, dict) else ""
+        voice = (body.get("voice") or "").strip() if isinstance(body, dict) else ""
+        if not text:
+            self._send_error("text is required", 400)
+            return
+        if len(text) > 4000:
+            self._send_error("text too long (max 4000 chars per chunk)", 400)
+            return
+
+        try:
+            try:
+                from voice.tts_synthesizer import SynthesizeOptions, synthesize_speech, TTSError
+            except ModuleNotFoundError:
+                from core.voice.tts_synthesizer import SynthesizeOptions, synthesize_speech, TTSError
+
+            result = synthesize_speech(SynthesizeOptions(text=text, voice=voice))
+            audio = result.get("audio_bytes") or b""
+            content_type = result.get("content_type") or "audio/mpeg"
+            if not audio:
+                self._send_error("TTS returned empty audio", 502)
+                return
+
+            logger.info(f"[TTS] provider={result.get('provider')} chars={len(text)} bytes={len(audio)}")
+            self.send_response(200)
+            self.send_header('Content-Type', content_type)
+            self.send_header('Content-Length', str(len(audio)))
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(audio)
+        except Exception as e:
+            status = getattr(e, "status", 500)
+            logger.warning(f"[TTS] synthesis failed status={status} error={e}")
+            self._send_error(f"TTS failed: {e}", status)
 
     def _handle_list_models(self):
         """返回可用模型列表"""

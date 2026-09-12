@@ -1,5 +1,5 @@
 {
-  "version": "2.2.9",
+  "version": "2.3.0",
   "last_updated": "2026-09-13T00:00:00.000000",
-  "release_notes": "v2.2.9：CLI 模式改為在當前命令行窗口內直接啟動（不再彈出新窗口）；CLI 界面屏蔽後台 IoT 網絡日誌（仍完整寫入日誌文件）；網頁管理面板升級為 Liquid Glass 玻璃擬態風格，支持 Assets/Background.jpg|png 自定義背景圖。"
+  "release_notes": "v2.3.0：程式各處版本號統一從 config/version.json 讀取；網頁新增語音對話——輸入框右下角麥克風按鈕，開啟後可直接語音提問（語音轉文字），AI 回覆按句流式合成語音即時朗讀（TTS 隨流式輸出）。"
 }

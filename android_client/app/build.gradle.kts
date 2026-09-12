@@ -13,9 +13,9 @@ android {
         minSdk = 24
         targetSdk = 34
         // versionCode 格式：主版本×10000 + 次版本×100 + 修订版本
-        // 2.2.9 → 20209，与系统版本号同步
-        versionCode = 20209
-        versionName = "2.2.9"
+        // 2.3.0 → 20300，与系统版本号同步
+        versionCode = 20300
+        versionName = "2.3.0"
         
         vectorDrawables {
             useSupportLibrary = true

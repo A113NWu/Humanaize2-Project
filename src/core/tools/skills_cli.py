@@ -11,6 +11,12 @@ import zipfile
 import importlib
 from typing import Dict, List, Optional
 
+try:
+    from version import get_version
+except ImportError:
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from version import get_version
+
 
 class SkillsCLI:
     """Skills command line interface manager"""
@@ -617,7 +623,7 @@ class SkillsCLI:
     def _print_usage(self):
         """Print usage information"""
         print("\n" + "=" * 60)
-        print("  Humanaize v2.0 - Skills Management")
+        print(f"  Humanaize v{get_version()} - Skills Management")
         print("=" * 60)
         
         print("\n  Commands:")

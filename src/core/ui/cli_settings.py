@@ -6,6 +6,12 @@ import os
 import json
 import sys
 
+try:
+    from version import get_version
+except ImportError:
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from version import get_version
+
 
 class SettingsCLI:
     def __init__(self):
@@ -28,7 +34,7 @@ class SettingsCLI:
 
     def _print_header(self):
         print("\n" + "=" * 60)
-        print("  Humanaize v2.0 - Settings")
+        print(f"  Humanaize v{get_version()} - Settings")
         print("=" * 60)
 
     def _print_menu(self):

@@ -63,7 +63,13 @@ except ModuleNotFoundError:
     from core.tools.logger import get_logger
 logger = get_logger()
 logger.redirect_output()
-logger.info("Humanaize v2.0 starting...")
+
+try:
+    from version import get_version
+except ImportError:
+    from core.version import get_version
+
+logger.info(f"Humanaize v{get_version()} starting...")
 
 import warnings
 warnings.filterwarnings("ignore", message=".*iCCP.*known incorrect sRGB profile.*")

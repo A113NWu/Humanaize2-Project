@@ -143,6 +143,11 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False, onefile=F
         "--hidden-import", "aiohttp.connector",
         "--hidden-import", "aiohttp.web",
         "--collect-submodules", "aiohttp",
+        # 網頁語音對話 TTS（edge-tts，純 Python 包）
+        "--hidden-import", "edge_tts",
+        "--collect-submodules", "edge_tts",
+        "--hidden-import", "voice",
+        "--hidden-import", "voice.tts_synthesizer",
         "--hidden-import", "logging",
         "--hidden-import", "json",
         "--hidden-import", "threading",

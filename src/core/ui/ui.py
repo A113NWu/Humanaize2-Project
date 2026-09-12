@@ -42,6 +42,11 @@ from tools.tools import SimpleLogger, check_llm_server
 from core.voice.voice_service import VoiceService
 import config
 
+try:
+    from version import get_version
+except ImportError:
+    from core.version import get_version
+
 def _load_qq_skill():
     """Optional QQ skill is intentionally never required for the core app."""
     try:
@@ -65,7 +70,7 @@ class HumanaizeUI:
 
     def __init__(self, root):
         self.root = root
-        title = getattr(config, "UI_TITLE", "Humanaize v2.0")
+        title = getattr(config, "UI_TITLE", f"Humanaize v{get_version()}")
         width = getattr(config, "UI_WIDTH", 1200)
         height = getattr(config, "UI_HEIGHT", 800)
         self.root.title(title)
@@ -183,7 +188,7 @@ class HumanaizeUI:
         self._performance_cleanup_interval = 30000  # 30秒清理一次
         self.root.after(self._performance_cleanup_interval, self._performance_cleanup)
         
-        self.logger.info("Humanaize v2.0 started successfully")
+        self.logger.info(f"Humanaize v{get_version()} started successfully")
     
     def _load_translations(self):
         """从 languages 文件夹加载翻译文件"""

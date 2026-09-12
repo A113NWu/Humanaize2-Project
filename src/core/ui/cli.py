@@ -13,6 +13,11 @@ from memory import load_memory, save_memory, add
 from core.personality import load_personality
 from ui.idle import IdleEngine
 
+try:
+    from version import get_version
+except ImportError:
+    from core.version import get_version
+
 def _load_qq_skill():
     """Optional QQ skill is intentionally never required for CLI startup."""
     try:
@@ -136,7 +141,7 @@ class HumanaizeCLI:
     def _t(self, key):
         translations = {
             "English": {
-                "cli_start": "Humanaize v2.0 CLI started",
+                "cli_start": "Humanaize v{version} CLI started",
                 "gan_enabled": "GAN: ON",
                 "gan_disabled": "GAN: OFF",
                 "chat": "Chat",
@@ -181,7 +186,7 @@ class HumanaizeCLI:
                 "rebuttal": "Rebuttal",
             },
             "Chinese": {
-                "cli_start": "Humanaize v2.0 CLI 已启动",
+                "cli_start": "Humanaize v{version} CLI 已启动",
                 "gan_enabled": "GAN: 开启",
                 "gan_disabled": "GAN: 关闭",
                 "chat": "对话",
@@ -227,7 +232,10 @@ class HumanaizeCLI:
             }
         }
         lang = self.language if self.language in translations else "English"
-        return translations[lang].get(key, key)
+        text = translations[lang].get(key, key)
+        if "{version}" in text:
+            text = text.replace("{version}", get_version())
+        return text
 
     def _init_welcome_message(self):
         self.system_logs.append({
@@ -312,12 +320,12 @@ class HumanaizeCLI:
         if self._use_color:
             gan_color = Colors.GREEN if self.gan_enabled else Colors.RED
             status = f" {Colors.BOLD}{Colors.ORANGE}{personality}{Colors.RESET}"
-            status += f" {Colors.DIM}v2.1{Colors.RESET}"
+            status += f" {Colors.DIM}v{get_version()}{Colors.RESET}"
             status += f"  {gan_color}{gan_status}{Colors.RESET} GAN"
             status += f"  {Colors.BLUE}{msgs}{Colors.RESET} {self._t('message_count')}"
             status += f"  {Colors.MAGENTA}{thoughts}{Colors.RESET} {self._t('thought_count')}"
         else:
-            status = f" {personality} v2.1  {gan_status} GAN  {msgs} Messages  {thoughts} Thoughts"
+            status = f" {personality} v{get_version()}  {gan_status} GAN  {msgs} Messages  {thoughts} Thoughts"
         
         return status
 

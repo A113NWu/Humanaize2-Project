@@ -4,8 +4,8 @@
 [Setup]
 AppId={{HUMANAIZE2-X64-2024}}
 AppName=Humanaize 2.0 Agent
-AppVersion=2.2.9
-AppVerName=Humanaize 2.0 Agent (x64) v2.2.9
+AppVersion=2.3.0
+AppVerName=Humanaize 2.0 Agent (x64) v2.3.0
 AppPublisher=Humanaize Project
 AppPublisherURL=https://github.com/A113NWu/Humanaize2-Project
 AppSupportURL=https://github.com/A113NWu/Humanaize2-Project/issues
@@ -16,7 +16,7 @@ AllowNoIcons=yes
 ; 所有 Source 路徑相對於專案根目錄
 SourceDir=..\..\
 OutputDir=installer\windows\output
-OutputBaseFilename=Humanaize2-Setup-x86_64-v2.2.9
+OutputBaseFilename=Humanaize2-Setup-x86_64-v2.3.0
 Compression=lzma2
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible
