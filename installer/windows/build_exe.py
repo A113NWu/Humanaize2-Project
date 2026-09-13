@@ -289,9 +289,12 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False, onefile=F
     if onefile:
         cmd.extend([
             "--add-data", f"llama{DATA_SEP}llama",
-            # Use a stable per-application extraction directory. This avoids
-            # onefile temp-folder races and antivirus locks on native files.
-            "--runtime-tmpdir", ".humanaize2_runtime",
+            # 固定的用戶級解包目錄（必須為絕對路徑：相對路徑會相對於調用者的
+            # CWD，當用戶從 C:\Windows\System32 等只讀目錄直接運行 exe 時——
+            # PATHEXT 中 .EXE 優先于 .CMD，輸入 humanaize2 會直接命中 exe——
+            # bootloader 無權創建目錄而彈框失敗。%LOCALAPPDATA% 始終可寫且
+            # 與安裝盤/CWD 無關（PyInstaller 6 Windows bootloader 支持 %VAR% 展開）。
+            "--runtime-tmpdir", r"%LOCALAPPDATA%\Humanaize2\runtime",
         ])
 
     # Platform-specific options

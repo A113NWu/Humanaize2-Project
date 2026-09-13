@@ -13,9 +13,9 @@ if not exist "%EXE_PATH%" (
     exit /b 1
 )
 
-REM Switch to the install directory so the onefile runtime extracts
-REM (and the app writes data/logs) next to the installation, regardless
-REM of the caller's current directory.
+REM Switch to the install directory so relative resources (llama/, data/,
+REM Assets/) resolve regardless of the caller's current directory. (The
+REM onefile runtime itself extracts to %LOCALAPPDATA%\Humanaize2\runtime.)
 cd /d "%SCRIPT_DIR%"
 
 REM Pass all arguments to the main program.
