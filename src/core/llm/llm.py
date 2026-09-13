@@ -125,8 +125,10 @@ def _openai_chat(prompt, provider, max_tokens, temperature, top_p, session, time
             request_session.close()
 
 RETRY_STRATEGY = Retry(
-    total=3,
-    backoff_factor=2,
+    # 切換模型後 llama-server 冷啟動可能需要 30~60 秒（期間返回 503），
+    # 退避序列約 0/1/2/4/8/16 秒，覆蓋大模型加載窗口。
+    total=6,
+    backoff_factor=1,
     status_forcelist=[429, 500, 502, 503, 504],
     allowed_methods=["POST"]
 )

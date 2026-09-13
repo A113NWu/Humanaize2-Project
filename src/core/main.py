@@ -861,6 +861,9 @@ def _check_and_start_server(max_wait: int = 120, force_restart: bool = False) ->
         pass
 
     # 候选参数方案：(ctx_size, max_tokens, 描述)
+    # 注意：llama-server 會按並行 slot 平分 ctx，ctx=512 時每個 slot 僅約
+    # 128 tokens，連系統+人格提示都放不下（會被 503 拒絕），因此上下文下限
+    # 不能低於 2048；KV 緩存開銷相對於模型權重很小（7B@2048 約 128MB）。
     if hw_info.get("has_gpu", False):
         configs = [
             (4096, 256, "GPU 模式 - 标准参数"),
@@ -871,16 +874,14 @@ def _check_and_start_server(max_wait: int = 120, force_restart: bool = False) ->
         if model_size_gb > 0 and free_ram_gb > 0:
             # 模型 > 可用内存时，必须大幅降低上下文
             if model_size_gb > free_ram_gb * 0.9:
-                print(f"[WARN] 模型大小 ({model_size_gb:.1f} GB) 接近或超过可用内存 ({free_ram_gb:.1f} GB)，将使用最小参数")
+                print(f"[WARN] 模型大小 ({model_size_gb:.1f} GB) 接近或超过可用内存 ({free_ram_gb:.1f} GB)，将使用低内存参数")
                 configs = [
-                    (512, 64, "CPU 模式 - 内存不足，最小参数"),
-                    (1024, 64, "CPU 模式 - 低内存参数"),
-                    (2048, 128, "CPU 模式 - 保守参数"),
+                    (2048, 128, "CPU 模式 - 低内存参数"),
+                    (1024, 128, "CPU 模式 - 内存不足，最小可用参数"),
                 ]
             elif model_size_gb > free_ram_gb * 0.7:
                 configs = [
-                    (1024, 64, "CPU 模式 - 内存紧张"),
-                    (2048, 128, "CPU 模式 - 低内存参数"),
+                    (2048, 128, "CPU 模式 - 内存紧张"),
                     (4096, 256, "CPU 模式 - 标准参数"),
                 ]
             else:
