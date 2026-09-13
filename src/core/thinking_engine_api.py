@@ -56,6 +56,9 @@ try:
 except ModuleNotFoundError:
     from core.app_paths import get_settings_path
 
+# llama-server 實際加載的模型名緩存（狀態頁輪詢用；llama-server 掛掉時 60s 內沿用）
+_LLAMA_MODEL_CACHE = {"name": "", "ts": 0.0}
+
 # 延迟导入llm模块，避免循环依赖
 _generate_with_emotion_feedback = None
 _generate_with_emotion_feedback_stream = None
@@ -451,17 +454,40 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
     def _settings_path(self):
         return get_settings_path()
 
+    def _active_llm_model(self, server_url):
+        """向本地 llama-server 查詢實際加載的模型名（RAM 不足自動退回時與設置值不同）。
+
+        查詢失敗時 60 秒內沿用最後一次成功結果，避免狀態頁輪詢被超時拖慢。
+        """
+        import time
+        from urllib.request import urlopen
+
+        now = time.time()
+        try:
+            with urlopen(server_url.rstrip("/") + "/v1/models", timeout=1.0) as resp:
+                data = json.load(resp)
+            name = str(((data.get("data") or [{}])[0]).get("id") or "").strip()
+            if name:
+                _LLAMA_MODEL_CACHE.update(name=name, ts=now)
+            return name
+        except Exception:
+            if now - _LLAMA_MODEL_CACHE.get("ts", 0.0) < 60:
+                return _LLAMA_MODEL_CACHE.get("name", "")
+            return ""
+
     def _status_payload(self):
         memory = ThinkingEngineState().get_memory() or {}
         settings = self._load_settings()
-        # 顯示實際生效的模型：自定義 model_path > OpenAI 模型 > model_name 標籤
-        custom_model = str(settings.get("model_path", "")).strip()
-        if custom_model:
-            display_model = os.path.basename(custom_model)
-        elif settings.get("openai_enabled") and settings.get("openai_api_key") == "configured":
+        # 顯示實際生效的模型：OpenAI > llama-server 實際加載 > 自定義 model_path > 標籤
+        if settings.get("openai_enabled") and settings.get("openai_api_key") == "configured":
             display_model = settings.get("openai_model", "openai")
         else:
-            display_model = settings.get("model_name", "local")
+            active = self._active_llm_model(str(settings.get("llm_server_url") or "http://127.0.0.1:8080"))
+            if active:
+                display_model = active
+            else:
+                custom_model = str(settings.get("model_path", "")).strip()
+                display_model = os.path.basename(custom_model) if custom_model else settings.get("model_name", "local")
         return {
             "status": "ok",
             "version": get_version(),
