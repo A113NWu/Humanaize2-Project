@@ -454,10 +454,18 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
     def _status_payload(self):
         memory = ThinkingEngineState().get_memory() or {}
         settings = self._load_settings()
+        # 顯示實際生效的模型：自定義 model_path > OpenAI 模型 > model_name 標籤
+        custom_model = str(settings.get("model_path", "")).strip()
+        if custom_model:
+            display_model = os.path.basename(custom_model)
+        elif settings.get("openai_enabled") and settings.get("openai_api_key") == "configured":
+            display_model = settings.get("openai_model", "openai")
+        else:
+            display_model = settings.get("model_name", "local")
         return {
             "status": "ok",
             "version": get_version(),
-            "model": settings.get("openai_model") if settings.get("openai_enabled") and settings.get("openai_api_key") == "configured" else settings.get("model_name", "local"),
+            "model": display_model,
             "messages": memory.get("messages", [])[-100:],
             "thoughts": memory.get("thoughts", [])[-100:],
             "decisions": memory.get("decisions", [])[-100:],
