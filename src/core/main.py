@@ -513,26 +513,39 @@ def _is_port_in_use(port: int = 8080) -> bool:
 
 
 def _process_is_llama_server(pid: str) -> bool:
-    """Return True only for a PID whose command line clearly points to llama-server."""
-    if not pid or not str(pid).strip():
+    """Return True only for a PID whose command line clearly points to llama-server.
+
+    優先用 psutil 直接讀進程名（毫秒級）；PowerShell+WMI 在記憶體緊張的機器上
+    動輒超過 5 秒超時，會把真 llama-server 誤判成無關進程而拒絕擊殺。
+    """
+    pid = str(pid).strip()
+    if not pid or not pid.isdigit() or int(pid) == 0:
         return False
+
+    try:
+        import psutil
+        proc = psutil.Process(int(pid))
+        name = (proc.name() or "").lower()
+        if "llama" in name:
+            return True
+        cmdline = " ".join(proc.cmdline()).lower()
+        return "llama-server" in cmdline
+    except Exception:
+        pass
 
     try:
         if sys.platform == "win32":
             result = subprocess.run(
-                ["powershell", "-NoProfile", "-Command",
-                 f"(Get-CimInstance Win32_Process -Filter 'ProcessId = {pid}').CommandLine"],
-                capture_output=True, text=True, timeout=5
+                ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                capture_output=True, text=True, timeout=8
             )
-            cmdline = (result.stdout or "") + (result.stderr or "")
-        else:
-            result = subprocess.run(
-                ["ps", "-p", str(pid), "-o", "args="],
-                capture_output=True, text=True, timeout=5
-            )
-            cmdline = (result.stdout or "") + (result.stderr or "")
-
-        return "llama-server" in cmdline.lower()
+            row = (result.stdout or "").strip()
+            return row.startswith('"') and "llama" in row.lower()
+        result = subprocess.run(
+            ["ps", "-p", pid, "-o", "args="],
+            capture_output=True, text=True, timeout=5
+        )
+        return "llama-server" in (result.stdout or "").lower()
     except Exception:
         return False
 
