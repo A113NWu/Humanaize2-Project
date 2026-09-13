@@ -170,28 +170,12 @@ from utils.reply_cleaner import clean_reply
 
 
 def build_prompt_from_messages(messages, personality_prompt=""):
-    """从OpenAI格式的messages构建prompt"""
-    parts = []
-
-    # 添加角色提示
-    if personality_prompt:
-        parts.append(personality_prompt)
-        parts.append("")
-
-    for msg in messages:
-        role = msg.get('role', '')
-        content = msg.get('content', '')
-
-        if role == 'system':
-            parts.append(content)
-            parts.append("")
-        elif role == 'user':
-            parts.append(f"User: {content}")
-        elif role == 'assistant':
-            parts.append(f"Assistant: {content}")
-
-    parts.append("Assistant:")
-    return "\n".join(parts)
+    """從OpenAI格式的messages構建prompt（按當前模型的對話模板渲染）"""
+    try:
+        from llm.chat_format import render_messages
+    except ImportError:
+        from core.llm.chat_format import render_messages
+    return render_messages(messages, personality_prompt)
 
 
 def build_context_from_memory(memory, max_messages=8):
@@ -713,15 +697,15 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                 user_text = msg.get('content', '')
                 break
 
-        # 构建完整prompt（包含上下文）
+        # 构建完整prompt（系統/人格/記憶上下文統一進入模型的 system 塊，
+        # 再按當前模型家族的對話模板渲染，避免特殊標記前混入裸文本）
         context = build_context_from_memory(memory) if memory else ""
-        prompt_parts = []
+        system_block_parts = []
         if personality_prompt:
-            prompt_parts.append(personality_prompt)
+            system_block_parts.append(personality_prompt)
         if context:
-            prompt_parts.append(context)
-        prompt_parts.append(build_prompt_from_messages(messages, ""))
-        full_prompt = "\n\n".join(prompt_parts)
+            system_block_parts.append(context)
+        full_prompt = build_prompt_from_messages(messages, "\n\n".join(system_block_parts))
 
         logger.info(
             f"[Chat] dispatch user_text_length={len(user_text)} prompt_length={len(full_prompt)} "

@@ -22,6 +22,11 @@ try:
 except ImportError:
     from core.app_paths import get_settings_path
 
+try:
+    from llm.chat_format import stop_sequences as chat_stop_sequences
+except ImportError:
+    from core.llm.chat_format import stop_sequences as chat_stop_sequences
+
 
 def _http_error_detail(error):
     """提取上游 HTTP 错误的状态码和响应正文，便于定位 400 参数错误。"""
@@ -185,6 +190,9 @@ def chat(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top_p=TOP_
                 "top_p": top_p,
                 "ignore_eos": False
             }
+            stops = chat_stop_sequences()
+            if stops:
+                payload["stop"] = stops
             logger.info(
                 "Sending LLM request to %s (prompt_chars=%d, n_predict=%d, temperature=%.2f, top_p=%.2f)",
                 local_server_url, len(prompt), max_tokens, temperature, top_p,
@@ -292,7 +300,7 @@ def chat_stream(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top
             request_session = session or create_session()
             own_session = session is None
             response = request_session.post(
-                f"{provider['base_url']}/chat/completion",
+                f"{provider['base_url']}/chat/completions",
                 headers={"Authorization": f"Bearer {provider['api_key']}", "Content-Type": "application/json"},
                 json={"model": provider["model"], "messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens, "temperature": temperature, "top_p": top_p, "stream": True},
                 timeout=300,
@@ -333,6 +341,9 @@ def chat_stream(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top
             "ignore_eos": False,
             "stream": True
         }
+        stops = chat_stop_sequences()
+        if stops:
+            stream_payload["stop"] = stops
         logger.info(
             "Sending streaming LLM request to %s (prompt_chars=%d, n_predict=%d, temperature=%.2f, top_p=%.2f)",
             local_server_url, len(prompt), max_tokens, temperature, top_p,

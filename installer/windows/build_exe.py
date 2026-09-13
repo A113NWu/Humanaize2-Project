@@ -150,6 +150,8 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False, onefile=F
         "--hidden-import", "voice.tts_synthesizer",
         # 統一持久化路徑解析（設置文件等）
         "--hidden-import", "app_paths",
+        # 按模型家族渲染對話模板（ChatML/Gemma）
+        "--hidden-import", "llm.chat_format",
         "--hidden-import", "logging",
         "--hidden-import", "json",
         "--hidden-import", "threading",
