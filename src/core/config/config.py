@@ -1,5 +1,10 @@
 import os
 
+try:
+    from app_paths import app_data_dir
+except ImportError:
+    from core.app_paths import app_data_dir
+
 LLAMA_SERVER = "http://127.0.0.1:8080"
 LLAMA_SERVER_URL = f"{LLAMA_SERVER}/completion"
 MODEL_NAME = "tinyllama.gguf"
@@ -10,9 +15,10 @@ TOP_P = 0.9
 UI_WIDTH = 1200
 UI_HEIGHT = 900
 
+# 打包態必須落在 exe 旁持久目錄；__file__ 相對路徑在 onefile 下指向
+# 臨時解包目錄（進程退出即刪），會導致記憶/人格等狀態「重啟失憶」。
 CONFIG_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(CONFIG_DIR)))
-DATA_DIR = os.path.join(PROJECT_ROOT, "data")
+DATA_DIR = app_data_dir()
 
 MEMORY_FILE = os.path.join(DATA_DIR, "memory.json")
 PERSONALITY_FILE = os.path.join(DATA_DIR, "personality.json")

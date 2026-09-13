@@ -74,9 +74,9 @@ except ImportError:
     from core.version import get_version
 
 try:
-    from app_paths import get_settings_path
+    from app_paths import get_settings_path, app_data_dir
 except ImportError:
-    from core.app_paths import get_settings_path
+    from core.app_paths import get_settings_path, app_data_dir
 
 logger.info(f"Humanaize v{get_version()} starting...")
 
@@ -834,8 +834,8 @@ def _check_and_start_server(max_wait: int = 120, force_restart: bool = False) ->
         return False
 
     # 将 llama-server 的输出写入日志文件，便于诊断崩溃原因
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    log_dir = os.path.join(project_root, "logs")
+    # （打包態不能落在 _MEIPASS，進程退出即刪）
+    log_dir = os.path.join(app_data_dir(), "logs")
     os.makedirs(log_dir, exist_ok=True)
     server_log_path = os.path.join(log_dir, "llama_server.log")
 

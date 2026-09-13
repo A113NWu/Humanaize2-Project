@@ -36,15 +36,34 @@ def _is_writable_dir(path: str) -> bool:
         return False
 
 
-def persistent_data_dir() -> str:
-    """返回可持久讀寫的應用數據目錄。"""
+def _frozen_data_dir() -> str:
+    """打包態的可寫數據目錄：exe 旁 data/，只讀安裝退回 ~/.humanaize2/data。"""
+    exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+    install_data = os.path.join(exe_dir, "data")
+    if _is_writable_dir(install_data):
+        return install_data
+    return os.path.join(os.path.expanduser("~"), ".humanaize2", "data")
+
+
+def app_data_dir() -> str:
+    """應用數據目錄（memory/personality 等運行時狀態）。
+
+    開發態沿用項目根 data/；打包態為 exe 旁持久目錄——絕不能落進
+    sys._MEIPASS（onefile 進程退出即刪，會造成「重啟失憶」）。
+    """
     if getattr(sys, "frozen", False):
-        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
-        install_data = os.path.join(exe_dir, "data")
-        if _is_writable_dir(install_data):
-            return install_data
-        # 只讀安裝（如 Linux /usr/bin、Program Files 無權限）退回用戶目錄
-        return os.path.join(os.path.expanduser("~"), ".humanaize2", "data")
+        return _frozen_data_dir()
+    return os.path.join(_project_root(), "data")
+
+
+def persistent_data_dir() -> str:
+    """返回可持久讀寫的應用數據目錄（UI 設置所在）。
+
+    開發態：``<項目根>/src/core/ui/data``（歷史規範路徑）
+    打包態：與 app_data_dir 相同的 exe 旁持久目錄
+    """
+    if getattr(sys, "frozen", False):
+        return _frozen_data_dir()
     return os.path.join(_project_root(), "src", "core", "ui", "data")
 
 
