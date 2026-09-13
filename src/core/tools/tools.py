@@ -396,9 +396,11 @@ def restart_llm_server(model_path: str = None):
     
     # 获取模型路径
     if model_path is None:
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-        
-        settings_path = os.path.join(base_dir, "src", "core", "ui", "data", "ui_settings.json")
+        try:
+            from app_paths import get_settings_path
+        except ImportError:
+            from core.app_paths import get_settings_path
+        settings_path = get_settings_path()
         if os.path.exists(settings_path):
             try:
                 import json

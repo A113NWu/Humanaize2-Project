@@ -51,6 +51,11 @@ try:
 except ModuleNotFoundError:
     from core.version import get_version
 
+try:
+    from app_paths import get_settings_path
+except ModuleNotFoundError:
+    from core.app_paths import get_settings_path
+
 # 延迟导入llm模块，避免循环依赖
 _generate_with_emotion_feedback = None
 _generate_with_emotion_feedback_stream = None
@@ -444,7 +449,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._send_error("Not found", 404)
 
     def _settings_path(self):
-        return os.path.join(os.path.dirname(__file__), "ui", "data", "ui_settings.json")
+        return get_settings_path()
 
     def _status_payload(self):
         memory = ThinkingEngineState().get_memory() or {}
@@ -458,8 +463,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             "decisions": memory.get("decisions", [])[-100:],
         }
 
-    def _load_settings(self):
-        defaults = {
+    def _settings_defaults(self):
+        return {
             "language": "中文", "theme": "Liquid Glass", "model_name": "tinyllama",
             "model_path": "", "openai_enabled": False, "openai_api_key": "", "openai_base_url": "https://api.openai.com/v1", "openai_model": "gpt-4o-mini", "gan_enabled": True, "auto_break_silence": True,
             "skills_prompt": "", "llm_server_url": "http://127.0.0.1:8080",
@@ -471,16 +476,25 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             "iot_host": "0.0.0.0", "iot_port": 8765, "iot_scan_enabled": True,
             "iot_scan_interval": 30, "iot_discovered_devices": []
         }
+
+    def _read_settings_raw(self):
+        """讀取持久設置（不脫敏），僅供內部邏輯/保存合併使用。"""
+        settings = self._settings_defaults()
         try:
             with open(self._settings_path(), "r", encoding="utf-8") as settings_file:
                 values = json.load(settings_file)
             if isinstance(values, dict):
-                defaults.update(values)
+                settings.update(values)
         except (OSError, ValueError):
             pass
-        if defaults.get("openai_api_key"):
-            defaults["openai_api_key"] = "configured"
-        return defaults
+        return settings
+
+    def _load_settings(self):
+        """對網頁返回的脫敏視圖（API key 只回 configured 佔位符）。"""
+        settings = self._read_settings_raw()
+        if settings.get("openai_api_key"):
+            settings["openai_api_key"] = "configured"
+        return settings
 
     def _handle_save_settings(self):
         try:
@@ -488,18 +502,44 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             values = json.loads(self.rfile.read(content_length).decode('utf-8'))
             if not isinstance(values, dict):
                 raise ValueError("settings must be an object")
-            settings = self._load_settings()
+            # 以磁盤上的原始設置（含真實 API key）為基準合併，避免脫敏佔位符覆蓋密鑰
+            settings = self._read_settings_raw()
             allowed = set(settings)
             updates = {key: value for key, value in values.items() if key in allowed}
             if updates.get("openai_api_key") == "configured":
                 updates.pop("openai_api_key")
+            model_path_changed = (
+                "model_path" in updates
+                and str(updates.get("model_path", "")).strip() != str(settings.get("model_path", "")).strip()
+            )
             settings.update(updates)
             os.makedirs(os.path.dirname(self._settings_path()), exist_ok=True)
             with open(self._settings_path(), "w", encoding="utf-8") as settings_file:
                 json.dump(settings, settings_file, ensure_ascii=False, indent=2)
-            self._send_json({"status": "ok", "settings": settings})
+
+            response = {"status": "ok", "settings": self._load_settings()}
+            if model_path_changed and str(updates.get("model_path", "")).strip():
+                # 模型路徑在 llama-server 啟動時消費，需重啟後端進程才能切換
+                self._schedule_model_server_restart()
+                response["restart_required"] = True
+                response["message"] = "模型路徑已保存，正在重啟 LLM 服務…"
+            self._send_json(response)
         except (OSError, ValueError, json.JSONDecodeError) as error:
             self._send_error(f"Invalid settings: {error}")
+
+    def _schedule_model_server_restart(self):
+        """後台強制重啟本地 llama-server，使新模型路徑生效。"""
+        def _restart():
+            try:
+                try:
+                    from main import _check_and_start_server
+                except ImportError:
+                    from core.main import _check_and_start_server
+                _check_and_start_server(force_restart=True)
+            except Exception as error:  # noqa: BLE001 - 後台線程需兜底
+                logger.error(f"Failed to restart LLM server after model path change: {error}")
+
+        threading.Thread(target=_restart, daemon=True).start()
 
     def _handle_voice_capabilities(self):
         """告知網頁端語音能力：TTS 引擎是否可用及默認音色。

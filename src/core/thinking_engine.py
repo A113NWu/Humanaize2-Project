@@ -7,7 +7,7 @@ from datetime import datetime
 core_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, core_dir)
 
-# 导入日志模块
+# 導入日志模块
 try:
     from tools.logger import get_logger
     logger = get_logger()
@@ -18,6 +18,11 @@ except ModuleNotFoundError:
     except ModuleNotFoundError:
         import logging
         logger = logging.getLogger(__name__)
+
+try:
+    from app_paths import get_settings_path
+except ImportError:
+    from core.app_paths import get_settings_path
 
 from memory import add, add_thought, save_memory
 from llm.llm_enhanced import generate_with_emotion_feedback, generate_with_emotion_feedback_stream
@@ -212,7 +217,7 @@ class ThinkingEngine:
         })
 
     def _load_ui_settings(self) -> dict:
-        settings_path = os.path.join(os.path.dirname(__file__), "data", "ui_settings.json")
+        settings_path = get_settings_path()
         try:
             with open(settings_path, "r", encoding="utf-8") as f:
                 return json.load(f)

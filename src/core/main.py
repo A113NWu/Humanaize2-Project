@@ -73,6 +73,11 @@ try:
 except ImportError:
     from core.version import get_version
 
+try:
+    from app_paths import get_settings_path
+except ImportError:
+    from core.app_paths import get_settings_path
+
 logger.info(f"Humanaize v{get_version()} starting...")
 
 import warnings
@@ -446,16 +451,8 @@ def init_msf_database(host: str = "127.0.0.1", port: int = 5432, database: str =
 
 
 def _get_ui_settings_path() -> str:
-    """取得 ui_settings.json 路徑；打包（onefile）時優先查 _MEIPASS 內的捆綁副本。"""
-    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    candidates = [os.path.join(base_dir, "src", "core", "ui", "data", "ui_settings.json")]
-    meipass = getattr(sys, "_MEIPASS", None)
-    if meipass:
-        candidates.insert(0, os.path.join(meipass, "src", "core", "ui", "data", "ui_settings.json"))
-    for c in candidates:
-        if os.path.exists(c):
-            return c
-    return candidates[-1]
+    """取得 ui_settings.json 的持久路徑（統一由 app_paths 解析）。"""
+    return get_settings_path()
 
 
 def _get_model_path():
@@ -993,7 +990,7 @@ def _auto_start_iot_network():
     """在後台自動啟動 IoT 算力網絡（如果配置啟用）"""
     def _start():
         try:
-            settings_path = os.path.join(os.path.dirname(__file__), "ui", "data", "ui_settings.json")
+            settings_path = _get_ui_settings_path()
             
             # 讀取配置
             import json

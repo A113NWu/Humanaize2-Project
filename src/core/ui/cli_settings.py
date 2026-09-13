@@ -12,10 +12,16 @@ except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from version import get_version
 
+try:
+    from app_paths import get_settings_path
+except ImportError:
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from app_paths import get_settings_path
+
 
 class SettingsCLI:
     def __init__(self):
-        self.settings_path = os.path.join(os.path.dirname(__file__), "data", "ui_settings.json")
+        self.settings_path = get_settings_path()
         self.settings = self._load_settings()
         self._scanner = None
         self._scanner_thread = None

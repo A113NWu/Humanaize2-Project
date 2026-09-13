@@ -39,6 +39,11 @@ try:
 except ImportError:
     from core.version import get_version
 
+try:
+    from app_paths import get_settings_path
+except ImportError:
+    from core.app_paths import get_settings_path
+
 
 class ModernWindowsUI:
     """Windows 专属现代化 GUI 界面"""
@@ -215,7 +220,7 @@ class ModernWindowsUI:
     
     def _load_settings(self):
         """加载用户设置"""
-        settings_path = os.path.join(os.path.dirname(__file__), "data", "ui_settings.json")
+        settings_path = get_settings_path()
         os.makedirs(os.path.dirname(settings_path), exist_ok=True)
         try:
             with open(settings_path, "r", encoding="utf-8") as f:
@@ -225,7 +230,7 @@ class ModernWindowsUI:
     
     def _save_settings(self, settings):
         """保存用户设置"""
-        settings_path = os.path.join(os.path.dirname(__file__), "data", "ui_settings.json")
+        settings_path = get_settings_path()
         os.makedirs(os.path.dirname(settings_path), exist_ok=True)
         with open(settings_path, "w", encoding="utf-8") as f:
             json.dump(settings, f, ensure_ascii=False, indent=2)

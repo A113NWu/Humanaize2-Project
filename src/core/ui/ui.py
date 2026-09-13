@@ -47,6 +47,11 @@ try:
 except ImportError:
     from core.version import get_version
 
+try:
+    from app_paths import get_settings_path
+except ImportError:
+    from core.app_paths import get_settings_path
+
 def _load_qq_skill():
     """Optional QQ skill is intentionally never required for the core app."""
     try:
@@ -236,7 +241,7 @@ class HumanaizeUI:
         return self._language_code_map.get(self.language, "en")
 
     def _load_settings(self) -> dict:
-        settings_path = os.path.join(os.path.dirname(__file__), "data", "ui_settings.json")
+        settings_path = get_settings_path()
         os.makedirs(os.path.dirname(settings_path), exist_ok=True)
         try:
             with open(settings_path, "r", encoding="utf-8") as f:
@@ -265,7 +270,7 @@ class HumanaizeUI:
         }
 
     def _save_settings(self, settings: dict):
-        settings_path = os.path.join(os.path.dirname(__file__), "data", "ui_settings.json")
+        settings_path = get_settings_path()
         os.makedirs(os.path.dirname(settings_path), exist_ok=True)
         with open(settings_path, "w", encoding="utf-8") as f:
             json.dump(settings, f, ensure_ascii=False, indent=2)
@@ -689,7 +694,7 @@ class HumanaizeUI:
                 self.iot_discovered_devices.append(device)
                 self.settings["iot_discovered_devices"] = self.iot_discovered_devices
                 try:
-                    settings_path = os.path.join(os.path.dirname(__file__), "data", "ui_settings.json")
+                    settings_path = get_settings_path()
                     with open(settings_path, 'w', encoding='utf-8') as f:
                         json.dump(self.settings, f, indent=4, ensure_ascii=False)
                 except Exception:
@@ -747,7 +752,7 @@ class HumanaizeUI:
                         self.settings["iot_discovered_devices"] = existing
                         self.iot_discovered_devices = existing
                         try:
-                            settings_path = os.path.join(os.path.dirname(__file__), "data", "ui_settings.json")
+                            settings_path = get_settings_path()
                             with open(settings_path, 'w', encoding='utf-8') as f:
                                 json.dump(self.settings, f, indent=4, ensure_ascii=False)
                         except Exception:
@@ -789,7 +794,7 @@ class HumanaizeUI:
                 self.settings["iot_discovered_devices"] = devices
                 self.iot_discovered_devices = devices
                 try:
-                    settings_path = os.path.join(os.path.dirname(__file__), "data", "ui_settings.json")
+                    settings_path = get_settings_path()
                     with open(settings_path, 'w', encoding='utf-8') as f:
                         json.dump(self.settings, f, indent=4, ensure_ascii=False)
                 except Exception:

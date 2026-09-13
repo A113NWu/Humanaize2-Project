@@ -148,6 +148,8 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False, onefile=F
         "--collect-submodules", "edge_tts",
         "--hidden-import", "voice",
         "--hidden-import", "voice.tts_synthesizer",
+        # 統一持久化路徑解析（設置文件等）
+        "--hidden-import", "app_paths",
         "--hidden-import", "logging",
         "--hidden-import", "json",
         "--hidden-import", "threading",

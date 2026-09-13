@@ -17,6 +17,11 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+try:
+    from app_paths import get_settings_path
+except ImportError:
+    from core.app_paths import get_settings_path
+
 
 def _http_error_detail(error):
     """提取上游 HTTP 错误的状态码和响应正文，便于定位 400 参数错误。"""
@@ -31,7 +36,7 @@ def _http_error_detail(error):
 
 def _local_server_url():
     """读取设置中的本地 llama-server 地址，并规范化 completion 路径。"""
-    settings_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ui", "data", "ui_settings.json")
+    settings_path = get_settings_path()
     try:
         with open(settings_path, "r", encoding="utf-8") as settings_file:
             configured_url = str(json.load(settings_file).get("llm_server_url", "")).strip()
@@ -79,7 +84,7 @@ def _local_output_budget(max_tokens):
 
 def _provider_settings():
     """读取当前模型提供商配置；没有 API Key 时始终回退本地模型。"""
-    settings_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ui", "data", "ui_settings.json")
+    settings_path = get_settings_path()
     try:
         with open(settings_path, "r", encoding="utf-8") as settings_file:
             settings = json.load(settings_file)
