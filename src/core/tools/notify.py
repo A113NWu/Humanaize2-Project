@@ -92,7 +92,7 @@ class Notifier:
                         </binding>
                     </visual>
                 </toast>
-                "@
+"@
                 $xml = New-Object Windows.Data.Xml.Dom.XmlDocument
                 $xml.LoadXml($template)
                 $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)

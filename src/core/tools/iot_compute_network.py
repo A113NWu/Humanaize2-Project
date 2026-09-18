@@ -253,6 +253,18 @@ class IoTComputeNetwork:
         """启动 WebSocket 服务器"""
         try:
             import websockets
+            import logging
+
+            # 端口被探测/扫描时握手直接 EOF，websockets 默认会打整段堆栈到
+            # stderr——过滤掉握手失败噪音，其余 websockets 日志照常保留
+            ws_logger = logging.getLogger("websockets")
+
+            class _HandshakeNoiseFilter(logging.Filter):
+                def filter(self, record):
+                    return "opening handshake failed" not in record.getMessage()
+
+            if not any(isinstance(f, _HandshakeNoiseFilter) for f in ws_logger.filters):
+                ws_logger.addFilter(_HandshakeNoiseFilter())
             
             async def handler(websocket, path):
                 await self._handle_connection(websocket, path)
