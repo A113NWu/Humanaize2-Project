@@ -705,6 +705,16 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         # 再按當前模型家族的對話模板渲染，避免特殊標記前混入裸文本）
         context = build_context_from_memory(memory) if memory else ""
         system_block_parts = []
+        # 載入用戶可編輯的 system_prompt.txt（角色扮演/人設提示詞）。
+        # 歷史 bug：load_system_prompt() 定義了但從未被調用，用戶改了
+        # Prompt\system_prompt.txt 也不會生效；每次請求實時讀取，改完即生效。
+        try:
+            from data.prompts_manager import load_system_prompt
+        except ImportError:
+            from core.data.prompts_manager import load_system_prompt
+        _system_prompt_text = (load_system_prompt() or "").strip()
+        if _system_prompt_text:
+            system_block_parts.append(_system_prompt_text)
         if personality_prompt:
             system_block_parts.append(personality_prompt)
         if context:
