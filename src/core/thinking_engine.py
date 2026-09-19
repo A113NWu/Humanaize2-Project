@@ -668,6 +668,7 @@ class ThinkingEngine:
         full_reply = ""
         current_buffer = ""
         sent_sentences = []
+        reply_section = True  # False = THOUGHT 段（思考，不進聊天區）
         
         try:
             # 網頁/AstrBot 路徑已把系統提示+人設渲染成完整 ChatML prompt，
@@ -686,7 +687,15 @@ class ThinkingEngine:
                         sentence = sentence.strip()
                         if sentence and sentence not in sent_sentences:
                             sent_sentences.append(sentence)
-                            cleaned = self._clean_and_humanize_reply(sentence)
+                            reply_section, body = self._split_thought_section(sentence, reply_section)
+                            if not body.strip():
+                                continue
+                            if not reply_section:
+                                logger.info(f"Streaming thought (hidden): {body.strip()[:50]}...")
+                                if self.on_response:
+                                    self.on_response({"type": "internal_thought", "thought": body.strip(), "thought_type": "internal"})
+                                continue
+                            cleaned = self._clean_and_humanize_reply(body)
                             if cleaned:
                                 cleaned = self._hallucination_check(cleaned, user_text)
                                 logger.info(f"Streaming sentence: {cleaned[:50]}...")
@@ -697,14 +706,19 @@ class ThinkingEngine:
                     current_buffer = self._get_remaining_buffer(current_buffer)
             
             if current_buffer.strip():
-                cleaned = self._clean_and_humanize_reply(current_buffer.strip())
-                if cleaned and cleaned not in sent_sentences:
-                    cleaned = self._hallucination_check(cleaned, user_text)
-                    sent_sentences.append(cleaned)
-                    logger.info(f"Final streaming sentence: {cleaned[:50]}...")
-                    if self.on_response:
-                        self.on_response({"type": "chat_response", "reply": cleaned})
-                    self._notify_stream_callbacks(cleaned, target_info)
+                reply_section, body = self._split_thought_section(current_buffer.strip(), reply_section)
+                if not reply_section:
+                    if body.strip() and self.on_response:
+                        self.on_response({"type": "internal_thought", "thought": body.strip(), "thought_type": "internal"})
+                else:
+                    cleaned = self._clean_and_humanize_reply(body)
+                    if cleaned and cleaned not in sent_sentences:
+                        cleaned = self._hallucination_check(cleaned, user_text)
+                        sent_sentences.append(cleaned)
+                        logger.info(f"Final streaming sentence: {cleaned[:50]}...")
+                        if self.on_response:
+                            self.on_response({"type": "chat_response", "reply": cleaned})
+                        self._notify_stream_callbacks(cleaned, target_info)
             
             thought, target_reply = self._extract_thought_and_response(full_reply)
             if thought:
@@ -1070,6 +1084,22 @@ class ThinkingEngine:
         """构建更友好的打破沉默提示词（从统一的提示词文件获取）"""
         return get_break_silence_prompt(base_prompt)
     
+    @staticmethod
+    def _split_thought_section(sentence, in_response_section):
+        """按 THOUGHT/RESPONSE 標籤切分流式句子，返回 (所在段, 去標籤文本)。
+
+        角色提示詞要求模型先 THOUGHT 後 RESPONSE，而流式路徑逐句即時發送，
+        若不攔截，THOUGHT 段會以正文形式洩漏到聊天區。
+        """
+        text = str(sentence or "")
+        match = re.match(r"(?i)^\s*THOUGHT\s*[:：]\s*(.*)$", text, re.S)
+        if match:
+            return False, match.group(1)
+        match = re.match(r"(?i)^\s*RESPONSE\s*[:：]\s*(.*)$", text, re.S)
+        if match:
+            return True, match.group(1)
+        return in_response_section, text
+
     def _clean_and_humanize_reply(self, reply):
         """清理并人性化回复内容"""
         from utils.reply_cleaner import clean_reply
