@@ -23,9 +23,17 @@ except ImportError:
     from core.app_paths import get_settings_path
 
 try:
-    from llm.chat_format import stop_sequences as chat_stop_sequences
+    from llm.chat_format import (
+        stop_sequences as chat_stop_sequences,
+        render_messages as render_chat_messages,
+        active_family as active_chat_family,
+    )
 except ImportError:
-    from core.llm.chat_format import stop_sequences as chat_stop_sequences
+    from core.llm.chat_format import (
+        stop_sequences as chat_stop_sequences,
+        render_messages as render_chat_messages,
+        active_family as active_chat_family,
+    )
 
 
 def _http_error_detail(error):
@@ -105,6 +113,25 @@ def _provider_settings():
         return None
 
 
+# 各模板家族的 prompt 起始標記：帶標記的 prompt 視為已渲染，直接透傳
+_TEMPLATE_OPENERS = {"chatml": "<|im_start|>", "gemma": "<start_of_turn>"}
+
+
+def _ensure_templated(prompt: str) -> str:
+    """把裸文本 prompt 按當前模型家族包上對話模板。
+
+    背景：Qwen1.5 等低量化模型收到不含模板標記的純指令時會立即吐 EOS
+    （回復為空）或續寫式亂碼，GAN/Solve 等決策調用因此全部判空失敗；
+    包上 ChatML 後輸出穩定可解析。已渲染（帶家族起始標記）或 legacy
+    家族的 prompt 保持原樣，與歷史行為完全一致。
+    """
+    text = (prompt or "").lstrip()
+    opener = _TEMPLATE_OPENERS.get(active_chat_family())
+    if opener is None or text.startswith(opener):
+        return prompt
+    return render_chat_messages([{"role": "user", "content": prompt}])
+
+
 def _openai_chat(prompt, provider, max_tokens, temperature, top_p, session, timeout):
     request_session = session or create_session()
     own_session = session is None
@@ -177,6 +204,7 @@ def chat(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top_p=TOP_
     delay = 5
 
     local_server_url = _local_server_url()
+    prompt = _ensure_templated(prompt)
     prompt = _fit_local_prompt(prompt, max_tokens)
     logger.debug(f"Sending LLM request with prompt length: {len(prompt)}, max_tokens: {max_tokens}, url: {local_server_url}")
 
@@ -328,6 +356,7 @@ def chat_stream(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top
 
     try:
         max_tokens = _local_output_budget(max_tokens)
+        prompt = _ensure_templated(prompt)
         prompt = _fit_local_prompt(prompt, max_tokens)
         local_server_url = _local_server_url()
         logger.debug(f"Sending streaming LLM request with prompt length: {len(prompt)}")
@@ -353,7 +382,9 @@ def chat_stream(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top
         response = request_session.post(
             local_server_url,
             json=stream_payload,
-            timeout=300,
+            # 慢機器 prompt 評估可能超過 5 分鐘（換頁嚴重時 ~150ms/token），
+            # 與 chat() 的 600s 保持一致，避免主回答流被中途掐斷
+            timeout=600,
             stream=True
         )
 
