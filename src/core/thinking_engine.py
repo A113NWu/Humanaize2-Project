@@ -225,12 +225,27 @@ class ThinkingEngine:
             return {}
 
     def _load_agent_prompt(self, personality=None) -> str:
-        prompt_path = os.path.join(os.path.dirname(__file__), "data", "agent_prompt.txt")
+        # 從 prompts_manager 載入用戶可編輯的 agent_prompt.txt
+        # （優先級：安裝目錄 Prompt\ > 捆綁默認 > core/data 舊位置，
+        #   每次調用實時讀取，用戶改完即生效）。
+        # 歷史 bug：這裡曾直接讀 core/data/agent_prompt.txt，文件遷移到
+        # prompt/ 後打包態永遠讀不到，角色扮演人設因此全部失效。
+        prompt = ""
         try:
-            with open(prompt_path, "r", encoding="utf-8") as f:
-                prompt = f.read().strip()
+            try:
+                from data.prompts_manager import load_agent_prompt
+            except ImportError:
+                from core.data.prompts_manager import load_agent_prompt
+            prompt = (load_agent_prompt() or "").strip()
         except Exception:
-            prompt = (
+            prompt = ""
+        if not prompt:
+            prompt_path = os.path.join(os.path.dirname(__file__), "data", "agent_prompt.txt")
+            try:
+                with open(prompt_path, "r", encoding="utf-8") as f:
+                    prompt = f.read().strip()
+            except Exception:
+                prompt = (
                 "You are an assistant that can execute shell commands and Openclaw-style skills through the Agent interface. "
                 "Always begin by writing an internal thought section labeled THOUGHT:, then write a final answer section labeled RESPONSE:. "
                 "If you need to invoke a skill, output exactly one JSON object with keys such as {\"skill\": \"shell\", \"input\": \"...\"} or {\"skill\": \"shell\", \"input\": {\"command\": \"...\"}}. "
