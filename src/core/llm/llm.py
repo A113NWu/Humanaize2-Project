@@ -145,7 +145,7 @@ def create_session():
     session.mount("https://", adapter)
     return session
 
-def chat(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top_p=TOP_P, session=None, stop_event=None, timeout=300, max_retries=3):
+def chat(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top_p=TOP_P, session=None, stop_event=None, timeout=600, max_retries=3):
     provider = _provider_settings()
     logger.info(f"Provider: {provider}")   # 如果 provider 非 None，它会走 OpenAI 分支
     """

@@ -205,9 +205,11 @@ class ResponseCollector:
     """响应收集器 - 收集ThinkingEngine的回调响应
     支持流式和同步两种模式，在最后一个块后等待一段时间没有新消息则认为任务完成"""
     
-    def __init__(self, timeout=300, completion_wait=5, first_chunk_wait=120):
+    def __init__(self, timeout=600, completion_wait=5, first_chunk_wait=600):
         """非流式生成在 CPU 上可能 60-90 秒後才返回唯一的一個 chunk，
-        首塊等待必須遠大於 chunk 間隔，否則會在生成完成前誤判為空回覆。"""
+        首塊等待必須遠大於 chunk 間隔，否則會在生成完成前誤判為空回覆。
+        低配機器（RAM 不足換頁）上 prompt 評估可達 3 分鐘以上，因此
+        總超時與首塊等待都取 10 分鐘。"""
         self._queue = Queue()
         self._timeout = timeout
         self._completion_wait = completion_wait
@@ -216,7 +218,7 @@ class ResponseCollector:
         self._thoughts = []
         self._finished = False
         self._last_chunk_time = 0
-    
+
     def callback(self, response):
         """ThinkingEngine回调函数"""
         if response.get("type") == "chat_response":
@@ -229,6 +231,8 @@ class ResponseCollector:
             thought_type = response.get("thought_type", "")
             self._thoughts.append(thought)
             logger.info(f"[ThinkingEngine] Internal thought: {thought[:100]}...")
+            # 注意：思考片段不更新 _last_chunk_time——真正的 LLM 回覆可能
+            # 在思考後數分鐘才到（慢機器），若按 5 秒靜默判完成會截斷回覆
             self._queue.put({"type": "thought", "content": thought, "thought_type": thought_type})
         elif response.get("type") == "gan_complete":
             pass
