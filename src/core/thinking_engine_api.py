@@ -717,6 +717,15 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             system_block_parts.append(_system_prompt_text)
         if personality_prompt:
             system_block_parts.append(personality_prompt)
+        # 角色扮演人設（agent_prompt.txt）放進 system 塊：放在這裡模型才會
+        # 真正入戲；走 MAIN/OTHER 三明治組裝時會被嵌套 prompt 稀釋/衝突
+        try:
+            from data.prompts_manager import load_agent_prompt
+        except ImportError:
+            from core.data.prompts_manager import load_agent_prompt
+        _agent_prompt_text = (load_agent_prompt() or "").strip()
+        if _agent_prompt_text:
+            system_block_parts.append(_agent_prompt_text)
         if context:
             system_block_parts.append(context)
         full_prompt = build_prompt_from_messages(messages, "\n\n".join(system_block_parts))

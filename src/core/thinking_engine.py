@@ -670,7 +670,12 @@ class ThinkingEngine:
         sent_sentences = []
         
         try:
-            model_prompt = self._build_response_prompt(exec_instr, prompt, memory, user_text)
+            # 網頁/AstrBot 路徑已把系統提示+人設渲染成完整 ChatML prompt，
+            # 直接透傳；legacy 路徑才走 MAIN/OTHER 文本三明治組裝
+            if str(prompt or "").lstrip().startswith("<|im_start|>"):
+                model_prompt = prompt
+            else:
+                model_prompt = self._build_response_prompt(exec_instr, prompt, memory, user_text)
             for token in generate_with_emotion_feedback_stream(model_prompt, emotion_monitor):
                 if token:
                     full_reply += token
