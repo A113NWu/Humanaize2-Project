@@ -93,3 +93,53 @@ def get_settings_path() -> str:
                 except OSError:
                     continue
     return target
+
+
+def _bundled_dirs(*rel_parts) -> list:
+    """安裝包內同名資源目錄的候選位置（_MEIPASS 與 onedir _internal）。"""
+    candidates = []
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(os.path.join(meipass, *rel_parts))
+    if getattr(sys, "frozen", False):
+        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+        candidates.append(os.path.join(exe_dir, "_internal", *rel_parts))
+    return [c for c in candidates if os.path.isdir(c)]
+
+
+def seed_from_bundled(target_dir: str, bundled_dirs) -> int:
+    """把捆綁目錄中的文件種植到 target_dir（已存在的不覆蓋，保留用戶修改）。
+
+    返回新複製的文件數。
+    """
+    copied = 0
+    os.makedirs(target_dir, exist_ok=True)
+    for src_dir in bundled_dirs:
+        try:
+            names = os.listdir(src_dir)
+        except OSError:
+            continue
+        for name in names:
+            src = os.path.join(src_dir, name)
+            dst = os.path.join(target_dir, name)
+            if os.path.isfile(src) and not os.path.exists(dst):
+                try:
+                    shutil.copy2(src, dst)
+                    copied += 1
+                except OSError:
+                    pass
+    return copied
+
+
+def prompts_dir() -> str:
+    """用戶可編輯的提示詞目錄。
+
+    開發態：``<項目根>/prompt``（即源碼目錄本身）
+    打包態：``<exe 同目錄>/Prompt``——首次運行把安裝包內置的默認提示詞
+    種植進來，普通用戶即可直接編輯；刪除某文件時由調用方回退到捆綁默認。
+    """
+    if getattr(sys, "frozen", False):
+        target = os.path.join(os.path.dirname(os.path.abspath(sys.executable)), "Prompt")
+        seed_from_bundled(target, _bundled_dirs("prompt"))
+        return target
+    return os.path.join(_project_root(), "prompt")

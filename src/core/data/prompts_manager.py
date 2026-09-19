@@ -6,6 +6,14 @@ import os
 import sys
 from typing import Optional
 
+try:
+    from app_paths import prompts_dir as _user_prompts_dir
+except ImportError:
+    try:
+        from core.app_paths import prompts_dir as _user_prompts_dir
+    except ImportError:
+        _user_prompts_dir = None
+
 def _get_project_root():
     """获取项目根目录（打包 onefile 時提示詞捆綁在 _MEIPASS 根目錄）"""
     meipass = getattr(sys, "_MEIPASS", None)
@@ -13,6 +21,7 @@ def _get_project_root():
         return meipass
     return os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+# 捆綁默認提示詞目錄（dev：項目根 prompt/；打包：_MEIPASS/prompt）
 PROMPTS_DIR = os.path.join(_get_project_root(), "prompt")
 
 # 提示词文件映射
@@ -62,7 +71,12 @@ PROMPT_FILES = {
 
 
 def _get_prompts_dir():
-    """获取提示词目录"""
+    """获取用户可编辑的提示词目录（打包態為 exe 旁 Prompt/，已種植默認文件）"""
+    if _user_prompts_dir is not None:
+        try:
+            return _user_prompts_dir()
+        except Exception:
+            pass
     return PROMPTS_DIR
 
 
@@ -71,9 +85,23 @@ def _get_data_dir():
     return os.path.dirname(__file__)
 
 
+def _prompt_search_dirs():
+    """按優先級返回提示詞搜索目錄：
+    1) 用戶可編輯目錄（exe 旁 Prompt/ 或 dev 的 prompt/）
+    2) 捆綁默認目錄（用戶刪除了某文件時兜底）
+    3) data 目錄（agent_prompt.txt 等歷史存放位置）
+    """
+    dirs = [_get_prompts_dir(), PROMPTS_DIR, _get_data_dir()]
+    unique = []
+    for d in dirs:
+        if d and d not in unique:
+            unique.append(d)
+    return unique
+
+
 def load_prompt(prompt_name: str) -> str:
     """
-    加载提示词
+    加载提示词（用户编辑版优先，缺失时回退捆绑默认）
 
     Args:
         prompt_name: 提示词名称
@@ -85,14 +113,19 @@ def load_prompt(prompt_name: str) -> str:
         return ""
 
     filename = PROMPT_FILES[prompt_name]
-    filepath = os.path.join(_get_prompts_dir(), filename)
 
-    try:
-        with open(filepath, "r", encoding="utf-8") as f:
-            return f.read().strip()
-    except Exception as e:
-        print(f"Failed to load prompt {prompt_name}: {e}")
-        return ""
+    for directory in _prompt_search_dirs():
+        filepath = os.path.join(directory, filename)
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                return f.read().strip()
+        except OSError:
+            continue
+        except Exception as e:
+            print(f"Failed to load prompt {prompt_name} from {filepath}: {e}")
+
+    print(f"Failed to load prompt {prompt_name}: not found in {[_get_prompts_dir(), PROMPTS_DIR, _get_data_dir()]}")
+    return ""
 
 
 def _safe_format(template: str, **kwargs) -> str:
