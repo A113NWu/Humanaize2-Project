@@ -6,6 +6,7 @@ Generative Adversarial Network style self-debate for balanced reasoning
 
 import os
 import sys
+import time
 import threading
 import requests
 import re
@@ -22,9 +23,14 @@ from data.prompts_manager import (
 
 
 class GANIteration:
+    # 類級熔斷狀態：決策連續失敗時暫停嘗試，避免每輪對話都白等一次
+    _decision_fail_streak = 0
+    _decision_skip_until = 0.0
+    _DECISION_TIMEOUT = 90          # 單次決策等待上限（秒）
+    _SKIP_WINDOW = 600              # 連續失敗後的熔斷窗口（秒）
     """
     Optimized GAN-style self-debate module
-    
+
     Key improvements:
     - Cleaner code structure with helper methods
     - Topic anchoring to prevent deviation
@@ -80,29 +86,34 @@ class GANIteration:
         """Check if debate should stop"""
         return self._stop_flag or self._stop_event.is_set()
     
-    def _safe_call(self, prompt: str, max_tokens: int = 200, temperature: float = 0.7) -> str:
+    def _safe_call(self, prompt: str, max_tokens: int = 200, temperature: float = 0.7, timeout: int = None) -> str:
         """
         Safe LLM call with stop check
-        
+
         Args:
             prompt: The prompt to send
             max_tokens: Maximum tokens to generate
             temperature: Creativity level (0.0-1.0)
-        
+            timeout: Optional read timeout override (seconds)
+
         Returns:
             LLM response or empty string if stopped
         """
         if self._check_stopped():
             return ""
-        
+
+        kwargs = {}
+        if timeout:
+            kwargs["timeout"] = timeout
         result = chat(
             prompt,
             session=self._session,
             stop_event=self._stop_event,
             max_tokens=max_tokens,
-            temperature=temperature
+            temperature=temperature,
+            **kwargs
         )
-        
+
         return result.strip() if result else ""
     
     def _emit(self, event_type: str, data: str):
@@ -152,14 +163,33 @@ class GANIteration:
         self._reset()
         self.user_context = user_text
 
+        # 熔斷檢查：LLM 不可用/過慢時連續失敗 2 次即暫停決策 10 分鐘，
+        # 避免每輪對話都先空等一次失敗的決策調用（慢機器上尤其明顯）
+        cls = type(self)
+        now = time.time()
+        if now < cls._decision_skip_until:
+            remaining = int(cls._decision_skip_until - now)
+            return False, f"GAN decision skipped (circuit breaker, {remaining}s left): answering directly"
+
         # 是否進行 GAN 思考完全由 AI（LLM）依 prompt 判定，
         # 不再使用文本長度/標點之類的系統啟發式規則替 AI 做決定。
         decision_prompt = load_gan_decide_prompt(user_text)
 
-        reply = self._safe_call(decision_prompt, max_tokens=100, temperature=0.3)
+        reply = self._safe_call(
+            decision_prompt, max_tokens=100, temperature=0.3,
+            timeout=cls._DECISION_TIMEOUT
+        )
 
         if not reply:
+            cls._decision_fail_streak += 1
+            if cls._decision_fail_streak >= 2:
+                cls._decision_skip_until = time.time() + cls._SKIP_WINDOW
+                cls._decision_fail_streak = 0
             return False, "AI decision unavailable (no LLM response), answering directly"
+
+        # 決策成功，重置熔斷狀態
+        cls._decision_fail_streak = 0
+        cls._decision_skip_until = 0.0
 
         # Parse decision
         is_yes = "yes" in reply.lower()[:10] or "是" in reply[:5]
