@@ -857,7 +857,9 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-Type', 'text/event-stream; charset=utf-8')
         self.send_header('Cache-Control', 'no-cache')
-        self.send_header('Connection', 'keep-alive')
+        # 流結束（[DONE]）後必須關閉連接：keep-alive 會讓 curl/AstrBot 等
+        # 客戶端在收到完整回覆後仍掛起等待，直到自身超時
+        self.send_header('Connection', 'close')
         self.send_header('Access-Control-Allow-Origin', '*')
         self.end_headers()
 
