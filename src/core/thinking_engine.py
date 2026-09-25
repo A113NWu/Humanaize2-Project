@@ -824,9 +824,14 @@ class ThinkingEngine:
                                 sent_sentences.append(sentence)
                                 cleaned_sentence = self._clean_and_humanize_reply(sentence)
                                 if cleaned_sentence:
-                                    if self.on_response:
+                                    # 命令已執行完才生成 followup；模型若又吐出調用 JSON，
+                                    # 隱藏而不是展示或再次執行（避免重複調用/循環）
+                                    cleaned_sentence, f_calls = self._extract_skill_calls(cleaned_sentence)
+                                    for skill_name, _ in f_calls:
+                                        logger.info(f"Followup skill call suppressed (already executed): {skill_name}")
+                                    if cleaned_sentence and self.on_response:
                                         self.on_response({"type": "chat_response", "reply": cleaned_sentence})
-                                    self._notify_stream_callbacks(cleaned_sentence, target_info)
+                                        self._notify_stream_callbacks(cleaned_sentence, target_info)
                     except Exception as e:
                         logger.error(f"Followup generation error: {e}")
             except Exception as e:

@@ -538,12 +538,19 @@ class Agent:
                 result = self._execute_skill(skill_name, input_data, language)
                 logger.info(f"Skill result: {result}")
                 
-                # 如果是shell技能，提取output字段
+                # 如果是shell技能，提取輸出。技能實現有兩種返回結構：
+                # 內置執行器 {"status":"success","output":...}，以及安裝目錄
+                # 技能 {"success":true,"stdout":...,"stderr":...,"returncode":0}
                 if skill_name == "shell" and isinstance(result, dict):
-                    if result.get("status") == "success":
-                        outputs.append(result.get("output", ""))
+                    ok = result.get("status") == "success" or result.get("success") is True
+                    if ok:
+                        out = result.get("output")
+                        if out in (None, ""):
+                            out = result.get("stdout", "")
+                        outputs.append(str(out))
                     else:
-                        outputs.append(f"Error: {result.get('error', 'Unknown error')}")
+                        err = result.get("error") or result.get("stderr") or "Unknown error"
+                        outputs.append(f"Error: {err}")
                 else:
                     # 其他技能返回JSON格式
                     outputs.append(json.dumps(result, ensure_ascii=False, indent=2))
