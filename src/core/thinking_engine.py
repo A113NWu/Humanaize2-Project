@@ -132,7 +132,7 @@ class ThinkingEngine:
 
         try:
             logger.info(f"Calling LLM for should_answer decision (text: {user_text[:50] if user_text else 'None'})")
-            response = chat(decision_prompt, max_tokens=100, temperature=0.3, timeout=30, max_retries=0).strip()
+            response = chat(decision_prompt, max_tokens=400, temperature=0.3, timeout=60, max_retries=0).strip()
             logger.info(f"should_answer LLM response: {response[:100] if response else 'Empty'}")
             decision = self._parse_json_decision(response)
             should_answer = decision.get("decision") == "answer"
@@ -155,7 +155,7 @@ class ThinkingEngine:
 
         try:
             logger.info(f"Calling LLM for GAN decision (text: {user_text[:50] if user_text else 'None'})")
-            response = chat(decision_prompt, max_tokens=100, temperature=0.3, timeout=30, max_retries=0).strip()
+            response = chat(decision_prompt, max_tokens=400, temperature=0.3, timeout=60, max_retries=0).strip()
             logger.info(f"GAN decision LLM response: {response[:100] if response else 'Empty'}")
             decision = self._parse_json_decision(response)
             should_use_gan = bool(decision.get("use_gan")) if decision else ("是" in response or "YES" in response.upper())
@@ -171,7 +171,7 @@ class ThinkingEngine:
         try:
             decision_prompt = load_should_use_solve_prompt(user_text)
             logger.info(f"Calling LLM for Solve decision (text: {user_text[:50] if user_text else 'None'})")
-            response = chat(decision_prompt, max_tokens=100, temperature=0.3, timeout=30, max_retries=0).strip()
+            response = chat(decision_prompt, max_tokens=400, temperature=0.3, timeout=60, max_retries=0).strip()
             decision = self._parse_json_decision(response)
             should_use_solve = bool(decision.get("use_solve")) if decision else False
             logger.info(

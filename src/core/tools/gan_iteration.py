@@ -176,7 +176,7 @@ class GANIteration:
         decision_prompt = load_gan_decide_prompt(user_text)
 
         reply = self._safe_call(
-            decision_prompt, max_tokens=100, temperature=0.3,
+            decision_prompt, max_tokens=400, temperature=0.3,
             timeout=cls._DECISION_TIMEOUT
         )
 
@@ -226,7 +226,7 @@ class GANIteration:
         # Generate topic related to user's question
         if self.user_context and len(self.user_context) >= 10:
             topic_prompt = load_gan_topic_prompt(self.user_context)
-            topic = self._safe_call(topic_prompt, max_tokens=100, temperature=0.5)
+            topic = self._safe_call(topic_prompt, max_tokens=256, temperature=0.5)
             topic = topic.strip().strip('"').strip("'")
             
             if topic and len(topic) >= 10:
