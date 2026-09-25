@@ -198,8 +198,12 @@ class GANIteration:
         if not reply:
             return False, "AI decision unclear (reasoning only), answering directly"
 
-        # Parse decision
-        is_yes = "yes" in reply.lower()[:10] or "是" in reply[:5]
+        # Parse decision：必須按「開頭語義」判斷。
+        # 舊寫法 "是" in reply[:5] 會把「否：這是一個簡單問題」誤判成 yes，
+        # 導致打招呼也白跑一輪 GAN 辯論。明確否定開頭優先，否則才認肯定開頭。
+        head = reply.lstrip(" 　\r\n\t\"'*#-：:。.").lower()
+        is_no = head.startswith(("no", "否", "不用", "不需要", "不必"))
+        is_yes = (not is_no) and head.startswith(("yes", "是", "对", "對", "需要", "可以"))
         return is_yes, reply
     
     # ==================== Topic Generation ====================

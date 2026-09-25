@@ -291,3 +291,11 @@ select option{background:#14262f;color:var(--text)}
   .checks,.form-row,.status-grid{grid-template-columns:1fr}
   .chat-panel{height:calc(100vh - 125px)}
 }
+
+/* ===== Skill 執行輸出（終端風格區塊） ===== */
+.skill-output{margin:8px 0 4px;display:flex;flex-direction:column;gap:6px}
+.skill-cmd-start{font-size:0.82em;color:#ff9a3c;font-weight:600;padding:3px 2px}
+.skill-cmd-start::before{content:'';display:inline-block;width:7px;height:7px;border-radius:50%;background:#ff8a1e;margin-right:7px;box-shadow:0 0 6px #ff8a1e}
+.skill-cmd-result{background:rgba(20,14,8,0.72);border:1px solid rgba(255,138,30,0.35);border-left:3px solid #ff8a1e;border-radius:8px;overflow:hidden}
+.skill-cmd-result .skill-cmd-label{font-size:0.7em;letter-spacing:0.08em;color:#ffb36b;background:rgba(255,138,30,0.12);padding:3px 10px;text-transform:uppercase}
+.skill-cmd-result pre{margin:0;padding:8px 10px;font-family:Consolas,'Courier New',monospace;font-size:0.82em;color:#8ee88e;white-space:pre-wrap;word-break:break-all;max-height:240px;overflow-y:auto}

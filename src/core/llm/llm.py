@@ -188,6 +188,10 @@ def create_session():
 def chat(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top_p=TOP_P, session=None, stop_event=None, timeout=600, max_retries=3):
     provider = _provider_settings()
     logger.info(f"Provider: {provider}")   # 如果 provider 非 None，它会走 OpenAI 分支
+    # 雲端思考模型（MiniMax-M3/R1）512 token 常被推理吃光導致正文為空；
+    # 僅提升「默認預算」的調用，顯式傳值的決策類調用（如 400）保持不變
+    if provider and max_tokens == MAX_TOKENS:
+        max_tokens = 1024
     """
     發送HTTP請求到本機llama-server，取得回答
     """
@@ -337,6 +341,8 @@ def chat_stream(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top
 
     provider = _provider_settings()
     if provider:
+        if max_tokens == MAX_TOKENS:
+            max_tokens = 1024  # 雲端思考模型需要推理預算，默認 512 不夠
         try:
             request_session = session or create_session()
             own_session = session is None

@@ -34,7 +34,13 @@ class Agent:
         self.current_language = "en"
         
         if SKILLS_AVAILABLE:
+            # 打包 onefile 時 __file__ 位於 _MEI/core，捆綁技能可能不在那裡；
+            # 安裝目錄旁的 skills/（由 installer 鋪設）優先使用
             skills_dir = os.path.join(os.path.dirname(__file__), "skills")
+            if getattr(sys, "frozen", False):
+                exe_skills = os.path.join(os.path.dirname(sys.executable), "skills")
+                if os.path.isdir(exe_skills) and os.listdir(exe_skills):
+                    skills_dir = exe_skills
             self.skills_manager = SkillsManager(skills_dir)
             self.language_adapter = LanguageAdapter()
     

@@ -703,6 +703,14 @@ class ThinkingEngine:
                                 continue
                             cleaned = self._clean_and_humanize_reply(body)
                             if cleaned:
+                                cleaned, skill_calls = self._extract_skill_calls(cleaned)
+                                for skill_name, _ in skill_calls:
+                                    logger.info(f"Streaming skill call (hidden from chat): {skill_name}")
+                                    if self.on_response:
+                                        self.on_response({"type": "internal_thought",
+                                                          "thought": f"[Skill] 調用技能 {skill_name}",
+                                                          "thought_type": "skill"})
+                            if cleaned:
                                 cleaned = self._hallucination_check(cleaned, user_text)
                                 logger.info(f"Streaming sentence: {cleaned[:50]}...")
                                 if self.on_response:
@@ -725,6 +733,13 @@ class ThinkingEngine:
                         self.on_response({"type": "internal_thought", "thought": body.strip(), "thought_type": "internal"})
                 else:
                     cleaned = self._clean_and_humanize_reply(body)
+                    if cleaned and cleaned not in sent_sentences:
+                        cleaned, skill_calls = self._extract_skill_calls(cleaned)
+                        for skill_name, _ in skill_calls:
+                            if self.on_response:
+                                self.on_response({"type": "internal_thought",
+                                                  "thought": f"[Skill] 調用技能 {skill_name}",
+                                                  "thought_type": "skill"})
                     if cleaned and cleaned not in sent_sentences:
                         cleaned = self._hallucination_check(cleaned, user_text)
                         sent_sentences.append(cleaned)
@@ -777,6 +792,11 @@ class ThinkingEngine:
                             sent_sentences.append(sentence)
                             cleaned_sentence = self._clean_and_humanize_reply(sentence)
                             if cleaned_sentence:
+                                # 含技能調用 JSON 的句子已在流式階段處理（JSON 隱藏、命令已執行），
+                                # 這裡不再重複發送
+                                cleaned_sentence, _post_calls = self._extract_skill_calls(cleaned_sentence)
+                                if _post_calls and not cleaned_sentence:
+                                    continue
                                 logger.info(f"Command result sentence: {cleaned_sentence[:50]}...")
                                 if self.on_response:
                                     self.on_response({"type": "chat_response", "reply": cleaned_sentence})
@@ -1136,6 +1156,37 @@ class ThinkingEngine:
                 st["pending"] = st["pending"][idx + len(OPEN_TAG):]
                 st["in_think"] = True
         return out
+
+    @staticmethod
+    def _extract_skill_calls(text):
+        """從文本中提取 {"skill": "...", "input": ...} 調用塊。
+
+        返回 (純對話文本, [(skill_name, input), ...])。
+        流式輸出時模型常把調用 JSON 直接混在句子裡（如「好的～{...}」），
+        JSON 不該展示給用戶，改由技能執行區塊呈現。
+        """
+        if not text or '"skill"' not in text:
+            return text, []
+        decoder = json.JSONDecoder()
+        spans, calls = [], []
+        for match in re.finditer(r'\{', text):
+            start = match.start()
+            # 已被更大的命中跨度覆蓋就跳過
+            if any(s <= start < e for s, e in spans):
+                continue
+            try:
+                obj, end = decoder.raw_decode(text[start:])
+            except Exception:
+                continue
+            if isinstance(obj, dict) and obj.get("skill"):
+                spans.append((start, start + end))
+                calls.append((str(obj.get("skill")), obj.get("input", {})))
+        if not calls:
+            return text, []
+        visible = text
+        for start, end in sorted(spans, reverse=True):
+            visible = visible[:start] + visible[end:]
+        return visible.strip(" \t\r\n，,。.；;、"), calls
 
     @staticmethod
     def _drain_think_event(st, callback):

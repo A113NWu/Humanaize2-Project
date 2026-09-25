@@ -59,6 +59,26 @@ except ModuleNotFoundError:
 # llama-server 實際加載的模型名緩存（狀態頁輪詢用；llama-server 掛掉時 60s 內沿用）
 _LLAMA_MODEL_CACHE = {"name": "", "ts": 0.0}
 
+# 運行時技能清單緩存（Agent 初始化較重，全進程只構造一次）
+_SKILLS_PROMPT_CACHE = {"text": None}
+
+
+def _get_skills_prompt_cached() -> str:
+    """獲取當前實際可用技能的說明文本（繁中），失敗返回空串。"""
+    if _SKILLS_PROMPT_CACHE["text"] is not None:
+        return _SKILLS_PROMPT_CACHE["text"]
+    text = ""
+    try:
+        from Agent import Agent
+        agent = Agent("!")
+        if agent.skills_manager:
+            text = (agent.get_skills_prompt("zh-TW") or "").strip()
+    except Exception as e:
+        logger.warning(f"[Chat] failed to build skills prompt: {e}")
+        text = ""
+    _SKILLS_PROMPT_CACHE["text"] = text
+    return text
+
 # 延迟导入llm模块，避免循环依赖
 _generate_with_emotion_feedback = None
 _generate_with_emotion_feedback_stream = None
@@ -236,6 +256,12 @@ class ResponseCollector:
             self._queue.put({"type": "thought", "content": thought, "thought_type": thought_type})
         elif response.get("type") == "gan_complete":
             pass
+        elif response.get("type") == "command_start":
+            self._last_chunk_time = time.time()
+            self._queue.put({"type": "command_start", "message": response.get("message", "")})
+        elif response.get("type") == "command_result":
+            self._last_chunk_time = time.time()
+            self._queue.put({"type": "command_result", "output": response.get("output", "")})
         elif response.get("type") == "error":
             self._queue.put({"type": "error", "content": response.get("error", "")})
             self._finished = True
@@ -726,6 +752,11 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         _agent_prompt_text = (load_agent_prompt() or "").strip()
         if _agent_prompt_text:
             system_block_parts.append(_agent_prompt_text)
+        # 運行時實際可用的技能清單（安裝目錄 skills/ 下已啟用的技能），
+        # 讓模型知道「什麼時候該用、具體叫什麼名字」，而不是只記得 JSON 格式
+        _skills_text = _get_skills_prompt_cached()
+        if _skills_text:
+            system_block_parts.append(_skills_text)
         if context:
             system_block_parts.append(context)
         full_prompt = build_prompt_from_messages(messages, "\n\n".join(system_block_parts))
@@ -943,6 +974,32 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                     except BrokenPipeError:
                         pass
                         
+                elif chunk["type"] in ("command_start", "command_result"):
+                    # 技能執行事件：前端渲染成終端風格區塊，不混入回覆正文
+                    cmd_chunk = {
+                        "id": chat_id,
+                        "object": "chat.completion.chunk",
+                        "created": created,
+                        "model": "thinking-engine",
+                        "thought": True,
+                        "thought_type": "skill",
+                        "command_event": chunk["type"],
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {
+                                    "content": chunk.get("message") or chunk.get("output") or ""
+                                },
+                                "finish_reason": None
+                            }
+                        ]
+                    }
+                    try:
+                        self.wfile.write(f"data: {json.dumps(cmd_chunk, ensure_ascii=False)}\n\n".encode('utf-8'))
+                        self.wfile.flush()
+                    except BrokenPipeError:
+                        pass
+
                 elif chunk["type"] == "error":
                     # 发送错误消息
                     error_content = f"错误: {chunk['content']}"
