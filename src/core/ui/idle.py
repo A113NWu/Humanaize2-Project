@@ -55,7 +55,8 @@ class IdleEngine:
         self.optimizer.record_skill_execution(skill_name, success)
 
     def _gan_callback(self, response):
-        """转发GAN的进度回调"""
+        """转发GAN的进度回调。注意：思考內容不做敏感詞過濾（Aize 內部思考保留），
+        過濾僅作用於對外發送的社交內容。"""
         if self.callback:
             self.callback(response)
 
@@ -145,6 +146,9 @@ class IdleEngine:
                         "type": "internal_thought",
                         "thought": f"[Idle Activity] Aize wants to talk to user: {thinking_topic}"
                     })
+            elif "社交" in activity or "social" in activity.lower():
+                # Aize 選擇去社交平台逛逛/發動態
+                self._do_social_activity(thinking_topic)
             else:
                 # Other activities, just log
                 if self.callback:
@@ -234,6 +238,97 @@ class IdleEngine:
     def get_optimization_prompt(self) -> str:
         """Get prompt for AI to create new optimizations"""
         return self.optimizer.generate_optimization_prompt()
+
+    def _do_social_activity(self, plan: str = ""):
+        """閒時社交活動：選擇已配置的社交平台發一條動態（內容經過濾器）。
+
+        平台選擇策略：從「已配置且可用」的平台中挑選（目前支持 Misskey；
+        日後新增平台只需在 _available_social_platforms 註冊即可）。
+        """
+        from llm import chat
+        from core.data.prompts_manager import load_prompt
+        try:
+            from core.tools import content_filter
+        except ImportError:
+            from tools import content_filter
+
+        def _thought(msg):
+            if self.callback:
+                self.callback({"type": "internal_thought", "thought": msg})
+
+        platforms = self._available_social_platforms()
+        if not platforms:
+            _thought("[Social] 想去社交网站逛逛，但还没有配置任何平台（可先用 misskey-bot 技能 configure）")
+            return
+
+        platform = platforms[0]
+        _thought(f"[Social] Aize 选择去 {platform['label']} 发动态" + (f"：{plan}" if plan else ""))
+
+        context = ""
+        if self.memory is not None:
+            try:
+                recent = [m for m in self.memory[-6:] if isinstance(m, dict)]
+                if recent:
+                    context = "最近的对话上下文：\n" + "\n".join(
+                        f"- {m.get('role','?')}: {str(m.get('content',''))[:80]}" for m in recent)
+            except Exception:
+                pass
+
+        prompt = load_prompt("social_post")
+        prompt = prompt.replace("{platforms}", platform["label"]).replace("{context}", context)
+        try:
+            text = chat(prompt, max_tokens=256).strip().strip('"“”')
+        except Exception as e:
+            _thought(f"[Social] 生成动态内容失败: {e}")
+            return
+
+        # 發佈前過濾：命中敏感詞直接放棄本次發佈（不清洗後發，避免語義被改）
+        ok, hits = content_filter.check(text)
+        if not ok:
+            _thought(f"[Social] 动态被过滤器拦截（{len(hits)} 个敏感词），本次不发布")
+            return
+
+        try:
+            result = platform["post"](text)
+        except Exception as e:
+            _thought(f"[Social] 发布失败: {e}")
+            return
+        if result.get("success"):
+            _thought(f"[Social] 已在 {platform['label']} 发布动态：{text[:60]}… ({result.get('url', '')})")
+        else:
+            _thought(f"[Social] 发布被平台拒绝：{result.get('error')}")
+
+    @staticmethod
+    def _available_social_platforms():
+        """已配置可用的社交平台列表（可寫入的才會列入）。"""
+        platforms = []
+        try:
+            import importlib
+            mod = importlib.import_module("skills.misskey-bot")
+        except Exception:
+            try:
+                import importlib.util, os as _os
+                init = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))),
+                                     "skills", "misskey-bot", "__init__.py")
+                if _os.path.exists(init):
+                    spec = importlib.util.spec_from_file_location("skills_misskey_bot", init)
+                    mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
+                else:
+                    mod = None
+            except Exception:
+                mod = None
+        if mod is not None:
+            try:
+                bot = mod._get_bot()
+                if bot.config.get("token"):
+                    platforms.append({
+                        "label": f"Misskey（{bot.config.get('host')}）",
+                        "post": bot.post,
+                    })
+            except Exception:
+                pass
+        return platforms
 
     def queue_user_chat(self, prompt, memory):
         if self.is_running_gan:

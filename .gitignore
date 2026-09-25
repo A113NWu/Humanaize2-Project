@@ -93,5 +93,10 @@ data/cmd_config.json
 src/core/data/gan_results.json
 src/core/utils/data/last_update_check.json
 
+# Social bot credentials/state and user-maintained sensitive word list
+skills/misskey-bot/config.json
+skills/misskey-bot/state.json
+data/sensitive_words.txt
+
 # Test outputs
 build_log_*.txt

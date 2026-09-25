@@ -58,6 +58,7 @@ PROMPT_FILES = {
     "solve_task_execution": "solve_task_execution.txt",
     "solve_summary": "solve_summary.txt",
     "idle_activity_choice": "idle_activity_choice.txt",
+    "social_post": "social_post.txt",
     # GAN 相关
     "gan_decide": "gan_decide.txt",
     "gan_topic": "gan_topic.txt",
