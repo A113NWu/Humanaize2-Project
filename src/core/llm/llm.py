@@ -234,6 +234,8 @@ def create_session():
     adapter = HTTPAdapter(max_retries=RETRY_STRATEGY)
     session.mount("http://", adapter)
     session.mount("https://", adapter)
+    # 雲端 API 調用不應經過本機代理（如 ICUBE_PROXY_HOST）
+    session.trust_env = False
     return session
 
 def chat(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top_p=TOP_P, session=None, stop_event=None, timeout=600, max_retries=3, system: str = None):
