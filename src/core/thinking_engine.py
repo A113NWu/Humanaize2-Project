@@ -128,11 +128,12 @@ class ThinkingEngine:
         """Synchronous version of should_answer_user for internal use"""
         from llm import chat
 
-        decision_prompt = load_should_answer_user_prompt(user_text)
+        # 規則走 system 角色，用戶原話走 user 角色（避免被模型當成注入文本）
+        decision_system = load_should_answer_user_prompt("")
 
         try:
             logger.info(f"Calling LLM for should_answer decision (text: {user_text[:50] if user_text else 'None'})")
-            response = chat(decision_prompt, max_tokens=400, temperature=0.3, timeout=60, max_retries=0).strip()
+            response = chat(user_text, max_tokens=400, temperature=0.3, timeout=60, max_retries=0, system=decision_system).strip()
             logger.info(f"should_answer LLM response: {response[:100] if response else 'Empty'}")
             decision = self._parse_json_decision(response)
             should_answer = decision.get("decision") == "answer"
@@ -148,14 +149,14 @@ class ThinkingEngine:
             return (True, f"Error: {e} (defaulting to answer)")
     
     def _should_use_gan_sync(self, user_text, context=""):
-        """Synchronous version of should_use_gan_for_answer for internal use"""
+        """Synchronous version of should_use_gan_for_answer"""
         from llm import chat
 
-        decision_prompt = load_should_use_gan_prompt(user_text, context)
+        decision_system = load_should_use_gan_prompt("", context)
 
         try:
             logger.info(f"Calling LLM for GAN decision (text: {user_text[:50] if user_text else 'None'})")
-            response = chat(decision_prompt, max_tokens=400, temperature=0.3, timeout=60, max_retries=0).strip()
+            response = chat(user_text, max_tokens=400, temperature=0.3, timeout=60, max_retries=0, system=decision_system).strip()
             logger.info(f"GAN decision LLM response: {response[:100] if response else 'Empty'}")
             decision = self._parse_json_decision(response)
             should_use_gan = bool(decision.get("use_gan")) if decision else ("是" in response or "YES" in response.upper())
@@ -169,9 +170,9 @@ class ThinkingEngine:
         from llm import chat
 
         try:
-            decision_prompt = load_should_use_solve_prompt(user_text)
+            decision_system = load_should_use_solve_prompt("")
             logger.info(f"Calling LLM for Solve decision (text: {user_text[:50] if user_text else 'None'})")
-            response = chat(decision_prompt, max_tokens=400, temperature=0.3, timeout=60, max_retries=0).strip()
+            response = chat(user_text, max_tokens=400, temperature=0.3, timeout=60, max_retries=0, system=decision_system).strip()
             decision = self._parse_json_decision(response)
             should_use_solve = bool(decision.get("use_solve")) if decision else False
             logger.info(

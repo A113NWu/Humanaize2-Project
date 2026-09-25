@@ -144,14 +144,65 @@ def _ensure_templated(prompt: str) -> str:
     return render_chat_messages([{"role": "user", "content": prompt}])
 
 
-def _openai_chat(prompt, provider, max_tokens, temperature, top_p, session, timeout):
+def _render_local_prompt(prompt: str, system: str = None) -> str:
+    """本地 llama-server 使用的 prompt 字符串。
+
+    system 非空時渲染成獨立的 system 輪（ChatML/Gemma/legacy 各自合規），
+    讓指令以「系統指令」而非「用戶說的話」送達，避免模型把規則當成
+    提示詞注入或用戶內容。
+    """
+    if system:
+        return render_chat_messages(
+            [{"role": "user", "content": prompt}],
+            system_prompt=system,
+        )
+    return _ensure_templated(prompt)
+
+
+_CHATML_SEGMENT_RE = re.compile(r"<\|im_start\|>\s*(system|user|assistant)\s*\n(.*?)<\|im_end\|>", re.S)
+_GEMMA_SEGMENT_RE = re.compile(r"<start_of_turn>(user|model)\s*\n(.*?)<end_of_turn>", re.S)
+
+
+def _to_openai_messages(prompt: str, system: str = None) -> list:
+    """構造 OpenAI 風格 messages，系統指令一律走 role=system。
+
+    - prompt 已是 ChatML/Gemma 渲染文本（API 層組裝好的完整對話）時，
+      反向解析成結構化 messages——否則 <|im_start|>system 段會被雲端
+      模型當成 user 文本，進而懷疑是提示詞注入；
+    - system 參數用於決策類調用：指令進 system，用戶原話進 user；
+    - 其餘情況單條 user 消息。
+    """
+    messages = []
+    if system and str(system).strip():
+        messages.append({"role": "system", "content": str(system).strip()})
+
+    text = (prompt or "").lstrip()
+    if text.startswith("<|im_start|>"):
+        parsed = _CHATML_SEGMENT_RE.findall(text)
+        if parsed:
+            for role, content in parsed:
+                messages.append({"role": role, "content": content.strip()})
+            return messages
+    elif text.startswith("<start_of_turn>"):
+        parsed = _GEMMA_SEGMENT_RE.findall(text)
+        if parsed:
+            for role, content in parsed:
+                messages.append({"role": "assistant" if role == "model" else "user",
+                                 "content": content.strip()})
+            return messages
+
+    messages.append({"role": "user", "content": prompt})
+    return messages
+
+
+def _openai_chat(prompt, provider, max_tokens, temperature, top_p, session, timeout, system=None):
     request_session = session or create_session()
     own_session = session is None
     try:
         response = request_session.post(
             f"{provider['base_url']}/chat/completions",
             headers={"Authorization": f"Bearer {provider['api_key']}", "Content-Type": "application/json"},
-            json={"model": provider["model"], "messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens, "temperature": temperature, "top_p": top_p},
+            json={"model": provider["model"], "messages": _to_openai_messages(prompt, system), "max_tokens": max_tokens, "temperature": temperature, "top_p": top_p},
             timeout=timeout,
         )
         try:
@@ -185,24 +236,26 @@ def create_session():
     session.mount("https://", adapter)
     return session
 
-def chat(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top_p=TOP_P, session=None, stop_event=None, timeout=600, max_retries=3):
+def chat(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top_p=TOP_P, session=None, stop_event=None, timeout=600, max_retries=3, system: str = None):
+    """發送HTTP請求到本機llama-server，取得回答。
+
+    system 非空時以獨立 system 角色發送（雲端 role=system；本地 system 輪），
+    避免指令被模型當成用戶文本/提示詞注入。
+    """
     provider = _provider_settings()
-    logger.info(f"Provider: {provider}")   # 如果 provider 非 None，它会走 OpenAI 分支
+    logger.info(f"Provider: {provider}")
     # 雲端思考模型（MiniMax-M3/R1）512 token 常被推理吃光導致正文為空；
     # 僅提升「默認預算」的調用，顯式傳值的決策類調用（如 400）保持不變
     if provider and max_tokens == MAX_TOKENS:
         max_tokens = 1024
-    """
-    發送HTTP請求到本機llama-server，取得回答
-    """
+
     if stop_event is not None and stop_event.is_set():
         logger.info("LLM request aborted by stop event")
         return "[llm aborted]"
 
-    provider = _provider_settings()
     if provider:
         try:
-            return _openai_chat(prompt, provider, max_tokens, temperature, top_p, session, timeout)
+            return _openai_chat(prompt, provider, max_tokens, temperature, top_p, session, timeout, system)
         except Exception as error:
             logger.error("OpenAI request failed: %s", error, exc_info=True)
             return f"[llm error] OpenAI request failed: {error}"
@@ -221,7 +274,7 @@ def chat(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top_p=TOP_
     delay = 5
 
     local_server_url = _local_server_url()
-    prompt = _ensure_templated(prompt)
+    prompt = _render_local_prompt(prompt, system)
     prompt = _fit_local_prompt(prompt, max_tokens)
     logger.debug(f"Sending LLM request with prompt length: {len(prompt)}, max_tokens: {max_tokens}, url: {local_server_url}")
 
@@ -330,7 +383,7 @@ def chat(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top_p=TOP_
                 request_session.close()
 
 
-def chat_stream(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top_p=TOP_P, session=None, stop_event=None):
+def chat_stream(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top_p=TOP_P, session=None, stop_event=None, system: str = None):
     """
     流式发送HTTP請求到本機llama-server，逐token返回回答
     """
@@ -349,7 +402,7 @@ def chat_stream(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top
             response = request_session.post(
                 f"{provider['base_url']}/chat/completions",
                 headers={"Authorization": f"Bearer {provider['api_key']}", "Content-Type": "application/json"},
-                json={"model": provider["model"], "messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens, "temperature": temperature, "top_p": top_p, "stream": True},
+                json={"model": provider["model"], "messages": _to_openai_messages(prompt, system), "max_tokens": max_tokens, "temperature": temperature, "top_p": top_p, "stream": True},
                 timeout=300,
                 stream=True,
             )
@@ -375,7 +428,7 @@ def chat_stream(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top
 
     try:
         max_tokens = _local_output_budget(max_tokens)
-        prompt = _ensure_templated(prompt)
+        prompt = _render_local_prompt(prompt, system)
         prompt = _fit_local_prompt(prompt, max_tokens)
         local_server_url = _local_server_url()
         logger.debug(f"Sending streaming LLM request with prompt length: {len(prompt)}")

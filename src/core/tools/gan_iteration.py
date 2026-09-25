@@ -86,15 +86,16 @@ class GANIteration:
         """Check if debate should stop"""
         return self._stop_flag or self._stop_event.is_set()
     
-    def _safe_call(self, prompt: str, max_tokens: int = 200, temperature: float = 0.7, timeout: int = None) -> str:
+    def _safe_call(self, prompt: str, max_tokens: int = 200, temperature: float = 0.7, timeout: int = None, system: str = None) -> str:
         """
         Safe LLM call with stop check
 
         Args:
-            prompt: The prompt to send
+            prompt: The prompt to send（用戶消息內容）
             max_tokens: Maximum tokens to generate
             temperature: Creativity level (0.0-1.0)
             timeout: Optional read timeout override (seconds)
+            system: 可選系統指令，以獨立 system 角色發送
 
         Returns:
             LLM response or empty string if stopped
@@ -105,6 +106,8 @@ class GANIteration:
         kwargs = {}
         if timeout:
             kwargs["timeout"] = timeout
+        if system:
+            kwargs["system"] = system
         result = chat(
             prompt,
             session=self._session,
@@ -171,13 +174,14 @@ class GANIteration:
             remaining = int(cls._decision_skip_until - now)
             return False, f"GAN decision skipped (circuit breaker, {remaining}s left): answering directly"
 
-        # 是否進行 GAN 思考完全由 AI（LLM）依 prompt 判定，
-        # 不再使用文本長度/標點之類的系統啟發式規則替 AI 做決定。
-        decision_prompt = load_gan_decide_prompt(user_text)
+        # 是否進行 GAN 思考完全由 AI（LLM）依 system 指令判定。
+        # 決策規則以 system 角色送達（雲端 role=system、本地 ChatML system 輪），
+        # 用戶原話獨立走 user 角色——否則模型容易把規則誤認為提示詞注入。
+        decision_system = load_gan_decide_prompt("")
 
         reply = self._safe_call(
-            decision_prompt, max_tokens=400, temperature=0.3,
-            timeout=cls._DECISION_TIMEOUT
+            user_text, max_tokens=400, temperature=0.3,
+            timeout=cls._DECISION_TIMEOUT, system=decision_system
         )
 
         if not reply:
