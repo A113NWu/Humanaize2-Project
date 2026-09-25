@@ -278,29 +278,44 @@ class Agent:
     def _run_shell(self, cmd):
         """执行Shell命令"""
         logger.info(f"Executing shell command: {cmd}")
-        
+
         try:
-            # 使用subprocess执行命令
+            # 使用subprocess执行命令（text=False，自行按系統編碼解碼避免亂碼）
             proc = subprocess.run(
-                cmd, 
-                shell=True, 
-                capture_output=True, 
-                text=True, 
+                cmd,
+                shell=True,
+                capture_output=True,
                 timeout=30,
                 executable='/bin/bash' if os.name != 'nt' else None
             )
-            
-            # 合并stdout和stderr
-            out = (proc.stdout or "") + (proc.stderr or "")
+
+            def _dec(raw: bytes) -> str:
+                if not raw:
+                    return ""
+                import locale
+                for enc in (locale.getpreferredencoding(False), "utf-8", "gbk", "cp950", "cp936"):
+                    if not enc:
+                        continue
+                    try:
+                        t = raw.decode(enc)
+                        if "\ufffd" not in t:
+                            return t
+                    except Exception:
+                        continue
+                return raw.decode("utf-8", errors="replace")
+
+            stdout = _dec(proc.stdout)
+            stderr = _dec(proc.stderr)
+            out = (stdout or "") + (stderr or "")
             result = out.strip()
-            
+
             logger.info(f"Command output: {result[:500] if result else 'Empty'}")
-            
+
             if proc.returncode != 0:
                 logger.warning(f"Command returned non-zero exit code: {proc.returncode}")
-            
+
             return result
-            
+
         except subprocess.TimeoutExpired:
             logger.error(f"Command timeout: {cmd}")
             return f"Command timeout after 30 seconds"
@@ -529,8 +544,9 @@ class Agent:
                 if not cmd:
                     logger.warning("Empty shell command")
                     continue
+                logger.info(f"[Agent] Shell command: {cmd}")
                 output = self._run_shell(cmd)
-                outputs.append(output)
+                outputs.append(f"$ {cmd}\n{output}".rstrip())
             elif action_type == "skill":
                 skill_name = action.get("name", "")
                 input_data = action.get("input")
@@ -555,6 +571,9 @@ class Agent:
                 else:
                     # 其他技能返回JSON格式
                     outputs.append(json.dumps(result, ensure_ascii=False, indent=2))
+        
+        if not outputs:
+            return ""
         
         final_output = "\n---\n".join(outputs).strip()
         logger.info(f"Agent final output: {final_output[:500] if final_output else 'Empty'}")

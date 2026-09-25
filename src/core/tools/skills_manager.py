@@ -597,17 +597,44 @@ class SkillsManager:
         
         try:
             import subprocess
-            kwargs = {"shell": True, "capture_output": True, "text": True, "timeout": 30}
+            kwargs = {"shell": True, "capture_output": True, "timeout": 30}
             if cwd:
                 kwargs["cwd"] = cwd
-            
+
             result = subprocess.run(cmd, **kwargs)
-            output = (result.stdout or "") + (result.stderr or "")
-            
+
+            def _dec(raw: bytes) -> str:
+                if not raw:
+                    return ""
+                import locale
+                for enc in (locale.getpreferredencoding(False), "utf-8", "gbk", "cp950", "cp936"):
+                    if not enc:
+                        continue
+                    try:
+                        t = raw.decode(enc)
+                        if "\ufffd" not in t:
+                            return t
+                    except Exception:
+                        continue
+                return raw.decode("utf-8", errors="replace")
+
+            stdout = _dec(result.stdout)
+            stderr = _dec(result.stderr)
+            output = (stdout or "") + (stderr or "")
+
+            logger.info(f"[SkillsManager] Shell command executed: {cmd} | returncode={result.returncode}")
+            logger.info(f"[SkillsManager] Shell stdout: {stdout[:500]}")
+            if stderr:
+                logger.info(f"[SkillsManager] Shell stderr: {stderr[:500]}")
+
             return {
-                "status": "success",
+                "status": "success" if result.returncode == 0 else "error",
+                "success": result.returncode == 0,
                 "output": output.strip(),
-                "return_code": result.returncode
+                "stdout": stdout,
+                "stderr": stderr,
+                "returncode": result.returncode,
+                "command": cmd,
             }
         except Exception as e:
             return {"error": str(e)}
