@@ -1206,14 +1206,20 @@ class ThinkingEngine:
 
         角色提示詞要求模型先 THOUGHT 後 RESPONSE，而流式路徑逐句即時發送，
         若不攔截，THOUGHT 段會以正文形式洩漏到聊天區。
+
+        分句器可能把「前段殘留 + 換行 + RESPONSE: 正文」切成同一塊
+        （語氣詞「～」後換行不一定觸發分句），因此不能只在句首找標記，
+        要在整句中找最後一個有效標記，取其後內容歸入對應段。
         """
         text = str(sentence or "")
-        match = re.match(r"(?i)^\s*THOUGHT\s*[:：]\s*(.*)$", text, re.S)
-        if match:
-            return False, match.group(1)
-        match = re.match(r"(?i)^\s*RESPONSE\s*[:：]\s*(.*)$", text, re.S)
-        if match:
-            return True, match.group(1)
+        # 優先匹配行首標記；找不到再放寬到行內（覆蓋黏句場景）
+        marks = list(re.finditer(r"(?im)^\s*(THOUGHT|RESPONSE)\s*[:：]\s*", text))
+        if not marks:
+            marks = list(re.finditer(r"(?i)(THOUGHT|RESPONSE)\s*[:：]\s*", text))
+        if marks:
+            last_mark = marks[-1]
+            is_response = last_mark.group(1).upper() == "RESPONSE"
+            return is_response, text[last_mark.end():]
         return in_response_section, text
 
     def _clean_and_humanize_reply(self, reply):
