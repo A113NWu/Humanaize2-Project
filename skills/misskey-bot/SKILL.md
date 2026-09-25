@@ -15,6 +15,7 @@ metadata:
 - `set_bot` 調用 `i/update` 把賬號標註為機器人（isBot=true）
 - `post` 發文（notes/create，可設 visibility）
 - `reply` 回覆指定帖子
+- `react` 點讚/加反應（notes/reactions/create）
 - `mentions` 讀取提及通知
 - `timeline` 讀取本地/首頁時間線
 - `status` 查看配置與連線狀態

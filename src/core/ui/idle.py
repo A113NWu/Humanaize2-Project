@@ -240,7 +240,7 @@ class IdleEngine:
         return self.optimizer.generate_optimization_prompt()
 
     def _do_social_activity(self, plan: str = ""):
-        """閒時社交活動：選擇已配置的社交平台發一條動態（內容經過濾器）。
+        """閒時社交活動：瀏覽時間線、回覆提及、點讚、發動態（內容經過濾器）。
 
         平台選擇策略：從「已配置且可用」的平台中挑選（目前支持 Misskey；
         日後新增平台只需在 _available_social_platforms 註冊即可）。
@@ -262,8 +262,45 @@ class IdleEngine:
             return
 
         platform = platforms[0]
-        _thought(f"[Social] Aize 选择去 {platform['label']} 发动态" + (f"：{plan}" if plan else ""))
+        bot = platform["bot"]
+        _thought(f"[Social] Aize 选择去 {platform['label']} 逛逛" + (f"：{plan}" if plan else ""))
 
+        # 1. 瀏覽時間線，挑幾條有趣的
+        try:
+            tl = bot.timeline("local", limit=5)
+            if tl.get("success") and tl.get("notes"):
+                _thought(f"[Social] 刷了刷时间线，看到 {len(tl['notes'])} 条动态")
+                # 挑一條點讚（隨機或第一條）
+                note = tl["notes"][0]
+                if note.get("id"):
+                    r = bot.react(note["id"], "👍")
+                    if r.get("success"):
+                        _thought(f"[Social] 给 @{note.get('user','?')} 的动态点了赞")
+                    else:
+                        _thought(f"[Social] 点赞失败：{r.get('error')}")
+        except Exception as e:
+            _thought(f"[Social] 浏览时间线出错：{e}")
+
+        # 2. 回覆提及（如果有）
+        try:
+            mentions = bot.mentions(limit=3)
+            if mentions.get("success") and mentions.get("mentions"):
+                _thought(f"[Social] 看到 {len(mentions['mentions'])} 条提及")
+                for m in mentions["mentions"][:1]:  # 只回覆最新一條
+                    reply_text = f"@{m['user']} 谢谢你的回复！我在的～"
+                    ok, _ = content_filter.check(reply_text)
+                    if not ok:
+                        _thought("[Social] 回复内容被过滤，跳过")
+                        continue
+                    r = bot.post(reply_text, reply_id=m["id"])
+                    if r.get("success"):
+                        _thought(f"[Social] 回复了 @{m['user']}：{reply_text[:40]}…")
+                    else:
+                        _thought(f"[Social] 回复失败：{r.get('error')}")
+        except Exception as e:
+            _thought(f"[Social] 处理提及出错：{e}")
+
+        # 3. 發一條新動態
         context = ""
         if self.memory is not None:
             try:
@@ -282,7 +319,6 @@ class IdleEngine:
             _thought(f"[Social] 生成动态内容失败: {e}")
             return
 
-        # 發佈前過濾：命中敏感詞直接放棄本次發佈（不清洗後發，避免語義被改）
         ok, hits = content_filter.check(text)
         if not ok:
             _thought(f"[Social] 动态被过滤器拦截（{len(hits)} 个敏感词），本次不发布")
@@ -325,6 +361,7 @@ class IdleEngine:
                     platforms.append({
                         "label": f"Misskey（{bot.config.get('host')}）",
                         "post": bot.post,
+                        "bot": bot,
                     })
             except Exception:
                 pass

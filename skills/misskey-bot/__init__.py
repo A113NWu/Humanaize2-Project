@@ -198,6 +198,18 @@ class MisskeyBot:
                     "url": f"https://{self.config.get('host')}/notes/{note.get('id')}" if note.get("id") else None}
         return {"success": False, "error": res.get("error")}
 
+    # ---------- 點讚 / 反應 ----------
+    def react(self, note_id: str, reaction: str = "👍") -> Dict:
+        """給帖子點讚/加反應。note_id 必填，reaction 預設 👍"""
+        if not self.config.get("token"):
+            return {"success": False, "error": "未配置 token"}
+        if not note_id:
+            return {"success": False, "error": "缺少 note_id"}
+        res = self._api("notes/reactions/create", {"noteId": note_id, "reaction": reaction})
+        if res.get("ok"):
+            return {"success": True, "note_id": note_id, "reaction": reaction}
+        return {"success": False, "error": res.get("error")}
+
     # ---------- 提及 / 時間線 ----------
     def mentions(self, limit: int = 10) -> Dict:
         if not self.config.get("token"):
@@ -270,4 +282,6 @@ def execute(input_data: Any) -> Dict:
         return bot.mentions(params.get("limit", 10))
     if action == "timeline":
         return bot.timeline(params.get("kind", "local"), params.get("limit", 10))
+    if action == "react":
+        return bot.react(params.get("note_id", ""), params.get("reaction", "👍"))
     return {"success": False, "error": f"未知動作: {action}"}
