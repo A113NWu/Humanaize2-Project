@@ -3,6 +3,7 @@ import time
 import json
 import logging
 import os
+import re
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -116,6 +117,17 @@ def _provider_settings():
 # 各模板家族的 prompt 起始標記：帶標記的 prompt 視為已渲染，直接透傳
 _TEMPLATE_OPENERS = {"chatml": "<|im_start|>", "gemma": "<start_of_turn>"}
 
+_THINK_OPEN = re.escape(chr(60) + "think" + chr(62))
+_THINK_CLOSE = re.escape(chr(60) + "/think" + chr(62))
+
+
+def _strip_think_blocks(text: str) -> str:
+    """移除思考模型  推理塊（非流式決策調用專用；流式由引擎分流到思考區）"""
+    if not text:
+        return text
+    cleaned = re.sub(_THINK_OPEN + r".*?" + _THINK_CLOSE, "", text, flags=re.S)
+    return re.sub(_THINK_OPEN + r".*$", "", cleaned, flags=re.S).strip()
+
 
 def _ensure_templated(prompt: str) -> str:
     """把裸文本 prompt 按當前模型家族包上對話模板。
@@ -151,7 +163,8 @@ def _openai_chat(prompt, provider, max_tokens, temperature, top_p, session, time
                 f"HTTP error {status_code}: {response_body or 'provider returned an empty error response'}"
             ) from error
         data = response.json()
-        return data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        return _strip_think_blocks(content)
     finally:
         if own_session:
             request_session.close()
@@ -264,7 +277,7 @@ def chat(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top_p=TOP_
             else:
                 text = str(data)
 
-            result = text.strip()
+            result = _strip_think_blocks(text)
             logger.debug(f"LLM request successful, response length: {len(result)}")
             return result
 

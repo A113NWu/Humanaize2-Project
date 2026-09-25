@@ -191,6 +191,13 @@ class GANIteration:
         cls._decision_fail_streak = 0
         cls._decision_skip_until = 0.0
 
+        # 思考模型（MiniMax-M3/R1）會把推理放進  塊，決策只取最終答覆
+        _to = re.escape(chr(60) + "think" + chr(62))
+        _tc = re.escape(chr(60) + "/think" + chr(62))
+        reply = re.sub(_to + r".*?" + _tc, "", reply, flags=re.S).strip()
+        if not reply:
+            return False, "AI decision unclear (reasoning only), answering directly"
+
         # Parse decision
         is_yes = "yes" in reply.lower()[:10] or "是" in reply[:5]
         return is_yes, reply
