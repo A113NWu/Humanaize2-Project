@@ -418,6 +418,33 @@ class SkillsManager:
                 import shutil
                 shutil.rmtree(skill_dir)
     
+    def _platform_environment_block(self, language: str) -> str:
+        """運行環境說明：告訴模型當前操作系統與 shell，避免按 Linux 慣性下命令"""
+        import platform as _pf
+        is_windows = os.name == "nt"
+        if is_windows:
+            if language in ("zh", "zh-TW"):
+                return (
+                    "\n## 運行環境（重要）\n"
+                    "- 當前系統：Windows，shell 技能透過 **cmd.exe** 執行命令，"
+                    "不要使用 Linux 專屬路徑或命令。\n"
+                    "- 常用命令對照：列出檔案 `dir`（不是 ls）、查看檔案內容 `type`（不是 cat）、"
+                    "刪除檔案 `del`（不是 rm）、複製 `copy`（不是 cp）、移動/改名 `move`（不是 mv）、"
+                    "目前目錄 `cd`（無參數即顯示）、清屏 `cls`、主機名 `hostname`。\n"
+                    "- 路徑用反斜線或加引號，例如 `dir \"C:\\Program Files\"`。\n"
+                )
+            return (
+                "\n## Runtime Environment (important)\n"
+                "- OS: Windows; the shell skill runs commands via **cmd.exe**. "
+                "Do not use Linux-only commands or paths.\n"
+                "- Common mappings: dir (not ls), type (not cat), del (not rm), "
+                "copy (not cp), move (not mv), cls (not clear).\n"
+            )
+        sysname = _pf.system() or "Linux"
+        if language in ("zh", "zh-TW"):
+            return f"\n## 運行環境\n- 當前系統：{sysname}，shell 技能透過系統預設 shell 執行命令。\n"
+        return f"\n## Runtime Environment\n- OS: {sysname}; commands run via the system default shell.\n"
+
     def get_skills_prompt(self, language: str = "en") -> str:
         """Generate a prompt containing all enabled skills"""
         enabled_skills = self.get_enabled_skills()
@@ -432,11 +459,29 @@ class SkillsManager:
         }
 
         prompt = prompts.get(language, prompts["en"])
+        prompt += self._platform_environment_block(language)
 
         for skill in enabled_skills:
             prompt += f"- **{skill.name}**: {skill.description}\n"
 
-        prompt += "\n**To use a skill, output JSON like:** {\"skill\": \"skill-name\", \"input\": \"...\"}\n"
+        if language in ("zh", "zh-TW"):
+            prompt += (
+                "\n## 調用規則（必須嚴格遵守）\n"
+                "1. 要執行技能時，輸出且只輸出一行 JSON，格式："
+                "{\"skill\": \"技能名\", \"input\": {\"command\": \"具體命令\"}}。\n"
+                "2. **只有輸出 JSON、由系統真正執行後，命令才算執行。"
+                "嚴禁在回覆中假裝、描述或編造命令的執行過程與結果"
+                "（例如直接寫「執行成功，結果是…」而不輸出 JSON）。**\n"
+                "3. 一次只調用需要的技能；命令結果返回後再口頭總結給用戶。\n"
+                "4. 命令失敗時，如實把錯誤信息告訴用戶，並依上面的運行環境改用正確的平台命令重試。\n"
+            )
+        else:
+            prompt += (
+                "\n**To use a skill, output exactly one JSON line like:** "
+                "{\"skill\": \"skill-name\", \"input\": {\"command\": \"...\"}}\n"
+                "A command is executed ONLY when you output that JSON and the system runs it; "
+                "never pretend or fabricate execution output.\n"
+            )
 
         return prompt
     

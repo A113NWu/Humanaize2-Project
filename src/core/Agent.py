@@ -542,15 +542,16 @@ class Agent:
                 # 內置執行器 {"status":"success","output":...}，以及安裝目錄
                 # 技能 {"success":true,"stdout":...,"stderr":...,"returncode":0}
                 if skill_name == "shell" and isinstance(result, dict):
+                    cmd_text = result.get("command", "")
                     ok = result.get("status") == "success" or result.get("success") is True
                     if ok:
                         out = result.get("output")
                         if out in (None, ""):
                             out = result.get("stdout", "")
-                        outputs.append(str(out))
+                        outputs.append(f"$ {cmd_text}\n{out}".rstrip())
                     else:
                         err = result.get("error") or result.get("stderr") or "Unknown error"
-                        outputs.append(f"Error: {err}")
+                        outputs.append(f"$ {cmd_text}\n[命令失敗，返回碼 {result.get('returncode', '?')}] {err}".rstrip())
                 else:
                     # 其他技能返回JSON格式
                     outputs.append(json.dumps(result, ensure_ascii=False, indent=2))
