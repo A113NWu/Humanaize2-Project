@@ -669,6 +669,8 @@ class ThinkingEngine:
         current_buffer = ""
         sent_sentences = []
         reply_section = True  # False = THOUGHT 段（思考，不進聊天區）
+        # 思考模型（MiniMax-M3/R1）的  推理塊過濾狀態
+        think_state = {"in_think": False, "pending": "", "thought": ""}
         
         try:
             # 網頁/AstrBot 路徑已把系統提示+人設渲染成完整 ChatML prompt，
@@ -679,9 +681,13 @@ class ThinkingEngine:
                 model_prompt = self._build_response_prompt(exec_instr, prompt, memory, user_text)
             for token in generate_with_emotion_feedback_stream(model_prompt, emotion_monitor):
                 if token:
-                    full_reply += token
-                    current_buffer += token
-                    
+                    visible = self._filter_think_token(token, think_state)
+                    self._drain_think_event(think_state, self.on_response)
+                    if not visible:
+                        continue
+                    full_reply += visible
+                    current_buffer += visible
+
                     completed_sentences = self._extract_completed_sentences(current_buffer)
                     for sentence in completed_sentences:
                         sentence = sentence.strip()
@@ -702,8 +708,15 @@ class ThinkingEngine:
                                 if self.on_response:
                                     self.on_response({"type": "chat_response", "reply": cleaned})
                                 self._notify_stream_callbacks(cleaned, target_info)
-                            
+
                     current_buffer = self._get_remaining_buffer(current_buffer)
+
+            # 流結束：收尾思考塊緩衝，未被標籤吞掉的殘留文本併回正文
+            self._drain_think_event(think_state, self.on_response)
+            tail = think_state["pending"]
+            if tail and not think_state["in_think"] and not (tail.lstrip().startswith("<") and ">" not in tail):
+                current_buffer += tail
+            think_state["pending"] = ""
             
             if current_buffer.strip():
                 reply_section, body = self._split_thought_section(current_buffer.strip(), reply_section)
@@ -1085,6 +1098,57 @@ class ThinkingEngine:
         return get_break_silence_prompt(base_prompt)
     
     @staticmethod
+    def _filter_think_token(token, st):
+        """從 token 流中剝離  推理塊（MiniMax-M3/DeepSeek-R1 等思考模型）。
+
+        st 為跨 chunk 狀態字典：in_think（是否在推理塊內）、pending（半截
+        標籤緩衝）、thought（已收集推理文本）。返回可顯示增量文本；
+        完整的推理行通過 st 自帶 flush 由調用方取 st["thought"]。
+        """
+        OPEN_TAG, CLOSE_TAG = chr(60) + "think" + chr(62), chr(60) + "/think" + chr(62)
+        st["pending"] += token
+        out = ""
+        while True:
+            if st["in_think"]:
+                idx = st["pending"].find(CLOSE_TAG)
+                if idx < 0:
+                    # 保留末尾 7 字符，防止截斷閉合標籤
+                    keep = min(len(st["pending"]), len(CLOSE_TAG) - 1)
+                    st["thought"] += st["pending"][:len(st["pending"]) - keep]
+                    st["pending"] = st["pending"][len(st["pending"]) - keep:]
+                    break
+                st["thought"] += st["pending"][:idx]
+                st["pending"] = st["pending"][idx + len(CLOSE_TAG):]
+                st["in_think"] = False
+            else:
+                idx = st["pending"].find(OPEN_TAG)
+                if idx < 0:
+                    # 末尾若像半截開頭標籤（< 起頭），先壓住不發
+                    lt = st["pending"].rfind("<")
+                    if lt >= 0 and len(st["pending"]) - lt <= len(OPEN_TAG) - 1:
+                        out += st["pending"][:lt]
+                        st["pending"] = st["pending"][lt:]
+                    else:
+                        out += st["pending"]
+                        st["pending"] = ""
+                    break
+                out += st["pending"][:idx]
+                st["pending"] = st["pending"][idx + len(OPEN_TAG):]
+                st["in_think"] = True
+        return out
+
+    @staticmethod
+    def _drain_think_event(st, callback):
+        """把緩衝的推理文本按行發到思考區，返回剩餘未發部分。"""
+        text = st.get("thought", "")
+        if not text or not callback:
+            return
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        for ln in lines:
+            callback({"type": "internal_thought", "thought": ln, "thought_type": "internal"})
+        st["thought"] = ""
+
+    @staticmethod
     def _split_thought_section(sentence, in_response_section):
         """按 THOUGHT/RESPONSE 標籤切分流式句子，返回 (所在段, 去標籤文本)。
 
@@ -1111,6 +1175,12 @@ class ThinkingEngine:
 
         if not cleaned or cleaned.lower() in ['none', 'null', 'undefined', 'empty']:
             return None
+
+        # 移除思考模型（MiniMax-M3/R1）的推理塊，含未閉合的殘留
+        _think_open = re.escape(chr(60) + "think" + chr(62))
+        _think_close = re.escape(chr(60) + "/think" + chr(62))
+        cleaned = re.sub(_think_open + r".*?" + _think_close, "", cleaned, flags=re.S)
+        cleaned = re.sub(_think_open + r".*$", "", cleaned, flags=re.S)
 
         if re.match(r'(?i)^(command|instruction|next|execute|task|waiting|skill|json)\b', cleaned):
             return None
