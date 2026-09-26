@@ -15,9 +15,10 @@ metadata:
 - `set_bot` 調用 `i/update` 把賬號標註為機器人（isBot=true）
 - `post` 發文（notes/create，可設 visibility）
 - `reply` 回覆指定帖子
-- `react` 點讚/加反應（notes/reactions/create）
+- `react` 點讚/加反應（notes/reactions/create；自定義表情用 `:表情名:` 格式）
 - `mentions` 讀取提及通知
 - `timeline` 讀取本地/首頁時間線
+- `emojis` 獲取站點自定義表情列表（名稱/別名/分類，24h 緩存，force 可刷新）
 - `status` 查看配置與連線狀態
 
 所有發出內容（post/reply）一律經過 content_filter 過濾；命中敏感詞直接拒絕發送。

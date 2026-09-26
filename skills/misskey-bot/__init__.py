@@ -14,6 +14,7 @@
 import json
 import os
 import threading
+import time
 import importlib.util
 from typing import Any, Dict, List, Optional
 
@@ -21,6 +22,8 @@ import requests
 
 _CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
 _STATE_FILE = os.path.join(os.path.dirname(__file__), "state.json")
+_EMOJI_CACHE_FILE = os.path.join(os.path.dirname(__file__), "emoji_cache.json")
+_EMOJI_CACHE_TTL = 24 * 3600  # 站點自定義表情變動少，緩存一天
 _DEFAULT_HOST = "hub.imikufans.com"
 _DEFAULT_VISIBILITY = "home"  # 機器人默認不進公共時間線，降低騷擾風險
 _MAX_NOTE_LEN = 3000
@@ -243,6 +246,27 @@ class MisskeyBot:
             "createdAt": n.get("createdAt"),
         } for n in notes]}
 
+    # ---------- 站點表情 ----------
+    def emojis(self, limit: int = 120, force: bool = False) -> Dict:
+        """獲取站點自定義表情列表（名稱/別名/分類，供理解表情含義），帶 24h 文件緩存。"""
+        now = time.time()
+        cache = self._load_json(_EMOJI_CACHE_FILE, {"fetched_at": 0, "emojis": []})
+        items = cache.get("emojis") or []
+        if force or not items or now - cache.get("fetched_at", 0) > _EMOJI_CACHE_TTL:
+            res = self._api("emojis", {}, timeout=20)
+            if res.get("ok"):
+                raw = res["data"].get("emojis", []) if isinstance(res["data"], dict) else []
+                items = [{
+                    "name": e.get("name"),
+                    "category": e.get("category") or "",
+                    "aliases": [a for a in (e.get("aliases") or []) if a],
+                } for e in raw if e.get("name")]
+                self._save_json(_EMOJI_CACHE_FILE, {"fetched_at": now, "emojis": items})
+            elif not items:
+                return {"success": False, "error": res.get("error")}
+        limit = max(1, min(int(limit), 500))
+        return {"success": True, "count": len(items), "emojis": items[:limit]}
+
 
 _bot = None
 _bot_lock = threading.Lock()
@@ -284,4 +308,6 @@ def execute(input_data: Any) -> Dict:
         return bot.timeline(params.get("kind", "local"), params.get("limit", 10))
     if action == "react":
         return bot.react(params.get("note_id", ""), params.get("reaction", "👍"))
+    if action == "emojis":
+        return bot.emojis(params.get("limit", 120), force=bool(params.get("force")))
     return {"success": False, "error": f"未知動作: {action}"}

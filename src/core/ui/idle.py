@@ -240,7 +240,9 @@ class IdleEngine:
         return self.optimizer.generate_optimization_prompt()
 
     def _do_social_activity(self, plan: str = ""):
-        """閒時社交活動：瀏覽時間線、回覆提及、點讚、發動態（內容經過濾器）。
+        """閒時社交活動：把站点内容（提及/时间线/表情说明）原样喂给 Aize，
+        由她自己决定回复、点表情、发新动态、上网搜索或直接问主人；
+        我们只负责执行她的决定，所有对外文本仍经过滤器。
 
         平台選擇策略：從「已配置且可用」的平台中挑選（目前支持 Misskey；
         日後新增平台只需在 _available_social_platforms 註冊即可）。
@@ -265,42 +267,23 @@ class IdleEngine:
         bot = platform["bot"]
         _thought(f"[Social] Aize 选择去 {platform['label']} 逛逛" + (f"：{plan}" if plan else ""))
 
-        # 1. 瀏覽時間線，挑幾條有趣的
+        # 1. 收集她能看到的内容：提及 + 时间线（只呈现，不替她决定）
+        notes, mentions = [], []
         try:
             tl = bot.timeline("local", limit=5)
-            if tl.get("success") and tl.get("notes"):
-                _thought(f"[Social] 刷了刷时间线，看到 {len(tl['notes'])} 条动态")
-                # 挑一條點讚（隨機或第一條）
-                note = tl["notes"][0]
-                if note.get("id"):
-                    r = bot.react(note["id"], "👍")
-                    if r.get("success"):
-                        _thought(f"[Social] 给 @{note.get('user','?')} 的动态点了赞")
-                    else:
-                        _thought(f"[Social] 点赞失败：{r.get('error')}")
+            if tl.get("success"):
+                notes = tl.get("notes") or []
         except Exception as e:
             _thought(f"[Social] 浏览时间线出错：{e}")
-
-        # 2. 回覆提及（如果有）
         try:
-            mentions = bot.mentions(limit=3)
-            if mentions.get("success") and mentions.get("mentions"):
-                _thought(f"[Social] 看到 {len(mentions['mentions'])} 条提及")
-                for m in mentions["mentions"][:1]:  # 只回覆最新一條
-                    reply_text = f"@{m['user']} 谢谢你的回复！我在的～"
-                    ok, _ = content_filter.check(reply_text)
-                    if not ok:
-                        _thought("[Social] 回复内容被过滤，跳过")
-                        continue
-                    r = bot.post(reply_text, reply_id=m["id"])
-                    if r.get("success"):
-                        _thought(f"[Social] 回复了 @{m['user']}：{reply_text[:40]}…")
-                    else:
-                        _thought(f"[Social] 回复失败：{r.get('error')}")
+            mt = bot.mentions(limit=3)
+            if mt.get("success"):
+                mentions = mt.get("mentions") or []
         except Exception as e:
-            _thought(f"[Social] 处理提及出错：{e}")
+            _thought(f"[Social] 读取提及出错：{e}")
+        _thought(f"[Social] 看到 {len(mentions)} 条提及、{len(notes)} 条新动态，Aize 正在想怎么做…")
 
-        # 3. 發一條新動態
+        # 2. 上下文 + 站点表情说明
         context = ""
         if self.memory is not None:
             try:
@@ -310,49 +293,205 @@ class IdleEngine:
                         f"- {m.get('role','?')}: {str(m.get('content',''))[:80]}" for m in recent)
             except Exception:
                 pass
+        emoji_guide = self._build_emoji_guide(bot)
 
-        prompt = load_prompt("social_post")
-        prompt = prompt.replace("{platforms}", platform["label"]).replace("{context}", context)
+        def _fmt(items, empty):
+            if not items:
+                return empty
+            return "\n".join(f"[{n.get('id')}] @{n.get('user','?')}: {n.get('text','')}" for n in items)
+
+        base_prompt = load_prompt("social_decide")
+        if not base_prompt:
+            _thought("[Social] social_decide 提示词缺失，本次跳过")
+            return
+
+        # 3. 决策-执行循环：她输出 JSON 动作列表；若她选择 search，
+        #    执行搜索后把结果追加进提示词，让她再决策一轮（最多两轮，防止循环）
+        search_results = ""
+        acted = set()    # (动作, 目标) 去重
+        done_count = 0
+        max_actions = 3
+
+        for round_no in range(2):
+            prompt = (base_prompt
+                      .replace("{platforms}", platform["label"])
+                      .replace("{context}", context)
+                      .replace("{emojis}", emoji_guide)
+                      .replace("{mentions}", _fmt(mentions, "（没有人@你）"))
+                      .replace("{timeline}", _fmt(notes, "（时间线空空如也）"))
+                      .replace("{search_results}", search_results))
+            try:
+                raw = chat(prompt, max_tokens=400, timeout=60).strip()
+            except Exception as e:
+                _thought(f"[Social] Aize 决策失败: {e}")
+                return
+            actions = self._parse_social_actions(raw)
+            if actions is None:
+                _thought("[Social] 没看懂 Aize 的决定（输出不是有效 JSON），本次不采取行动")
+                return
+
+            pending_search = None
+            for act in actions:
+                if not isinstance(act, dict):
+                    continue
+                atype = str(act.get("type", "")).strip().lower()
+                if atype in ("", "none"):
+                    continue
+                if done_count >= max_actions and atype != "search":
+                    continue
+
+                if atype == "react":
+                    nid = str(act.get("note_id", "")).strip()
+                    reaction = str(act.get("reaction", "👍")).strip() or "👍"
+                    if not nid or ("react", nid) in acted:
+                        continue
+                    acted.add(("react", nid))
+                    r = bot.react(nid, reaction)
+                    if r.get("success"):
+                        done_count += 1
+                        _thought(f"[Social] Aize 给帖子 {nid} 点了 {reaction}")
+                    else:
+                        _thought(f"[Social] 点表情失败（{reaction}）：{r.get('error')}")
+
+                elif atype == "reply":
+                    nid = str(act.get("note_id", "")).strip()
+                    text = str(act.get("text", "")).strip()
+                    if not nid or not text or ("reply", nid) in acted:
+                        continue
+                    acted.add(("reply", nid))
+                    ok, hits = content_filter.check(text)
+                    if not ok:
+                        _thought(f"[Social] Aize 的回复被过滤器拦截（{len(hits)} 个敏感词），未发送")
+                        continue
+                    r = bot.post(text, reply_id=nid)
+                    if r.get("success"):
+                        done_count += 1
+                        _thought(f"[Social] Aize 回复了 {nid}：{text[:40]}")
+                    else:
+                        _thought(f"[Social] 回复失败：{r.get('error')}")
+
+                elif atype == "post":
+                    text = str(act.get("text", "")).strip()
+                    if not text or ("post", text) in acted:
+                        continue
+                    acted.add(("post", text))
+                    ok, hits = content_filter.check(text)
+                    if not ok:
+                        _thought(f"[Social] Aize 的动态被过滤器拦截（{len(hits)} 个敏感词），未发布")
+                        continue
+                    try:
+                        r = platform["post"](text)
+                    except Exception as e:
+                        r = {"success": False, "error": str(e)}
+                    if r.get("success"):
+                        done_count += 1
+                        _thought(f"[Social] Aize 发布了新动态：{text[:50]} ({r.get('url', '')})")
+                    else:
+                        _thought(f"[Social] 发布被平台拒绝：{r.get('error')}")
+
+                elif atype == "ask_user":
+                    question = str(act.get("question", "")).strip()
+                    if question and self.callback:
+                        done_count += 1
+                        _thought(f"[Social] Aize 有事情想请教你：{question}")
+                        self.callback({"type": "autonomous_message",
+                                       "message": f"我在 {platform['label']} 闲逛时遇到了想请教你的问题：{question}"})
+
+                elif atype == "search":
+                    query = str(act.get("query", "")).strip()
+                    if query and round_no == 0 and pending_search is None:
+                        pending_search = query
+
+            if pending_search:
+                _thought(f"[Social] Aize 想先搞清楚「{pending_search}」，正在上网搜索…")
+                search_results = self._social_web_search(pending_search)
+                continue  # 带着搜索结果让她再决策一轮
+            if done_count == 0:
+                _thought("[Social] Aize 看了一圈，这次决定什么都不做")
+            return
+
+    @staticmethod
+    def _parse_social_actions(raw: str):
+        """從 Aize 的輸出中提取 {"actions": [...]}；解析失敗返回 None。"""
+        import json as _json
+        import re as _re
+        m = _re.search(r"\{.*\}", (raw or "").strip(), _re.DOTALL)
+        if not m:
+            return None
         try:
-            text = chat(prompt, max_tokens=256).strip().strip('"“”')
-        except Exception as e:
-            _thought(f"[Social] 生成动态内容失败: {e}")
-            return
+            data = _json.loads(m.group(0))
+        except Exception:
+            return None
+        acts = data.get("actions")
+        return acts if isinstance(acts, list) else None
 
-        ok, hits = content_filter.check(text)
-        if not ok:
-            _thought(f"[Social] 动态被过滤器拦截（{len(hits)} 个敏感词），本次不发布")
-            return
-
+    @staticmethod
+    def _build_emoji_guide(bot) -> str:
+        """把站点自定义表情整理成 :名字:（分类/别名） 清单，帮 Aize 理解每个表情的意思。"""
         try:
-            result = platform["post"](text)
+            res = bot.emojis(limit=100)
+        except Exception:
+            res = {}
+        if not res.get("success"):
+            return "（站点表情列表暂时获取失败，这次只用通用 emoji 就好）"
+        parts = []
+        for e in res.get("emojis", []):
+            name = e.get("name")
+            if not name:
+                continue
+            hints = [h for h in ([e.get("category") or ""] + list(e.get("aliases") or [])) if h]
+            parts.append(f":{name}:（{'，'.join(hints)}）" if hints else f":{name}:")
+        if not parts:
+            return "（站点没有自定义表情，用通用 emoji 就好）"
+        joined = "、".join(parts)
+        if len(joined) > 1800:
+            joined = joined[:1800] + "…"
+        return joined
+
+    def _social_web_search(self, query: str) -> str:
+        """調用 web-search 技能並把結果整理成提示詞段落（失敗時如實告知）。"""
+        mod = self._load_skill_module("web-search")
+        if mod is None:
+            return "【搜索结果】\n（搜索技能当前不可用）\n请根据现有信息重新决定后续动作。"
+        try:
+            res = mod.execute({"query": query, "num_results": 3})
         except Exception as e:
-            _thought(f"[Social] 发布失败: {e}")
-            return
-        if result.get("success"):
-            _thought(f"[Social] 已在 {platform['label']} 发布动态：{text[:60]}… ({result.get('url', '')})")
-        else:
-            _thought(f"[Social] 发布被平台拒绝：{result.get('error')}")
+            res = {"success": False, "error": str(e)}
+        if not res.get("success"):
+            return f"【搜索结果】\n搜索失败：{res.get('error')}\n请根据现有信息重新决定后续动作。"
+        lines = [f"- {r.get('title','')}: {r.get('snippet','')}" for r in (res.get("results") or [])[:3]]
+        body = "\n".join(lines) if lines else "（没有搜到相关结果）"
+        return (f"【搜索结果】（你刚才搜索了「{query}」）\n{body}\n"
+                f"请根据搜索结果重新决定后续动作（这次尽量直接行动，不要再搜索）。")
+
+    @staticmethod
+    def _load_skill_module(skill_name: str):
+        """以文件路徑隔離載入技能模塊（兼容 dev 與打包態）。"""
+        import importlib.util
+        import sys as _sys
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        candidates = [os.path.join(root, "skills", skill_name, "__init__.py")]
+        if getattr(_sys, "frozen", False):
+            candidates.insert(0, os.path.join(os.path.dirname(_sys.executable),
+                                              "skills", skill_name, "__init__.py"))
+        for init in candidates:
+            if not os.path.exists(init):
+                continue
+            try:
+                spec = importlib.util.spec_from_file_location(
+                    f"skills_{skill_name.replace('-', '_')}", init)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                return mod
+            except Exception:
+                continue
+        return None
 
     @staticmethod
     def _available_social_platforms():
         """已配置可用的社交平台列表（可寫入的才會列入）。"""
         platforms = []
-        mod = None
-        try:
-            import importlib.util
-            root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            init = os.path.join(root, "skills", "misskey-bot", "__init__.py")
-            if getattr(__import__("sys"), "frozen", False):
-                # 打包態：技能目錄在 exe 旁
-                init = os.path.join(os.path.dirname(__import__("sys").executable),
-                                    "skills", "misskey-bot", "__init__.py")
-            if os.path.exists(init):
-                spec = importlib.util.spec_from_file_location("skills_misskey_bot", init)
-                mod = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(mod)
-        except Exception:
-            mod = None
+        mod = IdleEngine._load_skill_module("misskey-bot")
         if mod is not None:
             try:
                 bot = mod._get_bot()

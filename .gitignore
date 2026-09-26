@@ -96,6 +96,7 @@ src/core/utils/data/last_update_check.json
 # Social bot credentials/state and user-maintained sensitive word list
 skills/misskey-bot/config.json
 skills/misskey-bot/state.json
+skills/misskey-bot/emoji_cache.json
 data/sensitive_words.txt
 
 # Test outputs
