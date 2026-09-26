@@ -338,22 +338,21 @@ class IdleEngine:
     def _available_social_platforms():
         """已配置可用的社交平台列表（可寫入的才會列入）。"""
         platforms = []
+        mod = None
         try:
-            import importlib
-            mod = importlib.import_module("skills.misskey-bot")
+            import importlib.util
+            root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            init = os.path.join(root, "skills", "misskey-bot", "__init__.py")
+            if getattr(__import__("sys"), "frozen", False):
+                # 打包態：技能目錄在 exe 旁
+                init = os.path.join(os.path.dirname(__import__("sys").executable),
+                                    "skills", "misskey-bot", "__init__.py")
+            if os.path.exists(init):
+                spec = importlib.util.spec_from_file_location("skills_misskey_bot", init)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
         except Exception:
-            try:
-                import importlib.util, os as _os
-                init = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))),
-                                     "skills", "misskey-bot", "__init__.py")
-                if _os.path.exists(init):
-                    spec = importlib.util.spec_from_file_location("skills_misskey_bot", init)
-                    mod = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(mod)
-                else:
-                    mod = None
-            except Exception:
-                mod = None
+            mod = None
         if mod is not None:
             try:
                 bot = mod._get_bot()
