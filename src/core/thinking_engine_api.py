@@ -19,6 +19,9 @@ import os
 import sys
 import re
 import traceback
+import collections
+import hashlib
+import secrets
 try:
     from http.server import ThreadingHTTPServer as HTTPServer, BaseHTTPRequestHandler
 except ImportError:
@@ -59,25 +62,217 @@ except ModuleNotFoundError:
 # llama-server 實際加載的模型名緩存（狀態頁輪詢用；llama-server 掛掉時 60s 內沿用）
 _LLAMA_MODEL_CACHE = {"name": "", "ts": 0.0}
 
+# Dashboard 登錄會話（進程內存，重啟需重新登錄）：token -> 過期時間戳
+_SESSIONS = {}
+_AUTH_TTL_SECONDS = 7 * 24 * 3600
+
+# 未登錄訪問 / 時返回的內聯登錄頁
+_LOGIN_PAGE_HTML = """<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Humanaize 登录</title>
+<style>
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#141010;font-family:"Segoe UI",sans-serif}
+.card{background:#1f1815;border:1px solid #3a2a1e;border-radius:14px;padding:36px 32px;width:300px;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+h1{margin:0 0 6px;font-size:20px;color:#ff8c3a}
+p{margin:0 0 20px;font-size:12px;color:#a89888}
+label{display:block;font-size:13px;color:#d8c8b8;margin-bottom:12px}
+input{display:block;width:100%;box-sizing:border-box;margin-top:4px;padding:9px 10px;border-radius:8px;border:1px solid #4a382a;background:#171210;color:#f0e6da;font-size:14px}
+input:focus{outline:none;border-color:#ff8c3a}
+button{width:100%;margin-top:8px;padding:10px;border:0;border-radius:8px;background:#ff8c3a;color:#1a120c;font-size:15px;font-weight:600;cursor:pointer}
+button:hover{background:#ffa05c}
+#msg{min-height:16px;margin-top:10px;font-size:12px;color:#ff7a7a}
+</style></head><body>
+<div class="card"><h1>HUMANAIZE</h1><p>此面板已启用账户登录</p>
+<form id="f"><label>账户名<input id="u" autocomplete="username" required></label>
+<label>密码<input id="p" type="password" autocomplete="current-password" required></label>
+<button type="submit">登录</button><div id="msg"></div></form></div>
+<script>
+document.getElementById('f').onsubmit=async e=>{e.preventDefault();
+const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},
+body:JSON.stringify({username:document.getElementById('u').value,password:document.getElementById('p').value})});
+if(r.ok){location.reload()}else{const d=await r.json().catch(()=>({}));
+document.getElementById('msg').textContent=(d.error&&d.error.message)||'登录失败'}};
+</script></body></html>"""
+
 # 運行時技能清單緩存（Agent 初始化較重，全進程只構造一次）
 _SKILLS_PROMPT_CACHE = {"text": None}
 
 
 def _get_skills_prompt_cached() -> str:
-    """獲取當前實際可用技能的說明文本（繁中），失敗返回空串。"""
+    """獲取當前實際可用技能的說明文本（繁中），失敗返回空串。
+
+    復用 /api/skills 的同一個進程級 SkillsManager（完整構造需導入全部
+    技能模塊，可達十幾秒），避免 Agent("!") 再構造一份。
+    """
     if _SKILLS_PROMPT_CACHE["text"] is not None:
         return _SKILLS_PROMPT_CACHE["text"]
     text = ""
     try:
-        from Agent import Agent
-        agent = Agent("!")
-        if agent.skills_manager:
-            text = (agent.get_skills_prompt("zh-TW") or "").strip()
+        text = (_get_skills_manager().get_skills_prompt("zh-TW") or "").strip()
     except Exception as e:
         logger.warning(f"[Chat] failed to build skills prompt: {e}")
         text = ""
     _SKILLS_PROMPT_CACHE["text"] = text
     return text
+
+
+def _invalidate_skills_prompt_cache():
+    """技能啟用狀態變更後，讓下次聊天重新構造可用技能清單。"""
+    _SKILLS_PROMPT_CACHE["text"] = None
+
+
+# 運行時技能管理器實例（進程級緩存，與 Agent 內部使用同一個 skills 目錄）
+_SKILLS_MANAGER_CACHE = {"mgr": None}
+
+
+def _resolve_skills_dir():
+    """技能目錄解析：打包態優先 exe 旁 skills/（安裝鋪設），
+    開發態用項目根 skills/，與 Agent 的解析規則保持一致。"""
+    if getattr(sys, "frozen", False):
+        exe_skills = os.path.join(os.path.dirname(sys.executable), "skills")
+        if os.path.isdir(exe_skills) and os.listdir(exe_skills):
+            return exe_skills
+    dev_skills = os.path.join(project_root, "skills")
+    if os.path.isdir(dev_skills) and os.listdir(dev_skills):
+        return dev_skills
+    core_skills = os.path.join(core_dir, "skills")
+    if os.path.isdir(core_skills) and os.listdir(core_skills):
+        return core_skills
+    return None
+
+
+def _get_skills_manager():
+    """獲取進程級 SkillsManager（構造較重，只做一次）。"""
+    mgr = _SKILLS_MANAGER_CACHE["mgr"]
+    if mgr is not None:
+        return mgr
+    try:
+        from skills_manager import SkillsManager
+    except ImportError:
+        from core.tools.skills_manager import SkillsManager
+    skills_dir = _resolve_skills_dir()
+    mgr = SkillsManager(skills_dir) if skills_dir else SkillsManager()
+    _SKILLS_MANAGER_CACHE["mgr"] = mgr
+    return mgr
+
+
+class IdleEventBus:
+    """進程級事件匯流排：閒置引擎 / 對話中的思考事件 → 網頁 /api/events SSE。
+
+    - 每個事件帶遞增 seq，訂閱端斷線重連可按 seq 去重
+    - 保留最近 300 條環形緩衝，新連接（或重連）先補發歷史，再收實時事件
+    - 訂閱者隊列滿時直接丟棄該訂閱者（慢客戶端不阻塞主流程）
+    """
+
+    def __init__(self, history_size=300):
+        self._lock = threading.Lock()
+        self._subscribers = set()
+        self._recent = collections.deque(maxlen=history_size)
+        self._seq = 0
+
+    def publish(self, event: dict):
+        if not isinstance(event, dict):
+            return
+        with self._lock:
+            self._seq += 1
+            event = dict(event)
+            event["seq"] = self._seq
+            self._recent.append(event)
+            dead = []
+            for queue in self._subscribers:
+                try:
+                    queue.put_nowait(event)
+                except Exception:
+                    dead.append(queue)
+            for queue in dead:
+                self._subscribers.discard(queue)
+
+    def subscribe(self):
+        queue = Queue(maxsize=1000)
+        with self._lock:
+            self._subscribers.add(queue)
+            recent = list(self._recent)
+        return queue, recent
+
+    def unsubscribe(self, queue):
+        with self._lock:
+            self._subscribers.discard(queue)
+
+
+_idle_event_bus = IdleEventBus()
+
+
+def classify_idle_thought_type(text: str, thought_type: str = "") -> str:
+    """閒置引擎自身發出的思考沒有 thought_type，按前綴歸類以便網頁上色。
+    GANIteration 轉發的事件本身帶有 gan_topic/gan_argument 等類型，原樣保留。"""
+    ttype = (thought_type or "").strip()
+    if ttype:
+        return ttype
+    head = (text or "").lstrip()
+    if head.startswith("[Social"):
+        return "social"
+    if head.startswith("[Thinking Direction"):
+        return "gan_topic"
+    if head.startswith("[Self-thought]"):
+        return "gan_synthesis"
+    if head.startswith("[Idle Activity]"):
+        return "gan"
+    if head.startswith("[Self-Optimization") or head.startswith("[Auto-Optimization"):
+        return "solve_mode"
+    return "internal"
+
+
+def _now_display():
+    return time.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def publish_engine_event(response):
+    """把引擎回調字典正規化後推送給網頁事件匯流排。
+
+    對應關係：
+    - internal_thought    → thought（閒置思考 / GAN 辯論 / 決策日誌）
+    - error               → error
+    - autonomous_message  → autonomous（Aize 主動找主人說話）
+    """
+    if not isinstance(response, dict):
+        return
+    rtype = response.get("type")
+    try:
+        if rtype == "internal_thought":
+            content = response.get("thought", "") or ""
+            if not content:
+                return
+            _idle_event_bus.publish({
+                "type": "thought",
+                "thought_type": classify_idle_thought_type(content, response.get("thought_type", "")),
+                "content": content,
+                "time": _now_display(),
+            })
+        elif rtype == "error":
+            _idle_event_bus.publish({
+                "type": "error",
+                "thought_type": "error",
+                "content": response.get("error", "") or "",
+                "time": _now_display(),
+            })
+        elif rtype == "autonomous_message":
+            _idle_event_bus.publish({
+                "type": "autonomous",
+                "thought_type": "social",
+                "content": response.get("message", "") or "",
+                "time": _now_display(),
+            })
+    except Exception as e:
+        logger.warning(f"[Events] publish failed: {e}")
+
+
+# 網頁端允許顯式執行的技能白名單（shell 等高危技能不在此列，
+# 它們只能由模型通過 JSON 協議調用）
+_SKILL_EXECUTE_WHITELIST = {
+    "misskey-bot": {"status", "configure", "set_bot"},
+}
+
 
 # 延迟导入llm模块，避免循环依赖
 _generate_with_emotion_feedback = None
@@ -362,10 +557,118 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
         self.end_headers()
 
+    # ---------- 訪問控制：局域網門禁 + 賬戶登錄 ----------
+    _LOCAL_CLIENTS = ("127.0.0.1", "::1", "localhost")
+    _AUTH_EXEMPT_PATHS = ("/api/login", "/health")
+
+    def _lan_blocked(self) -> bool:
+        """非本機來源且未開啟局域網訪問 → 拒絕（熱生效）。"""
+        client_ip = (self.client_address[0] if self.client_address else "") or ""
+        if client_ip in self._LOCAL_CLIENTS:
+            return False
+        return not bool(self._read_settings_raw().get("allow_lan_access"))
+
+    def _auth_required(self) -> bool:
+        settings = self._read_settings_raw()
+        return bool(settings.get("web_auth_username") and settings.get("web_auth_password_hash"))
+
+    def _session_valid(self) -> bool:
+        token = ""
+        cookie = self.headers.get("Cookie", "")
+        for part in cookie.split(";"):
+            name, _, value = part.strip().partition("=")
+            if name == "humanaize_session":
+                token = value
+                break
+        if not token:
+            auth = self.headers.get("Authorization", "")
+            if auth.startswith("Bearer "):
+                token = auth[7:].strip()
+        if not token:
+            return False
+        expiry = _SESSIONS.get(token)
+        if expiry is None:
+            return False
+        if expiry < time.time():
+            _SESSIONS.pop(token, None)
+            return False
+        return True
+
+    def _access_granted(self, path: str) -> bool:
+        """統一入口：先局域網門禁，再登錄認證。返回 False 時已自行回應。"""
+        if self._lan_blocked():
+            self._send_error("局域网访问未启用，仅本机可访问此面板", 403)
+            return False
+        if path in self._AUTH_EXEMPT_PATHS or not self._auth_required():
+            return True
+        if self._session_valid():
+            return True
+        if path == "/":
+            self._send_login_page()
+        else:
+            self._send_error("未登录或会话已过期", 401)
+        return False
+
+    def _send_login_page(self):
+        body = _LOGIN_PAGE_HTML.encode("utf-8")
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Content-Length', str(len(body)))
+        self.send_header('Cache-Control', 'no-cache')
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _handle_login(self):
+        """校驗賬密，成功則簽發會話 Cookie。"""
+        try:
+            body = self._read_json_body()
+        except Exception:
+            self._send_error("Invalid request", 400)
+            return
+        if not self._auth_required():
+            self._send_json({"status": "ok", "auth_required": False})
+            return
+        settings = self._read_settings_raw()
+        username = str(body.get("username", ""))
+        password = str(body.get("password", ""))
+        ok = (secrets.compare_digest(username, str(settings.get("web_auth_username") or ""))
+              and self._verify_web_password(password, str(settings.get("web_auth_password_hash") or "")))
+        if not ok:
+            logger.info(f"[Auth] login failed for user={username!r} from {self.client_address[0]}")
+            self._send_error("账户名或密码错误", 401)
+            return
+        token = secrets.token_urlsafe(32)
+        _SESSIONS[token] = time.time() + _AUTH_TTL_SECONDS
+        logger.info(f"[Auth] login success for user={username!r}")
+        payload = json.dumps({"status": "ok"}, ensure_ascii=False).encode("utf-8")
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Content-Length', str(len(payload)))
+        self.send_header('Set-Cookie',
+                         f"humanaize_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={_AUTH_TTL_SECONDS}")
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def _handle_logout(self):
+        cookie = self.headers.get("Cookie", "")
+        for part in cookie.split(";"):
+            name, _, value = part.strip().partition("=")
+            if name == "humanaize_session":
+                _SESSIONS.pop(value, None)
+        payload = json.dumps({"status": "ok"}, ensure_ascii=False).encode("utf-8")
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Content-Length', str(len(payload)))
+        self.send_header('Set-Cookie', "humanaize_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0")
+        self.end_headers()
+        self.wfile.write(payload)
+
     def do_GET(self):
         """处理GET请求"""
         parsed = urlparse(self.path)
         self._log_request("GET", parsed.path)
+        if not self._access_granted(parsed.path):
+            return
 
         if parsed.path == '/v1/models':
             self._handle_list_models()
@@ -377,6 +680,10 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._send_json(self._status_payload())
         elif parsed.path == '/api/voice/capabilities':
             self._handle_voice_capabilities()
+        elif parsed.path == '/api/events':
+            self._handle_event_stream()
+        elif parsed.path == '/api/skills':
+            self._handle_list_skills()
         elif parsed.path == '/':
             self._send_static_file("index.html", "text/html; charset=utf-8")
         elif parsed.path == '/background':
@@ -397,10 +704,30 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._send_error("Not found", 404)
 
     def _send_static_file(self, file_name, content_type):
-        """返回浏览器管理面板静态资源"""
-        dashboard_path = os.path.join(os.path.dirname(__file__), "web", file_name)
-        if not os.path.exists(dashboard_path) and hasattr(sys, "_MEIPASS"):
-            dashboard_path = os.path.join(sys._MEIPASS, "web", file_name)
+        """返回浏览器管理面板静态资源。
+
+        优先级（与 _find_background_image 一致，支持热更新 web UI 不重建）：
+        1. 打包态 exe 旁 web/（用户可修改）
+        2. 开发态代码目录 web/
+        3. PyInstaller _MEIPASS 内置副本（兜底）
+        """
+        roots = []
+        if getattr(sys, "frozen", False):
+            roots.append(os.path.dirname(os.path.abspath(sys.executable)))
+        roots.append(os.path.dirname(__file__))
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            roots.append(meipass)
+
+        dashboard_path = None
+        for root in roots:
+            path = os.path.join(root, "web", file_name)
+            if os.path.exists(path):
+                dashboard_path = path
+                break
+        if not dashboard_path:
+            self._send_error("Static file not found", 500)
+            return
         self._send_file_path(dashboard_path, content_type)
 
     def _send_file_path(self, file_path, content_type):
@@ -455,13 +782,23 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         """处理POST请求"""
         parsed = urlparse(self.path)
         self._log_request("POST", parsed.path)
+        if not self._access_granted(parsed.path):
+            return
 
         if parsed.path in ('/api/chat', '/v1/chat/completions'):
             self._handle_chat_completions()
         elif parsed.path == '/api/settings':
             self._handle_save_settings()
+        elif parsed.path == '/api/login':
+            self._handle_login()
+        elif parsed.path == '/api/logout':
+            self._handle_logout()
         elif parsed.path == '/api/tts':
             self._handle_tts()
+        elif parsed.path == '/api/skills/toggle':
+            self._handle_skill_toggle()
+        elif parsed.path == '/api/skills/execute':
+            self._handle_skill_execute()
         else:
             self._send_error("Not found", 404)
 
@@ -522,7 +859,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             "counter_measure_enabled": True, "counter_lab_mode": False,
             "counter_max_warnings": 2, "counter_cooldown": 300, "iot_auto_start": True,
             "iot_host": "0.0.0.0", "iot_port": 8765, "iot_scan_enabled": True,
-            "iot_scan_interval": 30, "iot_discovered_devices": []
+            "iot_scan_interval": 30, "iot_discovered_devices": [],
+            "allow_lan_access": False, "web_auth_username": "", "web_auth_password_hash": ""
         }
 
     def _read_settings_raw(self):
@@ -538,11 +876,30 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         return settings
 
     def _load_settings(self):
-        """對網頁返回的脫敏視圖（API key 只回 configured 佔位符）。"""
+        """對網頁返回的脫敏視圖（API key 只回 configured 佔位符；密碼 hash 不返回）。"""
         settings = self._read_settings_raw()
         if settings.get("openai_api_key"):
             settings["openai_api_key"] = "configured"
+        settings["web_auth_enabled"] = bool(
+            settings.get("web_auth_username") and settings.get("web_auth_password_hash"))
+        settings.pop("web_auth_password_hash", None)
         return settings
+
+    @staticmethod
+    def _hash_web_password(password: str, salt: str = None) -> str:
+        """salt$sha256(salt+password) 存儲格式；salt 為空時生成新 salt。"""
+        salt = salt or secrets.token_hex(8)
+        digest = hashlib.sha256((salt + password).encode("utf-8")).hexdigest()
+        return f"{salt}${digest}"
+
+    @staticmethod
+    def _verify_web_password(password: str, stored: str) -> bool:
+        try:
+            salt, digest = stored.split("$", 1)
+        except ValueError:
+            return False
+        candidate = hashlib.sha256((salt + password).encode("utf-8")).hexdigest()
+        return secrets.compare_digest(candidate, digest)
 
     def _handle_save_settings(self):
         try:
@@ -550,12 +907,20 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             values = json.loads(self.rfile.read(content_length).decode('utf-8'))
             if not isinstance(values, dict):
                 raise ValueError("settings must be an object")
+            # 密碼不是持久 key，先取出單獨處理（「留空不修改」語義）
+            new_password = str(values.pop("web_auth_password", "") or "")
             # 以磁盤上的原始設置（含真實 API key）為基準合併，避免脫敏佔位符覆蓋密鑰
             settings = self._read_settings_raw()
             allowed = set(settings)
             updates = {key: value for key, value in values.items() if key in allowed}
             if updates.get("openai_api_key") == "configured":
                 updates.pop("openai_api_key")
+            # 賬戶名被清空 → 關閉登錄（連同 hash 一起清掉）
+            if "web_auth_username" in updates and not str(updates.get("web_auth_username") or "").strip():
+                updates["web_auth_username"] = ""
+                updates["web_auth_password_hash"] = ""
+            elif new_password:
+                updates["web_auth_password_hash"] = self._hash_web_password(new_password)
             model_path_changed = (
                 "model_path" in updates
                 and str(updates.get("model_path", "")).strip() != str(settings.get("model_path", "")).strip()
@@ -564,6 +929,16 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             os.makedirs(os.path.dirname(self._settings_path()), exist_ok=True)
             with open(self._settings_path(), "w", encoding="utf-8") as settings_file:
                 json.dump(settings, settings_file, ensure_ascii=False, indent=2)
+
+            # GAN 開關熱生效：即時同步給正在運行的閒置引擎
+            if "gan_enabled" in updates:
+                try:
+                    from ui import idle as idle_mod
+                    inst = getattr(idle_mod, "_idle_engine_instance", None)
+                    if inst is not None:
+                        inst.gan_enabled = bool(updates.get("gan_enabled"))
+                except Exception:
+                    pass
 
             response = {"status": "ok", "settings": self._load_settings()}
             if model_path_changed and str(updates.get("model_path", "")).strip():
@@ -604,6 +979,143 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             "default_voice": default_voice,
             "stt": "webspeech",
         })
+
+    def _handle_event_stream(self):
+        """SSE 長連接：把閒置思考 / GAN 日誌 / 社交事件即時推給網頁 GAN 面板。
+
+        連接建立時先補發緩衝中的最近事件（翻譯：刷新頁面也能看到本輪思考），
+        之後每 20 秒髮一個 ping 保持連接；EventSource 斷線會自動重連，
+        前端按 seq 去重，避免補發歷史造成重複行。
+        """
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/event-stream; charset=utf-8')
+        self.send_header('Cache-Control', 'no-cache')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+
+        queue, recent = _idle_event_bus.subscribe()
+        try:
+            for event in recent:
+                self.wfile.write(f"data: {json.dumps(event, ensure_ascii=False)}\n\n".encode('utf-8'))
+            self.wfile.flush()
+            while True:
+                try:
+                    event = queue.get(timeout=20)
+                except Empty:
+                    self.wfile.write(b": ping\n\n")
+                    self.wfile.flush()
+                    continue
+                self.wfile.write(f"data: {json.dumps(event, ensure_ascii=False)}\n\n".encode('utf-8'))
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
+            pass
+        except Exception as e:
+            logger.warning(f"[Events] stream closed: {e}")
+        finally:
+            _idle_event_bus.unsubscribe(queue)
+
+    def _handle_list_skills(self):
+        """返回技能清單（名稱/說明/是否啟用/是否有執行器），不回傳任何密鑰。"""
+        try:
+            manager = _get_skills_manager()
+            skills = [{
+                "name": skill.name,
+                "description": (skill.description or "")[:300],
+                "enabled": bool(skill.enabled),
+                "executable": bool(skill.executor),
+            } for skill in manager.get_all_skills()]
+            skills.sort(key=lambda item: item["name"].lower())
+            self._send_json({
+                "skills": skills,
+                "all_enabled": bool(manager.skills_config.get("all_enabled", True)),
+            })
+        except Exception as e:
+            logger.error(f"[Skills] list failed: {e}\n{traceback.format_exc()}")
+            self._send_error(f"读取技能列表失败: {e}", 500)
+
+    def _read_json_body(self):
+        content_length = int(self.headers.get('Content-Length', 0))
+        body = json.loads(self.rfile.read(content_length).decode('utf-8'))
+        if not isinstance(body, dict):
+            raise ValueError("request body must be a JSON object")
+        return body
+
+    def _handle_skill_toggle(self):
+        """啟用/停用技能：{"name": "misskey-bot", "enabled": true}"""
+        try:
+            body = self._read_json_body()
+            name = str(body.get("name", "")).strip()
+            enabled = bool(body.get("enabled"))
+            if not name:
+                self._send_error("技能名称不能为空", 400)
+                return
+            manager = _get_skills_manager()
+            if not manager.get_skill(name):
+                self._send_error(f"未找到技能: {name}", 404)
+                return
+            if enabled:
+                manager.enable_skill(name)
+            else:
+                manager.disable_skill(name)
+            _invalidate_skills_prompt_cache()
+            logger.info(f"[Skills] toggle name={name} enabled={enabled}")
+            self._send_json({
+                "status": "ok",
+                "name": name,
+                "enabled": enabled,
+                "skills": [{
+                    "name": skill.name,
+                    "description": (skill.description or "")[:300],
+                    "enabled": bool(skill.enabled),
+                    "executable": bool(skill.executor),
+                } for skill in sorted(manager.get_all_skills(),
+                                      key=lambda item: item.name.lower())],
+            })
+        except (OSError, ValueError, json.JSONDecodeError) as e:
+            self._send_error(f"Invalid request: {e}")
+
+    def _handle_skill_execute(self):
+        """執行白名單內的安全技能動作用於網頁配置（目前僅 misskey-bot）。
+
+        請求體: {"name": "misskey-bot", "action": "configure", "params": {...}}
+        Token 採「留空不修改」語義，且任何返回都不包含密鑰明文。
+        """
+        try:
+            body = self._read_json_body()
+            name = str(body.get("name", "")).strip()
+            action = str(body.get("action", "")).strip().lower()
+            params = body.get("params") or {}
+            if not isinstance(params, dict):
+                params = {}
+            allowed_actions = _SKILL_EXECUTE_WHITELIST.get(name)
+            if not allowed_actions or action not in allowed_actions:
+                self._send_error("不允许从网页执行该技能或动作", 403)
+                return
+
+            clean_params = {}
+            if action == "configure":
+                host = str(params.get("host", "")).strip()
+                token = str(params.get("token", "")).strip()
+                visibility = str(params.get("default_visibility", "")).strip()
+                if host:
+                    clean_params["host"] = host
+                if visibility:
+                    clean_params["default_visibility"] = visibility
+                # 空串或脫敏佔位符都視為「不修改現有 token」
+                if token and token != "configured":
+                    clean_params["token"] = token
+
+            manager = _get_skills_manager()
+            result = manager.execute_skill(
+                name, {"action": action, "params": clean_params}, language="zh-TW")
+            if action in ("configure", "set_bot"):
+                _invalidate_skills_prompt_cache()
+            self._send_json({"status": "ok", "result": result})
+        except (OSError, ValueError, json.JSONDecodeError) as e:
+            self._send_error(f"Invalid request: {e}")
+        except Exception as e:
+            logger.error(f"[Skills] execute failed: {e}\n{traceback.format_exc()}")
+            self._send_error(f"技能执行失败: {e}", 500)
 
     def _handle_tts(self):
         """將文本合成為語音音頻（預設 edge-tts，返回 audio/mpeg）。
@@ -778,8 +1290,15 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         # 保存原始on_response回调
         original_on_response = thinking_engine.on_response
 
-        # 设置临时回调
-        thinking_engine.on_response = collector.callback
+        # 设置临时回调；同时把思考/错误事件桥接到全局事件汇流排，
+        # 让网页 GAN 面板能实时看到本次对话的 GAN 决策与辩论日志
+        def _bridged_callback(response):
+            collector.callback(response)
+            if isinstance(response, dict) and response.get("type") in (
+                    "internal_thought", "error", "autonomous_message"):
+                publish_engine_event(response)
+
+        thinking_engine.on_response = _bridged_callback
 
         try:
             if stream:
@@ -806,6 +1325,14 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         finally:
             # 恢复原始回调
             thinking_engine.on_response = original_on_response
+            # 对话结束：让闲置引擎继续暂停 60 秒后自动恢复，避免争抢本地推理
+            try:
+                from ui import idle as idle_mod
+                inst = getattr(idle_mod, "_idle_engine_instance", None)
+                if inst is not None and getattr(inst, "running", False):
+                    inst.schedule_resume(60)
+            except Exception:
+                pass
             try:
                 self._chat_lock.release()
             except RuntimeError:

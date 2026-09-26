@@ -538,7 +538,7 @@ class IdleEngine:
                 })
 
     def signal_user_activity(self):
-        """收到用户活动信号，暂停当前的GAN思考"""
+        """收到用户活动信号，暂停当前的GAN思考，并安排 60 秒后自动恢复"""
         if self.is_running_gan:
             try:
                 self.gan.stop_immediately()
@@ -546,6 +546,30 @@ class IdleEngine:
                 pass
         self.paused = True
         self._resume_timer = time.time()
+        self._start_resume_timer(60)
+
+    def schedule_resume(self, delay: int = 60):
+        """请求在 delay 秒后自动恢复（对话结束时调用）。
+
+        期间若用户又有新活动，signal_user_activity 会刷新计时，
+        旧计时器到期时发现自己已过期，不会提前恢复。
+        """
+        self.paused = True
+        self._resume_timer = time.time()
+        self._start_resume_timer(delay)
+
+    def _start_resume_timer(self, delay: int):
+        token = getattr(self, "_resume_timer", None)
+
+        def _wait():
+            time.sleep(max(5, int(delay)))
+            if not self.running:
+                return
+            # 只有自己仍是最新一次计时时才恢复，避免旧计时器提前解锁
+            if self._resume_timer == token:
+                self.paused = False
+
+        threading.Thread(target=_wait, daemon=True).start()
 
     def check_resume(self):
         """检查是否应该恢复空闲思考（用户活动结束1分钟后）"""

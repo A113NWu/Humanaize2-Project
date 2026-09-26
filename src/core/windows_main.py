@@ -206,6 +206,47 @@ def main():
     state.set_memory(memory)
     state.set_personality(personality)
     server = start_api_server(host='127.0.0.1', port=8082)
+
+    # 啟動閒置引擎：網頁模式過去缺少它，導致 Aize 的閒置 GAN 思考與
+    # [Social] 社交事件完全不會發生，GAN 面板自然也沒有內容。
+    # 回調把事件推進 API 進程級事件匯流排（/api/events SSE 即時推送網頁），
+    # 閒置引擎自身的活動/社交/綜合結論同時寫入記憶（重新整理頁面仍有歷史）。
+    import json as _json
+    from ui.idle import IdleEngine
+    from memory import add_thought, save_memory
+    from thinking_engine_api import publish_engine_event, classify_idle_thought_type
+
+    def _read_gan_enabled():
+        try:
+            from app_paths import get_settings_path
+            with open(get_settings_path(), "r", encoding="utf-8") as settings_file:
+                return bool(_json.load(settings_file).get("gan_enabled", True))
+        except Exception:
+            return True
+
+    def _idle_event_callback(response):
+        try:
+            publish_engine_event(response)
+            if not isinstance(response, dict):
+                return
+            if response.get("type") == "internal_thought":
+                thought = response.get("thought", "") or ""
+                # GAN 辯論子步驟（帶 original_event）只作臨時日誌，不寫入記憶；
+                # 持久化閒置活動選擇、[Social]、綜合結論等引擎自身消息
+                if thought and "original_event" not in response:
+                    ttype = classify_idle_thought_type(thought, response.get("thought_type", ""))
+                    add_thought(memory, thought, thought_type=ttype)
+                    save_memory(memory)
+        except Exception as e:
+            print(f"[WARN] idle event callback failed: {e}")
+
+    idle_engine = IdleEngine(
+        memory,
+        _idle_event_callback,
+        idle_interval=300,
+        gan_enabled=_read_gan_enabled(),
+    )
+
     dashboard_url = f"http://{server.host}:{server.port}/"
     print(f"[INFO] Browser dashboard started: {dashboard_url}")
     webbrowser.open(dashboard_url)

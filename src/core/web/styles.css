@@ -299,3 +299,25 @@ select option{background:#14262f;color:var(--text)}
 .skill-cmd-result{background:rgba(20,14,8,0.72);border:1px solid rgba(255,138,30,0.35);border-left:3px solid #ff8a1e;border-radius:8px;overflow:hidden}
 .skill-cmd-result .skill-cmd-label{font-size:0.7em;letter-spacing:0.08em;color:#ffb36b;background:rgba(255,138,30,0.12);padding:3px 10px;text-transform:uppercase}
 .skill-cmd-result pre{margin:0;padding:8px 10px;font-family:Consolas,'Courier New',monospace;font-size:0.82em;color:#8ee88e;white-space:pre-wrap;word-break:break-all;max-height:240px;overflow-y:auto}
+
+/* ===== GAN 思考面板（事件流，復用對話氣泡內 thought-line 配色） ===== */
+.thought-stream{display:flex;flex-direction:column;gap:3px;overflow-y:auto}
+.thought-stream .thought-line{font:12px/1.7 Consolas,monospace;padding:1px 2px}
+.thought-line.t-social{color:#ff8fd1}
+.thought-line.t-internal{color:#8fb8af}
+.thought-line.t-web_search{color:#7fd0ff}
+
+/* ===== 設置頁：技能管理 ===== */
+.skills-list{display:flex;flex-direction:column;gap:10px;margin:4px 0 24px}
+.skill-item{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.03)}
+.skill-item:hover{background:rgba(255,255,255,.06)}
+.skill-item input[type="checkbox"]{accent-color:var(--accent);margin-top:3px;width:15px;height:15px;flex:none;cursor:pointer}
+.skill-meta{flex:1;min-width:0}
+.skill-name{font-weight:600;color:var(--text);font-size:13px}
+.skill-desc{font-size:12px;margin-top:3px;line-height:1.5}
+.skills-subhead{font-size:15px;font-weight:600;margin:22px 0 12px}
+.skill-config-card{border:1px solid var(--line);border-radius:12px;padding:16px;background:rgba(255,255,255,.03)}
+.skill-config-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px}
+.mini-btn{padding:8px 18px;border:0;border-radius:10px;cursor:pointer;font-weight:700;font-size:12px;color:#0d2428;background:linear-gradient(145deg,#acf0e2,var(--accent-deep));box-shadow:0 6px 16px rgba(95,199,180,.28),inset 0 1px 0 rgba(255,255,255,.55)}
+.mini-btn:hover{filter:brightness(1.07)}
+#mk-status{margin-left:auto}

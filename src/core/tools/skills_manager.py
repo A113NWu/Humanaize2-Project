@@ -5,6 +5,7 @@ OpenClaw 相容的技能管理，支援完整執行功能
 
 import os
 import re
+import sys
 import json
 import yaml
 import importlib
@@ -91,6 +92,15 @@ class SkillsManager:
         
         # Try multiple possible config paths
         self.skills_config_path = os.path.join(os.path.dirname(__file__), "data", "skills_config.json")
+        if getattr(sys, "frozen", False):
+            # 打包態 __file__ 位於 _MEIPASS（onefile 進程退出即刪），技能開關
+            # 必須落到 exe 旁持久數據目錄，與 ui_settings.json 規則一致
+            try:
+                from app_paths import app_data_dir
+                frozen_cfg = os.path.join(app_data_dir(), "skills_config.json")
+                self.skills_config_path = frozen_cfg
+            except Exception:
+                pass
         if not os.path.exists(self.skills_config_path):
             # Check system-wide config path
             system_config = "/var/lib/humanaize/skills_config.json"

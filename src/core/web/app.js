@@ -4,7 +4,7 @@ function addMessage(text,role){const item=document.createElement('div');item.cla
 function showView(name){$$('.view').forEach(view=>view.classList.toggle('active',view.id===`view-${name}`));$$('.nav-item[data-view]').forEach(item=>item.classList.toggle('active',item.dataset.view===name));const label={chat:'对话',thoughts:'GAN 思考',skills:'Skill 输出',status:'系统状态',settings:'设置'}[name];$('#page-title').textContent=label;$('#view-label').textContent=label;$('#sidebar').classList.remove('open')}
 async function loadSettings(){const response=await fetch('/api/settings');state.settings=await response.json();for(const [key,value] of Object.entries(state.settings)){const field=$(`#settings-form [name="${key}"]`);if(!field)continue;if(field.type==='checkbox')field.checked=Boolean(value);else field.value=value}$('#model-name').textContent=state.settings.model_name||'未设置'}
 async function checkHealth(){try{const response=await fetch('/health');if(!response.ok)throw Error();$('#status').textContent='在线';$('#api-health').textContent='在线'}catch(error){$('#status').textContent='离线';$('#api-health').textContent='离线'}}
-async function refreshStatus(){try{const data=await (await fetch('/api/status')).json();$('#message-count').textContent=data.messages.length;$('#model-name').textContent=data.model||'本地模型';const av=$('#app-version');if(av)av.textContent=data.version?('v'+data.version):'—';$('#thought-output').textContent=data.thoughts.length?data.thoughts.map(item=>`[${item.time||''}] ${item.content||''}`).join('\n'):'暂无 GAN 思考输出';$('#skill-output').textContent=data.decisions.length?data.decisions.map(item=>`[${item.time||''}] ${item.decision||''} ${item.reason||''}`).join('\n'):'暂无 Skill 输出'}catch(error){$('#thought-output').textContent=`读取状态失败：${error.message}`}}
+async function refreshStatus(){try{const data=await (await fetch('/api/status')).json();$('#message-count').textContent=data.messages.length;$('#model-name').textContent=data.model||'本地模型';const av=$('#app-version');if(av)av.textContent=data.version?('v'+data.version):'—'}catch(error){/* 輪詢失敗保持安靜，健康檢查會更新離線狀態 */}}
 $('#collapse-sidebar').onclick=()=>$('#sidebar').classList.toggle('collapsed');$('#open-sidebar').onclick=()=>$('#sidebar').classList.add('open');$$('.nav-item[data-view]').forEach(item=>item.onclick=()=>showView(item.dataset.view));$$('.settings-tab').forEach(tab=>tab.onclick=()=>{$$('.settings-tab').forEach(item=>item.classList.remove('active'));$$('.settings-section').forEach(item=>item.classList.remove('active'));tab.classList.add('active');$(`[data-section-view="${tab.dataset.section}"]`).classList.add('active')});
 $('#chat-form').onsubmit=async event=>{event.preventDefault();const text=$('#prompt').value.trim();if(!text)return;addMessage(text,'user');$('#prompt').value='';voice.resetTurn();const reply=addMessage('','assistant');const thoughtLog=document.createElement('div');thoughtLog.className='thought-log';const replyText=document.createElement('div');replyText.className='reply-text';replyText.textContent='思考中...';reply.appendChild(thoughtLog);reply.appendChild(replyText);const skillOutput=document.createElement('div');skillOutput.className='skill-output';reply.appendChild(skillOutput);const addCommand=(ev,c)=>{if(replyText.textContent==='思考中...')replyText.textContent='';if(ev==='command_start'){const l=document.createElement('div');l.className='skill-cmd-start';l.textContent='⚙ '+(c||'執行技能中...');skillOutput.appendChild(l);}else{const box=document.createElement('div');box.className='skill-cmd-result';const lab=document.createElement('div');lab.className='skill-cmd-label';lab.textContent='輸出 Output';const pre=document.createElement('pre');pre.textContent=(c||'').replace(/\s+$/,'');box.appendChild(lab);box.appendChild(pre);skillOutput.appendChild(box);}};const thoughtLabels={gan_decision:'GAN 決策',gan_topic:'議題',gan_argument:'正方論點',gan_counter_argument:'反方論點',gan_synthesis:'綜合結論',solve_mode:'Solve 模式',skill:'Skill',gan:'思考'};const addThought=(t,c)=>{if(replyText.textContent==='思考中...')replyText.textContent='';const line=document.createElement('div');line.className='thought-line '+(t?'t-'+t:'');line.dataset.label=thoughtLabels[t]||'思考';line.textContent=(c||'').replace(/^\[[^\]]+\]\s*/,'');thoughtLog.appendChild(line);$('#messages').scrollTop=$('#messages').scrollHeight};try{const response=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:text}],stream:true})});if(!response.ok){const data=await response.json().catch(()=>({}));const err=new Error(data.error?.message||'请求失败');err.status=response.status;throw err}
 const reader=response.body?.getReader();if(!reader){throw Error('该浏览器不支持流式响应');}
@@ -189,4 +189,184 @@ const voice={
   }
 };
 $('#voice-toggle').addEventListener('click',()=>voice.toggle());
+
+/* ====================== GAN 面板：閒置思考實時事件流 ====================== */
+const thoughtFeed={
+  labels:{gan_decision:'GAN 決策',gan_topic:'議題',gan_argument:'正方論點',gan_counter_argument:'反方論點',gan_synthesis:'綜合結論',solve_mode:'Solve 模式',skill:'Skill',gan:'閒置思考',social:'社交',internal:'思考',web_search:'聯網搜索',error:'錯誤'},
+  seen:new Set(),  // 內容去重：記憶歷史與 SSE 補發可能重疊
+  panel:null,
+  init(){
+    this.panel=$('#thought-output');
+    // 1) 先渲染記憶中的思考歷史（重新整理頁面也有內容）
+    fetch('/api/status').then(r=>r.json()).then(data=>{
+      (data.thoughts||[]).forEach(item=>this.append({thought_type:item.type||'internal',content:item.content||'',time:item.time||''},true));
+      const skillLog=$('#skill-output');
+      if(skillLog&&(data.decisions||[]).length){
+        skillLog.textContent=data.decisions.map(item=>`[${item.time||''}] ${item.decision||''} ${item.reason||''}`).join('\n');
+      }
+    }).catch(()=>{});
+    // 2) 訂閱 SSE：閒置引擎/對話中的思考事件即時追加
+    this.connect();
+  },
+  connect(){
+    const es=new EventSource('/api/events');
+    es.onmessage=e=>{
+      try{
+        const d=JSON.parse(e.data);
+        if(d.type==='thought'||d.type==='error'){
+          this.append({thought_type:d.thought_type||'',content:d.content||'',time:d.time||''});
+        }else if(d.type==='autonomous'){
+          this.append({thought_type:'social',content:d.content||'',time:d.time||''});
+        }
+      }catch(_){/* 忽略無法解析的幀（含 ping） */}
+    };
+    es.onerror=()=>{/* EventSource 會自動斷線重連，後端補發最近事件 */};
+  },
+  append(item,isHistory){
+    if(!this.panel||!item.content)return;
+    const key=item.content;
+    if(this.seen.has(key))return;
+    this.seen.add(key);
+    const placeholder=this.panel.querySelector('.t-internal');
+    if(placeholder&&placeholder.textContent==='等待思考事件...')placeholder.remove();
+    const nearBottom=this.panel.scrollHeight-this.panel.scrollTop-this.panel.clientHeight<80;
+    const line=document.createElement('div');
+    const t=item.thought_type||'internal';
+    line.className='thought-line '+(t?'t-'+t:'');
+    line.dataset.label=this.labels[t]||'思考';
+    if(item.time)line.title=item.time;
+    line.textContent=String(item.content).replace(/^\[[^\]]+\]\s*/,'');
+    this.panel.appendChild(line);
+    // 歷史批次不強行滾動；實時事件僅在用戶位於底部時自動貼底
+    if(!isHistory&&nearBottom)this.panel.scrollTop=this.panel.scrollHeight;
+  }
+};
+thoughtFeed.init();
+
+/* ====================== 設置頁：技能管理 ====================== */
+const skillsAdmin={
+  skills:[],
+  async list(){
+    const data=await (await fetch('/api/skills')).json();
+    this.skills=data.skills||[];
+    this.render();
+  },
+  render(){
+    const box=$('#skills-list');
+    if(!box)return;
+    if(!this.skills.length){box.innerHTML='<div class="muted">未發現任何技能。</div>';return;}
+    box.innerHTML='';
+    this.skills.forEach(skill=>{
+      const row=document.createElement('div');
+      row.className='skill-item';
+      const cb=document.createElement('input');
+      cb.type='checkbox';cb.checked=!!skill.enabled;
+      cb.title=skill.enabled?'點擊停用':'點擊啟用';
+      cb.onchange=()=>this.toggle(skill.name,cb.checked,cb);
+      const meta=document.createElement('div');
+      meta.className='skill-meta';
+      const name=document.createElement('div');
+      name.className='skill-name';
+      name.textContent=skill.name+(skill.executable?'':'（僅說明）');
+      const desc=document.createElement('div');
+      desc.className='skill-desc muted';
+      desc.textContent=skill.description||'—';
+      meta.appendChild(name);meta.appendChild(desc);
+      row.appendChild(cb);row.appendChild(meta);
+      box.appendChild(row);
+    });
+  },
+  async toggle(name,enabled,cb){
+    const old=!enabled;
+    try{
+      const resp=await fetch('/api/skills/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,enabled})});
+      const data=await resp.json();
+      if(!resp.ok)throw Error(data.error?.message||'切換失敗');
+      this.skills=data.skills||this.skills;
+      this.render();
+    }catch(e){
+      cb.checked=old;
+      window.alert(`技能切換失敗：${e.message}`);
+    }
+  },
+  /* ---------- Misskey 配置卡片 ---------- */
+  setStatus(text,ok){
+    const el=$('#mk-status');
+    el.textContent=text||'';
+    el.style.color=ok===false?'#ff7a7a':'';
+  },
+  async misskeyStatus(){
+    try{
+      const resp=await fetch('/api/skills/execute',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({name:'misskey-bot',action:'status'})});
+      const data=await resp.json();
+      const r=(data&&data.result)||{};
+      if(!resp.ok||r.success===false)throw Error(r.error||r.connect_error||'讀取狀態失敗');
+      if(r.host)$('#mk-host').value=r.host;
+      if(r.default_visibility)$('#mk-visibility').value=r.default_visibility;
+      $('#mk-token').value='';
+      $('#mk-token').placeholder=r.has_token?'已配置 Token（留空不修改）':'尚未配置 Token';
+      const who=r.username?`@${r.username}@${r.host}`:r.host;
+      this.setStatus(`${who}｜機器人標註：${r.remote_isBot===true?'是':'否'}`,true);
+    }catch(e){
+      this.setStatus(`狀態讀取失敗：${e.message}`,false);
+    }
+  },
+  async misskeyConfigure(){
+    const params={
+      host:$('#mk-host').value.trim(),
+      default_visibility:$('#mk-visibility').value,
+      token:$('#mk-token').value.trim()
+    };
+    if(!params.host){window.alert('請填寫伺服器 Host');return;}
+    this.setStatus('保存並驗證中…');
+    try{
+      const resp=await fetch('/api/skills/execute',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({name:'misskey-bot',action:'configure',params})});
+      const data=await resp.json();
+      const r=(data&&data.result)||{};
+      if(!resp.ok||r.success===false)throw Error(r.error||r.message||'保存失敗');
+      $('#mk-token').value='';
+      this.setStatus(r.message||'配置已保存',true);
+      await this.misskeyStatus();
+    }catch(e){
+      this.setStatus(`配置失敗：${e.message}`,false);
+    }
+  },
+  async misskeySetBot(){
+    this.setStatus('正在標註為機器人…');
+    try{
+      const resp=await fetch('/api/skills/execute',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({name:'misskey-bot',action:'set_bot'})});
+      const data=await resp.json();
+      const r=(data&&data.result)||{};
+      if(!resp.ok||r.success===false)throw Error(r.error||'標註失敗');
+      this.setStatus(r.message||'已標註為機器人',true);
+      await this.misskeyStatus();
+    }catch(e){
+      this.setStatus(`標註失敗：${e.message}`,false);
+    }
+  },
+  loaded:false,
+  init(){
+    $('#mk-save').onclick=()=>this.misskeyConfigure();
+    $('#mk-bot').onclick=()=>this.misskeySetBot();
+    // 後端首次構造技能管理器需導入全部技能模塊（十幾秒），改為首次打開
+    // 「技能管理」分頁時才加載，避免拖慢網頁啟動
+    $$('.settings-tab').forEach(tab=>{
+      if(tab.dataset.section!=='skills')return;
+      tab.addEventListener('click',()=>{
+        if(this.loaded)return;
+        this.loaded=true;
+        this.list().catch(e=>{
+          this.loaded=false;
+          const box=$('#skills-list');
+          if(box)box.innerHTML=`<div class="muted">技能列表讀取失敗：${e.message}</div>`;
+        });
+        this.misskeyStatus();
+      });
+    });
+  }
+};
+skillsAdmin.init();
 

@@ -1361,10 +1361,12 @@ class ThinkingEngine:
     def pause_idle(self):
         """暂停空闲引擎（用于外部API调用时优先处理用户消息）"""
         try:
-            from ui.idle import IdleEngine
-            global _idle_engine_instance
-            if _idle_engine_instance:
-                _idle_engine_instance.signal_user_activity()
+            # 直接讀 ui.idle 模塊級單例（舊寫法引用了從未導入的全局名，
+            # 會永遠 NameError 後被靜默吞掉，等於暫停從未生效）
+            from ui import idle as idle_mod
+            inst = getattr(idle_mod, "_idle_engine_instance", None)
+            if inst is not None:
+                inst.signal_user_activity()
         except Exception:
             pass
 
