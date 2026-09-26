@@ -527,6 +527,7 @@ class ThinkingEngine:
                 # 将命令结果发给AI，引导她解决问题
                 try:
                     followup_out = out
+                    seen_calls = set()
                     for loop_idx in range(10):
                         followup_prompt = load_followup_prompt(followup_out, user_text)
                         logger.info(f"Generating followup response (round {loop_idx + 1})")
@@ -535,6 +536,11 @@ class ThinkingEngine:
                         freply, fadapt = generate_with_emotion_feedback(
                             followup_model_prompt, emotion_monitor)
                         logger.info(f"Followup reply: {freply[:200] if freply else 'Empty'}")
+
+                        if not (freply or "").strip():
+                            logger.warning("Followup reply is empty, stopping loop")
+                            break
+
                         if memory is not None:
                             add(memory, "assistant", freply, source="ai_response")
                             save_memory(memory)
@@ -545,9 +551,22 @@ class ThinkingEngine:
                         fcleaned, f_calls = self._extract_skill_calls(ffinal_reply)
                         if not f_calls:
                             # 沒有更多技能調用 → 展示最終總結
-                            if self.on_response:
-                                self.on_response({"type": "chat_response", "reply": fcleaned})
+                            if self.on_response and fcleaned.strip():
+                                self.on_response({"type": "chat_response", "reply": fcleaned.strip()})
                             break
+
+                        # 進度檢查：重複調用視為停滯
+                        call_signatures = tuple(
+                            f"{name}:{json.dumps(inp, sort_keys=True, ensure_ascii=False)}"
+                            for name, inp in f_calls
+                        )
+                        if all(sig in seen_calls for sig in call_signatures):
+                            logger.warning(f"Followup loop stalled (repeated calls), stopping.")
+                            if fcleaned.strip() and self.on_response:
+                                self.on_response({"type": "chat_response", "reply": fcleaned.strip()})
+                            break
+                        seen_calls.update(call_signatures)
+
                         # 有技能調用 → 執行並繼續循環
                         for skill_name, _ in f_calls:
                             if self.on_response:
@@ -564,7 +583,12 @@ class ThinkingEngine:
                         if self.on_response:
                             self.on_response({"type": "command_result", "output": f_out})
                         self._learn_from_command_result(freply, f_out, success=True)
-                        followup_out = f_out
+                        followup_out = f_out or "(no output)"
+                    else:
+                        logger.warning("Followup loop reached max iterations (10), stopping")
+                        if self.on_response:
+                            self.on_response({"type": "chat_response",
+                                              "reply": "（已尝试多轮操作，暂时先到这里～）"})
                 except Exception as e:
                     logger.error(f"Followup generation error: {e}")
             else:
@@ -837,6 +861,7 @@ class ThinkingEngine:
                         # 若她決定繼續操作（輸出技能調用 JSON），就執行並再次餵回；
                         # 若她決定收尾（輸出純文本總結），就展示給用戶並結束循環。
                         followup_out = out
+                        seen_calls = set()  # 進度追蹤：檢測重複調用，避免死循環
                         for loop_idx in range(10):  # 最多 10 輪，防止無限循環
                             followup_prompt = load_followup_prompt(followup_out, user_text)
                             logger.info(f"Generating followup response (round {loop_idx + 1})")
@@ -845,6 +870,10 @@ class ThinkingEngine:
                             freply, fadapt = generate_with_emotion_feedback(
                                 followup_model_prompt, emotion_monitor)
                             logger.info(f"Followup reply: {freply[:200] if freply else 'Empty'}")
+
+                            if not (freply or "").strip():
+                                logger.warning("Followup reply is empty, stopping loop")
+                                break
 
                             if memory is not None:
                                 add(memory, "assistant", freply, source="ai_response")
@@ -869,6 +898,18 @@ class ThinkingEngine:
                                             self._notify_stream_callbacks(cleaned_sentence, target_info)
                                 break
 
+                            # 進度檢查：同一輪內若所有調用都已執行過，視為停滯，強制收尾
+                            call_signatures = tuple(
+                                f"{name}:{json.dumps(inp, sort_keys=True, ensure_ascii=False)}"
+                                for name, inp in f_calls
+                            )
+                            if all(sig in seen_calls for sig in call_signatures):
+                                logger.warning(f"Followup loop stalled (repeated calls), stopping. calls={call_signatures}")
+                                if fcleaned.strip() and self.on_response:
+                                    self.on_response({"type": "chat_response", "reply": fcleaned.strip()})
+                                break
+                            seen_calls.update(call_signatures)
+
                             # 有技能調用 → 執行它們，結果繼續餵回
                             logger.info(f"Followup round {loop_idx + 1}: executing {len(f_calls)} skill call(s)")
                             for skill_name, _ in f_calls:
@@ -890,9 +931,12 @@ class ThinkingEngine:
                                 self.on_response({"type": "command_result", "output": f_out})
 
                             self._learn_from_command_result(freply, f_out, success=True)
-                            followup_out = f_out
+                            followup_out = f_out or "(no output)"
                         else:
                             logger.warning("Followup loop reached max iterations (10), stopping")
+                            if self.on_response:
+                                self.on_response({"type": "chat_response",
+                                                  "reply": "（已尝试多轮操作，暂时先到这里～）"})
                     except Exception as e:
                         logger.error(f"Followup generation error: {e}")
             except Exception as e:
