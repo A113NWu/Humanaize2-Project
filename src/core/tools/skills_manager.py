@@ -94,15 +94,27 @@ class SkillsManager:
         self.skills_config_path = os.path.join(os.path.dirname(__file__), "data", "skills_config.json")
         if getattr(sys, "frozen", False):
             # 打包態 __file__ 位於 _MEIPASS（onefile 進程退出即刪），技能開關
-            # 必須落到 exe 旁持久數據目錄，與 ui_settings.json 規則一致
+            # 必須落到 exe 旁持久數據目錄，與 ui_settings.json 規則一致。
+            # 注意：不能走下面的「文件不存在則退回 ~/.humanaize」邏輯，否則
+            # 新路徑首次啟動時永遠被舊路徑覆蓋，造成開關寫錯位置。
             try:
+                import shutil
                 from app_paths import app_data_dir
                 frozen_cfg = os.path.join(app_data_dir(), "skills_config.json")
+                legacy_cfg = os.path.join(os.path.expanduser("~"), ".humanaize", "skills_config.json")
+                # 首次遷移舊版配置，保留歷史開關狀態
+                if not os.path.exists(frozen_cfg) and os.path.exists(legacy_cfg):
+                    os.makedirs(os.path.dirname(frozen_cfg), exist_ok=True)
+                    try:
+                        shutil.copy2(legacy_cfg, frozen_cfg)
+                        print(f"[Skills] migrated legacy config to {frozen_cfg}")
+                    except OSError as e:
+                        print(f"[Skills] legacy config migration failed: {e}")
                 self.skills_config_path = frozen_cfg
-            except Exception:
-                pass
-        if not os.path.exists(self.skills_config_path):
-            # Check system-wide config path
+            except Exception as e:
+                print(f"[Skills] resolve frozen config path failed: {e}")
+        elif not os.path.exists(self.skills_config_path):
+            # Check system-wide config path（開發/Linux 態保留歷史行為）
             system_config = "/var/lib/humanaize/skills_config.json"
             if os.path.exists(system_config):
                 self.skills_config_path = system_config

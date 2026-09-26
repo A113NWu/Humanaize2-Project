@@ -526,16 +526,45 @@ class ThinkingEngine:
                 
                 # 将命令结果发给AI，引导她解决问题
                 try:
-                    followup_prompt = load_followup_prompt(out, user_text)
-                    logger.info("Generating followup response after command execution")
-                    followup_model_prompt = self._build_response_prompt(exec_instr, followup_prompt, memory, user_text)
-                    freply, fadapt = generate_with_emotion_feedback(followup_model_prompt, emotion_monitor)
-                    logger.info(f"Followup reply: {freply[:200] if freply else 'Empty'}")
-                    if memory is not None:
-                        add(memory, "assistant", freply, source="ai_response")
-                        save_memory(memory)
-                    if self.on_response:
-                        self.on_response({"type": "chat_response", "reply": freply})
+                    followup_out = out
+                    for loop_idx in range(10):
+                        followup_prompt = load_followup_prompt(followup_out, user_text)
+                        logger.info(f"Generating followup response (round {loop_idx + 1})")
+                        followup_model_prompt = self._build_response_prompt(
+                            exec_instr, followup_prompt, memory, user_text)
+                        freply, fadapt = generate_with_emotion_feedback(
+                            followup_model_prompt, emotion_monitor)
+                        logger.info(f"Followup reply: {freply[:200] if freply else 'Empty'}")
+                        if memory is not None:
+                            add(memory, "assistant", freply, source="ai_response")
+                            save_memory(memory)
+
+                        fthought, ftarget_reply = self._extract_thought_and_response(freply)
+                        fresponse_content = self._extract_response_content(ftarget_reply or freply)
+                        ffinal_reply = fresponse_content or (ftarget_reply or freply)
+                        fcleaned, f_calls = self._extract_skill_calls(ffinal_reply)
+                        if not f_calls:
+                            # 沒有更多技能調用 → 展示最終總結
+                            if self.on_response:
+                                self.on_response({"type": "chat_response", "reply": fcleaned})
+                            break
+                        # 有技能調用 → 執行並繼續循環
+                        for skill_name, _ in f_calls:
+                            if self.on_response:
+                                self.on_response({"type": "internal_thought",
+                                                  "thought": f"[Skill] 調用技能 {skill_name}",
+                                                  "thought_type": "skill"})
+                        if self.on_response:
+                            self.on_response({"type": "command_start",
+                                              "message": f"AI is executing commands... (round {loop_idx + 2})\n"})
+                        f_agent = Agent('!')
+                        f_agent.set_language(self.language)
+                        f_out = f_agent.agent('!', freply)
+                        logger.info(f"Followup agent output: {f_out[:200] if f_out else 'Empty'}")
+                        if self.on_response:
+                            self.on_response({"type": "command_result", "output": f_out})
+                        self._learn_from_command_result(freply, f_out, success=True)
+                        followup_out = f_out
                 except Exception as e:
                     logger.error(f"Followup generation error: {e}")
             else:
@@ -804,34 +833,66 @@ class ThinkingEngine:
                                 self._notify_stream_callbacks(cleaned_sentence, target_info)
                     
                     try:
-                        followup_prompt = load_followup_prompt(out, user_text)
-                        logger.info("Generating followup response after command execution")
-                        followup_model_prompt = self._build_response_prompt(exec_instr, followup_prompt, memory, user_text)
-                        freply, fadapt = generate_with_emotion_feedback(followup_model_prompt, emotion_monitor)
-                        logger.info(f"Followup reply: {freply[:200] if freply else 'Empty'}")
-                        
-                        if memory is not None:
-                            add(memory, "assistant", freply, source="ai_response")
-                            save_memory(memory)
-                        
-                        fthought, ftarget_reply = self._extract_thought_and_response(freply)
-                        fresponse_content = self._extract_response_content(ftarget_reply or freply)
-                        ffinal_reply = fresponse_content or (ftarget_reply or freply)
-                        
-                        fsentences = self._split_sentences(ffinal_reply)
-                        for sentence in fsentences:
-                            if sentence and sentence not in sent_sentences:
-                                sent_sentences.append(sentence)
-                                cleaned_sentence = self._clean_and_humanize_reply(sentence)
-                                if cleaned_sentence:
-                                    # 命令已執行完才生成 followup；模型若又吐出調用 JSON，
-                                    # 隱藏而不是展示或再次執行（避免重複調用/循環）
-                                    cleaned_sentence, f_calls = self._extract_skill_calls(cleaned_sentence)
-                                    for skill_name, _ in f_calls:
-                                        logger.info(f"Followup skill call suppressed (already executed): {skill_name}")
-                                    if cleaned_sentence and self.on_response:
-                                        self.on_response({"type": "chat_response", "reply": cleaned_sentence})
-                                        self._notify_stream_callbacks(cleaned_sentence, target_info)
+                        # 閉環：執行完技能後，把結果餵回 Aize，讓她自己決定下一步。
+                        # 若她決定繼續操作（輸出技能調用 JSON），就執行並再次餵回；
+                        # 若她決定收尾（輸出純文本總結），就展示給用戶並結束循環。
+                        followup_out = out
+                        for loop_idx in range(10):  # 最多 10 輪，防止無限循環
+                            followup_prompt = load_followup_prompt(followup_out, user_text)
+                            logger.info(f"Generating followup response (round {loop_idx + 1})")
+                            followup_model_prompt = self._build_response_prompt(
+                                exec_instr, followup_prompt, memory, user_text)
+                            freply, fadapt = generate_with_emotion_feedback(
+                                followup_model_prompt, emotion_monitor)
+                            logger.info(f"Followup reply: {freply[:200] if freply else 'Empty'}")
+
+                            if memory is not None:
+                                add(memory, "assistant", freply, source="ai_response")
+                                save_memory(memory)
+
+                            fthought, ftarget_reply = self._extract_thought_and_response(freply)
+                            fresponse_content = self._extract_response_content(ftarget_reply or freply)
+                            ffinal_reply = fresponse_content or (ftarget_reply or freply)
+
+                            # 提取技能調用 JSON
+                            fcleaned, f_calls = self._extract_skill_calls(ffinal_reply)
+
+                            if not f_calls:
+                                # 沒有更多技能調用 → 這是最終總結，展示給用戶
+                                fsentences = self._split_sentences(fcleaned)
+                                for sentence in fsentences:
+                                    if sentence and sentence not in sent_sentences:
+                                        sent_sentences.append(sentence)
+                                        cleaned_sentence = self._clean_and_humanize_reply(sentence)
+                                        if cleaned_sentence and self.on_response:
+                                            self.on_response({"type": "chat_response", "reply": cleaned_sentence})
+                                            self._notify_stream_callbacks(cleaned_sentence, target_info)
+                                break
+
+                            # 有技能調用 → 執行它們，結果繼續餵回
+                            logger.info(f"Followup round {loop_idx + 1}: executing {len(f_calls)} skill call(s)")
+                            for skill_name, _ in f_calls:
+                                if self.on_response:
+                                    self.on_response({"type": "internal_thought",
+                                                      "thought": f"[Skill] 調用技能 {skill_name}",
+                                                      "thought_type": "skill"})
+
+                            if self.on_response:
+                                self.on_response({"type": "command_start",
+                                                  "message": f"AI is executing commands... (round {loop_idx + 2})\n"})
+
+                            f_agent = Agent('!')
+                            f_agent.set_language(self.language)
+                            f_out = f_agent.agent('!', freply)
+                            logger.info(f"Followup agent output: {f_out[:200] if f_out else 'Empty'}")
+
+                            if self.on_response:
+                                self.on_response({"type": "command_result", "output": f_out})
+
+                            self._learn_from_command_result(freply, f_out, success=True)
+                            followup_out = f_out
+                        else:
+                            logger.warning("Followup loop reached max iterations (10), stopping")
                     except Exception as e:
                         logger.error(f"Followup generation error: {e}")
             except Exception as e:
