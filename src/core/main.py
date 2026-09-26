@@ -1095,8 +1095,9 @@ def boot_web_dashboard():
     state.set_thinking_engine(thinking_engine)
     state.set_memory(memory)
     state.set_personality(personality)
-    server = start_api_server(host="127.0.0.1", port=8082)
-    dashboard_url = f"http://{server.host}:{server.port}/"
+    # 綁定 0.0.0.0：局域網訪問由請求級門禁控制（設置→安全性，默認拒絕），開關熱生效
+    server = start_api_server(host="0.0.0.0", port=8082)
+    dashboard_url = f"http://127.0.0.1:{server.port}/"
     print(f"[INFO] Browser dashboard started: {dashboard_url}")
     webbrowser.open(dashboard_url)
 

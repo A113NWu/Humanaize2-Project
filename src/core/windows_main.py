@@ -205,7 +205,8 @@ def main():
     state.set_thinking_engine(thinking_engine)
     state.set_memory(memory)
     state.set_personality(personality)
-    server = start_api_server(host='127.0.0.1', port=8082)
+    # 綁定 0.0.0.0：局域網訪問由請求級門禁控制（設置→安全性，默認拒絕），開關熱生效
+    server = start_api_server(host='0.0.0.0', port=8082)
 
     # 啟動閒置引擎：網頁模式過去缺少它，導致 Aize 的閒置 GAN 思考與
     # [Social] 社交事件完全不會發生，GAN 面板自然也沒有內容。
