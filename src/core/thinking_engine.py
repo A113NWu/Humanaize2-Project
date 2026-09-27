@@ -390,25 +390,35 @@ class ThinkingEngine:
             exec_instr = self._load_agent_prompt(personality)
             
             # 区分不同的任务类型
-            if task_type == "gan":
-                # GAN debate task - only internal thought, no direct response
-                self._handle_gan_task(task, memory)
-            elif task_type == "break_silence":
-                # break_silence task - generate an actual assistant reply
-                self._handle_break_silence_task(prompt, memory, emotion_monitor, exec_instr)
-            elif task_type == "reflection":
-                # reflection task - internal thought only
-                self._handle_reflection_task(prompt, memory, emotion_monitor, exec_instr)
-            elif task_type == "chat_with_gan_decision":
-                self._handle_chat_with_gan_decision_task(task, prompt, memory, emotion_monitor, exec_instr, user_text)
-            elif task_type == "chat_stream":
-                # 流式聊天任务 - 实时发送句子（包含GAN决策）
-                target_info = task.get("target_info")
-                self._handle_chat_with_gan_decision_stream_task(prompt, memory, emotion_monitor, exec_instr, user_text, target_info)
-            else:  # chat
-                # 普通聊天任务
-                self._handle_chat_task(prompt, memory, emotion_monitor, exec_instr)
-        
+            try:
+                if task_type == "gan":
+                    # GAN debate task - only internal thought, no direct response
+                    self._handle_gan_task(task, memory)
+                elif task_type == "break_silence":
+                    # break_silence task - generate an actual assistant reply
+                    self._handle_break_silence_task(prompt, memory, emotion_monitor, exec_instr)
+                elif task_type == "reflection":
+                    # reflection task - internal thought only
+                    self._handle_reflection_task(prompt, memory, emotion_monitor, exec_instr)
+                elif task_type == "chat_with_gan_decision":
+                    self._handle_chat_with_gan_decision_task(task, prompt, memory, emotion_monitor, exec_instr, user_text)
+                elif task_type == "chat_stream":
+                    # 流式聊天任务 - 实时发送句子（包含GAN决策）
+                    target_info = task.get("target_info")
+                    self._handle_chat_with_gan_decision_stream_task(prompt, memory, emotion_monitor, exec_instr, user_text, target_info)
+                else:  # chat
+                    # 普通聊天任务
+                    self._handle_chat_task(prompt, memory, emotion_monitor, exec_instr)
+            finally:
+                # 通知收集器任務真正結束。閉環 followup 的 LLM 生成耗時遠超
+                # 靜默判斷閾值，不能靠「一段時間沒有輸出」推測任務完成，
+                # 必須由 worker 顯式發出結束信號，否則回覆會被截斷。
+                if self.on_response:
+                    try:
+                        self.on_response({"type": "task_done"})
+                    except Exception:
+                        pass
+
         logger.info("Process thread stopped")
 
     def _handle_chat_task(self, prompt, memory, emotion_monitor, exec_instr):
@@ -504,7 +514,10 @@ class ThinkingEngine:
                 if response_content:
                     final_reply = response_content
                 else:
-                    cleaned = re.sub(r'!.*?!', '', actual_reply, flags=re.S).strip()
+                    # 用 _extract_skill_calls 把 JSON 技能調用從回覆中剔除（只留自然語言），
+                    # 否則 {"skill":...} 會原樣展示給用戶。
+                    cleaned, _calls = self._extract_skill_calls(actual_reply)
+                    cleaned = re.sub(r'!.*?!', '', cleaned, flags=re.S).strip()
                     if not cleaned or (cleaned.startswith('{') and cleaned.endswith('}')):
                         final_reply = "[Command executed; see command output]"
                     else:
@@ -531,11 +544,17 @@ class ThinkingEngine:
                     for loop_idx in range(10):
                         followup_prompt = load_followup_prompt(followup_out, user_text)
                         logger.info(f"Generating followup response (round {loop_idx + 1})")
+                        # 發送「思考中」信號，避免 ResponseCollector 因 LLM 生成耗時
+                        # 超過 _completion_wait（5秒）而誤判任務完成、截斷 followup 總結。
+                        if self.on_response:
+                            self.on_response({"type": "command_start",
+                                              "message": f"AI is thinking about the next step... (round {loop_idx + 1})\n"})
                         followup_model_prompt = self._build_response_prompt(
                             exec_instr, followup_prompt, memory, user_text)
+                        logger.info(f"[Followup] round {loop_idx + 1}: generating, prompt_length={len(followup_model_prompt)}")
                         freply, fadapt = generate_with_emotion_feedback(
                             followup_model_prompt, emotion_monitor)
-                        logger.info(f"Followup reply: {freply[:200] if freply else 'Empty'}")
+                        logger.info(f"[Followup] round {loop_idx + 1}: reply received, length={len(freply) if freply else 0}, content={freply[:200] if freply else 'Empty'}")
 
                         if not (freply or "").strip():
                             logger.warning("Followup reply is empty, stopping loop")
@@ -549,6 +568,7 @@ class ThinkingEngine:
                         fresponse_content = self._extract_response_content(ftarget_reply or freply)
                         ffinal_reply = fresponse_content or (ftarget_reply or freply)
                         fcleaned, f_calls = self._extract_skill_calls(ffinal_reply)
+                        logger.info(f"[Followup] round {loop_idx + 1}: skill_calls={len(f_calls)}, cleaned_length={len(fcleaned.strip())}")
                         if not f_calls:
                             # 沒有更多技能調用 → 展示最終總結
                             if self.on_response and fcleaned.strip():
@@ -568,6 +588,7 @@ class ThinkingEngine:
                         seen_calls.update(call_signatures)
 
                         # 有技能調用 → 執行並繼續循環
+                        logger.info(f"[Followup] round {loop_idx + 1}: executing {len(f_calls)} skill call(s), continuing loop")
                         for skill_name, _ in f_calls:
                             if self.on_response:
                                 self.on_response({"type": "internal_thought",
@@ -834,7 +855,9 @@ class ThinkingEngine:
                     if response_content:
                         final_reply = response_content
                     else:
-                        cleaned = re.sub(r'!.*?!', '', full_reply, flags=re.S).strip()
+                        # 剔除 JSON 技能調用，只保留自然語言回覆
+                        cleaned, _calls = self._extract_skill_calls(full_reply)
+                        cleaned = re.sub(r'!.*?!', '', cleaned, flags=re.S).strip()
                         if not cleaned or (cleaned.startswith('{') and cleaned.endswith('}')):
                             final_reply = "[Command executed; see command output]"
                         else:
@@ -865,6 +888,11 @@ class ThinkingEngine:
                         for loop_idx in range(10):  # 最多 10 輪，防止無限循環
                             followup_prompt = load_followup_prompt(followup_out, user_text)
                             logger.info(f"Generating followup response (round {loop_idx + 1})")
+                            # 發送「思考中」信號重置 collector 計時器，避免 LLM 生成
+                            # 耗時過長被誤判為任務完成而截斷 followup 總結。
+                            if self.on_response:
+                                self.on_response({"type": "command_start",
+                                                  "message": f"AI is thinking about the next step... (round {loop_idx + 1})\n"})
                             followup_model_prompt = self._build_response_prompt(
                                 exec_instr, followup_prompt, memory, user_text)
                             freply, fadapt = generate_with_emotion_feedback(
@@ -1656,9 +1684,17 @@ class ThinkingEngine:
     def queue_user_chat_task(self, prompt, memory=None, emotion_monitor=None, user_text=None, personality=None):
         """立即处理用户消息，避免被后台 GAN 或反思任务阻塞。"""
         def process_user_message():
-            exec_instr = self._load_agent_prompt(personality)
-            logger.info(f"Processing user chat directly, prompt_length={len(prompt) if prompt else 0}")
-            self._handle_chat_task(prompt, memory, emotion_monitor, exec_instr)
+            try:
+                exec_instr = self._load_agent_prompt(personality)
+                logger.info(f"Processing user chat directly, prompt_length={len(prompt) if prompt else 0}")
+                self._handle_chat_task(prompt, memory, emotion_monitor, exec_instr)
+            finally:
+                # 与 _process 相同：顯式發出結束信號，避免回覆被靜默判斷截斷
+                if self.on_response:
+                    try:
+                        self.on_response({"type": "task_done"})
+                    except Exception:
+                        pass
 
         threading.Thread(target=process_user_message, daemon=True).start()
 

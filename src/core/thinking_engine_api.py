@@ -420,11 +420,15 @@ class ResponseCollector:
     """响应收集器 - 收集ThinkingEngine的回调响应
     支持流式和同步两种模式，在最后一个块后等待一段时间没有新消息则认为任务完成"""
     
-    def __init__(self, timeout=600, completion_wait=5, first_chunk_wait=600):
+    def __init__(self, timeout=600, completion_wait=90, first_chunk_wait=600):
         """非流式生成在 CPU 上可能 60-90 秒後才返回唯一的一個 chunk，
         首塊等待必須遠大於 chunk 間隔，否則會在生成完成前誤判為空回覆。
         低配機器（RAM 不足換頁）上 prompt 評估可達 3 分鐘以上，因此
-        總超時與首塊等待都取 10 分鐘。"""
+        總超時與首塊等待都取 10 分鐘。
+        completion_wait 僅作兜底：worker 正常結束時會發送 task_done 信號，
+        collector 收到後立即完成；只有 worker 意外掛死時才靠靜默超時兜底。
+        閉環模式下 followup 的 LLM 生成可達 90 秒，靜默兜底取 90 秒避免
+        把「正在思考下一步」誤判為任務完成而截斷回覆。"""
         self._queue = Queue()
         self._timeout = timeout
         self._completion_wait = completion_wait
@@ -457,6 +461,10 @@ class ResponseCollector:
         elif response.get("type") == "command_result":
             self._last_chunk_time = time.time()
             self._queue.put({"type": "command_result", "output": response.get("output", "")})
+        elif response.get("type") == "task_done":
+            # worker 確認任務結束——排入隊列尾部，保證先按 FIFO 消費完
+            # 所有已產出內容再結束，不會截斷最後的總結
+            self._queue.put({"type": "task_done"})
         elif response.get("type") == "error":
             self._queue.put({"type": "error", "content": response.get("error", "")})
             self._finished = True
@@ -483,9 +491,14 @@ class ResponseCollector:
                 
                 # 尝试获取队列中的消息（非阻塞）
                 try:
-                    return self._queue.get(timeout=0.5)
+                    msg = self._queue.get(timeout=0.5)
                 except Empty:
                     continue
+                if msg.get("type") == "task_done":
+                    # 任務真正結束：FIFO 保證此前所有 chunk 已被消費
+                    self._finished = True
+                    return {"type": "done"}
+                return msg
         except Exception:
             return {"type": "timeout"}
     
