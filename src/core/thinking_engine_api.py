@@ -393,7 +393,7 @@ def build_prompt_from_messages(messages, personality_prompt=""):
     return render_messages(messages, personality_prompt)
 
 
-def build_context_from_memory(memory, max_messages=8):
+def build_context_from_memory(memory, max_messages=20):
     """从memory构建上下文"""
     if not memory:
         return ""
@@ -403,7 +403,8 @@ def build_context_from_memory(memory, max_messages=8):
     for msg in messages:
         role = msg.get("role", "").capitalize()
         source = msg.get("source", "")
-        content = msg.get("content", "")[:100]
+        # 放宽截断：单条 500 字符，保留更多上下文细节
+        content = msg.get("content", "")[:500]
 
         if source == "user":
             context += f"\n[用户] {content}"
@@ -520,6 +521,9 @@ class ResponseCollector:
 
 
 EMPTY_REPLY_ERROR = "錯誤：AI 沒有產生任何有效內容"
+
+# fix1：Aize 拒絕回覆時客戶端唯一可見的內容
+REFUSAL_TEXT = "Aize不想回答你的问题"
 
 
 class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
@@ -691,6 +695,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._send_json(self._load_settings())
         elif parsed.path == '/api/status':
             self._send_json(self._status_payload())
+        elif parsed.path == '/api/chat/history':
+            self._handle_chat_history()
         elif parsed.path == '/api/voice/capabilities':
             self._handle_voice_capabilities()
         elif parsed.path == '/api/events':
@@ -838,6 +844,26 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             if now - _LLAMA_MODEL_CACHE.get("ts", 0.0) < 60:
                 return _LLAMA_MODEL_CACHE.get("name", "")
             return ""
+
+    def _handle_chat_history(self):
+        """fix5：返回持久化聊天記錄（memory.json 中的對話消息）。
+        網頁啟動時加載渲染；局域網設備連同一後端即可看到相同歷史。"""
+        memory = ThinkingEngineState().get_memory() or {}
+        items = []
+        for msg in memory.get("messages", [])[-100:]:
+            source = msg.get("source", "")
+            role = msg.get("role", "")
+            if role == "user" or source == "user":
+                out_role = "user"
+            elif role == "assistant" or source in ("ai_response", "ai_autonomous"):
+                out_role = "assistant"
+            else:
+                continue
+            content = (msg.get("content") or "").strip()
+            if not content:
+                continue
+            items.append({"role": out_role, "content": content, "time": msg.get("time", "")})
+        self._send_json({"messages": items})
 
     def _status_payload(self):
         memory = ThinkingEngineState().get_memory() or {}
@@ -1297,6 +1323,16 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._send_error("AI 正在思考中，請等待當前回覆完成後再發送", 409)
             return
 
+        # fix2：web/API 路徑此前從不把用戶消息寫入記憶，導致上下文總是丟失。
+        # 在 dispatch 前記錄並立即落盤，讓後續請求的 build_context_from_memory 能看到。
+        if memory is not None and user_text:
+            try:
+                from memory import add as _mem_add, save_memory as _mem_save
+                _mem_add(memory, "user", user_text, source="user")
+                _mem_save(memory)
+            except Exception as e:
+                logger.warning(f"[Chat] failed to persist user message to memory: {e}")
+
         # 创建响应收集器
         collector = ResponseCollector(timeout=300)
 
@@ -1313,6 +1349,36 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
 
         thinking_engine.on_response = _bridged_callback
 
+        # fix1：雙線程拒答機制——一個線程照常生成回覆，另一個線程並行判斷
+        # 「要不要回覆」，並結合最近上下文決定「繼續剛才的話題還是回答新話題」。
+        # 判定不回覆則掐斷生成線程，客戶端只看到「Aize不想回答你的问题」。
+        cancel_event = threading.Event()
+        thinking_engine._chat_cancel_event = cancel_event
+        decision_holder = {}
+        decision_done = threading.Event()
+
+        def _run_answer_decision():
+            try:
+                ctx = build_context_from_memory(memory, max_messages=10) if memory else ""
+                decision_holder['result'] = thinking_engine._should_answer_user_sync(user_text, ctx)
+            except Exception as e:
+                logger.error(f"[Chat] answer-decision error: {e}")
+                decision_holder['result'] = (True, f"Error: {e} (defaulting to answer)")
+            finally:
+                decision_done.set()
+
+        def _resolve_answer_decision():
+            """等待決策結果；15 秒兜底默認回覆，避免決策卡死阻塞整個聊天。"""
+            if not decision_done.wait(timeout=15):
+                logger.warning("[Chat] answer-decision timed out after 15s, defaulting to answer")
+                return True, "decision timeout, defaulting to answer"
+            return decision_holder.get('result', (True, "no result, defaulting to answer"))
+
+        # 先啟動決策線程再排生成任務：本地單槽推理時決策請求先佔住模型，
+        # 生成排在後面，拒答時可以真正把生成擋在開始之前
+        decision_thread = threading.Thread(target=_run_answer_decision, daemon=True)
+        decision_thread.start()
+
         try:
             if stream:
                 # 通过ThinkingEngine队列提交流式聊天任务
@@ -1323,7 +1389,16 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                     target_info=None
                 )
                 logger.debug("[Chat] stream task queued")
-                self._handle_stream_response(collector, state)
+                should_answer, decision_reason = _resolve_answer_decision()
+                publish_engine_event({"type": "internal_thought",
+                                      "thought": f"[Answer Decision] {'回覆' if should_answer else '不回覆'}：{str(decision_reason)[:120]}",
+                                      "thought_type": "gan_decision"})
+                if not should_answer:
+                    cancel_event.set()
+                    logger.info(f"[Chat] refused to answer: {str(decision_reason)[:200]}")
+                    self._send_refusal_stream()
+                else:
+                    self._handle_stream_response(collector, state)
             else:
                 # 通过ThinkingEngine队列提交聊天任务
                 thinking_engine.queue_chat_task(
@@ -1334,10 +1409,23 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                     use_gan_decision=True
                 )
                 logger.debug("[Chat] sync task queued")
-                self._handle_sync_response(collector, user_text, memory, state)
+                should_answer, decision_reason = _resolve_answer_decision()
+                publish_engine_event({"type": "internal_thought",
+                                      "thought": f"[Answer Decision] {'回覆' if should_answer else '不回覆'}：{str(decision_reason)[:120]}",
+                                      "thought_type": "gan_decision"})
+                if not should_answer:
+                    cancel_event.set()
+                    logger.info(f"[Chat] refused to answer: {str(decision_reason)[:200]}")
+                    self._send_refusal_json()
+                else:
+                    self._handle_sync_response(collector, user_text, memory, state)
         finally:
-            # 恢复原始回调
+            # 恢复原始回调并清理本轮取消标记
             thinking_engine.on_response = original_on_response
+            try:
+                thinking_engine._chat_cancel_event = None
+            except Exception:
+                pass
             # 对话结束：让闲置引擎继续暂停 60 秒后自动恢复，避免争抢本地推理
             try:
                 from ui import idle as idle_mod
@@ -1350,6 +1438,51 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                 self._chat_lock.release()
             except RuntimeError:
                 pass
+
+    def _send_refusal_stream(self):
+        """拒答（流式）：只發一條「Aize不想回答你的问题」後立即結束。"""
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/event-stream; charset=utf-8')
+        self.send_header('Cache-Control', 'no-cache')
+        self.send_header('Connection', 'close')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        chunk = {
+            "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
+            "object": "chat.completion.chunk",
+            "created": int(time.time()),
+            "model": "thinking-engine",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {"content": REFUSAL_TEXT},
+                    "finish_reason": "stop"
+                }
+            ]
+        }
+        try:
+            self.wfile.write(f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n".encode('utf-8'))
+            self.wfile.write(b"data: [DONE]\n\n")
+            self.wfile.flush()
+        except BrokenPipeError:
+            pass
+
+    def _send_refusal_json(self):
+        """拒答（同步）：OpenAI 格式，content 固定為拒答語。"""
+        self._send_json({
+            "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": "thinking-engine",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": REFUSAL_TEXT},
+                    "finish_reason": "stop"
+                }
+            ],
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        })
 
     def _handle_sync_response(self, collector, user_text, memory, state):
         """处理同步（非流式）响应 - 通过ResponseCollector收集ThinkingEngine的响应"""

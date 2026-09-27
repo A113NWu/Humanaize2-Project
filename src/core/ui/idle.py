@@ -140,12 +140,21 @@ class IdleEngine:
                         "gan_result": gan_result
                     })
             elif activity == "4. 找用户说话":
-                # Aize wants to talk to user, queue a break silence task
+                # Aize wants to talk to user：真正把開場白生成出來（break_silence 任務），
+                # 完成後經事件匯流排 PO 到網頁聊天界面，而不是只留一條思考日誌
                 if self.callback:
                     self.callback({
                         "type": "internal_thought",
                         "thought": f"[Idle Activity] Aize wants to talk to user: {thinking_topic}"
                     })
+                try:
+                    from thinking_engine_api import ThinkingEngineState
+                    engine = ThinkingEngineState().get_thinking_engine()
+                    if engine is not None:
+                        engine.queue_break_silence_task(prompt=thinking_topic or "", memory=self.memory)
+                except Exception as e:
+                    if self.callback:
+                        self.callback({"type": "error", "error": f"break_silence queue failed: {e}"})
             elif "社交" in activity or "social" in activity.lower():
                 # Aize 選擇去社交平台逛逛/發動態
                 self._do_social_activity(thinking_topic)

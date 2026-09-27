@@ -109,7 +109,7 @@ class ThinkingEngine:
 
                 if task_type == "should_answer":
                     logger.info("Processing should_answer decision...")
-                    result = self._should_answer_user_sync(task.get("user_text"))
+                    result = self._should_answer_user_sync(task.get("user_text"), task.get("context", ""))
                     logger.info(f"should_answer result: {result[0]}")
                     if callback:
                         callback(result)
@@ -124,16 +124,22 @@ class ThinkingEngine:
             except Exception as e:
                 logger.error(f"Decision processing error: {e}")
     
-    def _should_answer_user_sync(self, user_text):
+    def _should_answer_user_sync(self, user_text, context=""):
         """Synchronous version of should_answer_user for internal use"""
         from llm import chat
 
         # 規則走 system 角色，用戶原話走 user 角色（避免被模型當成注入文本）
         decision_system = load_should_answer_user_prompt("")
 
+        # 帶上最近對話上下文：判斷要不要回覆的同時，也讓 AI 結合上下文
+        # 決定「繼續剛才的話題」還是「回答新話題」
+        decision_input = user_text
+        if context:
+            decision_input = f"【最近的對話】\n{context}\n\n【新消息】\n{user_text}"
+
         try:
             logger.info(f"Calling LLM for should_answer decision (text: {user_text[:50] if user_text else 'None'})")
-            response = chat(user_text, max_tokens=400, temperature=0.3, timeout=60, max_retries=0, system=decision_system).strip()
+            response = chat(decision_input, max_tokens=400, temperature=0.3, timeout=60, max_retries=0, system=decision_system).strip()
             logger.info(f"should_answer LLM response: {response[:100] if response else 'Empty'}")
             decision = self._parse_json_decision(response)
             should_answer = decision.get("decision") == "answer"
@@ -200,11 +206,12 @@ class ThinkingEngine:
             except json.JSONDecodeError:
                 return {}
     
-    def should_answer_user_async(self, user_text, callback):
+    def should_answer_user_async(self, user_text, callback, context=""):
         """Asynchronously decide if AI should answer the user"""
         self._decision_queue.put({
             "type": "should_answer",
             "user_text": user_text,
+            "context": context,
             "callback": callback
         })
     
@@ -224,6 +231,12 @@ class ThinkingEngine:
                 return json.load(f)
         except Exception:
             return {}
+
+    def _chat_cancelled(self) -> bool:
+        """fix1：雙線程拒答機制——決策線程判定「不回覆」時會 set 這個事件，
+        生成路徑在各階段檢查並立即中止（不輸出、不寫記憶）。"""
+        ev = getattr(self, "_chat_cancel_event", None)
+        return bool(ev is not None and ev.is_set())
 
     def _load_agent_prompt(self, personality=None) -> str:
         # 從 prompts_manager 載入用戶可編輯的 agent_prompt.txt
@@ -425,6 +438,9 @@ class ThinkingEngine:
         """Handle a normal chat task."""
         final_reply = ""
         logger.info(f"Handling chat task, prompt length: {len(prompt) if prompt else 0}")
+        if self._chat_cancelled():
+            logger.info("[Chat] cancelled before generation (refused)")
+            return
         # First check if web search is needed
         user_text = self._extract_user_text_from_prompt(prompt)
         
@@ -474,7 +490,11 @@ class ThinkingEngine:
         model_prompt = self._build_response_prompt(exec_instr, prompt, memory, user_text)
         reply, adaptation = generate_with_emotion_feedback(model_prompt, emotion_monitor)
         logger.info(f"LLM reply received: {reply[:200] if reply else 'Empty'}...")
-        
+
+        if self._chat_cancelled():
+            # 決策線程在生成期間判定不回覆：丟棄回覆，不輸出、不寫記憶
+            logger.info("[Chat] generation result discarded (refused)")
+            return
         thought, target_reply = self._extract_thought_and_response(reply)
         logger.info(f"Extracted thought: {thought[:100] if thought else 'None'}, target_reply: {target_reply[:100] if target_reply else 'None'}")
         
@@ -651,7 +671,11 @@ class ThinkingEngine:
     def _handle_chat_with_gan_decision_stream_task(self, prompt, memory, emotion_monitor, exec_instr, user_text, target_info=None):
         """Handle a streaming chat task with GAN decision - send sentences as they are generated."""
         logger.info(f"Handling chat_with_gan_decision_stream task, user_text: {user_text[:50] if user_text else 'None'}")
-        
+
+        if self._chat_cancelled():
+            logger.info("[Chat] cancelled before GAN decision (refused)")
+            return
+
         try:
             from tools.gan_iteration import GANIteration
             gan = GANIteration()
@@ -670,6 +694,10 @@ class ThinkingEngine:
         if ThinkingEngine._game_mode:
             logger.info("Game mode active, skipping GAN to save computational resources")
             should_use_gan = False
+
+        if self._chat_cancelled():
+            logger.info("[Chat] cancelled after GAN decision (refused)")
+            return
 
         if should_use_gan and gan_enabled:
             logger.info("GAN enabled, performing GAN debate")
@@ -700,7 +728,11 @@ class ThinkingEngine:
     def _handle_chat_stream_task(self, prompt, memory, emotion_monitor, exec_instr, user_text, target_info=None):
         """Handle a streaming chat task - send sentences as they are generated."""
         logger.info(f"Handling streaming chat task, prompt length: {len(prompt) if prompt else 0}")
-        
+
+        if self._chat_cancelled():
+            logger.info("[Chat] cancelled before streaming generation (refused)")
+            return
+
         user_text = user_text or self._extract_user_text_from_prompt(prompt)
         
         quick_solution = None
@@ -755,6 +787,10 @@ class ThinkingEngine:
             else:
                 model_prompt = self._build_response_prompt(exec_instr, prompt, memory, user_text)
             for token in generate_with_emotion_feedback_stream(model_prompt, emotion_monitor):
+                if self._chat_cancelled():
+                    # 決策線程判定不回覆：丟棄已生成內容，不輸出、不寫記憶
+                    logger.info("[Chat] streaming generation cancelled (refused)")
+                    return
                 if token:
                     visible = self._filter_think_token(token, think_state)
                     self._drain_think_event(think_state, self.on_response)
@@ -1168,6 +1204,9 @@ class ThinkingEngine:
 
     def _handle_chat_with_gan_decision_task(self, task, prompt, memory, emotion_monitor, exec_instr, user_text):
         logger.info(f"Handling chat_with_gan_decision task, user_text: {user_text[:50] if user_text else 'None'}")
+        if self._chat_cancelled():
+            logger.info("[Chat] cancelled before GAN decision (refused)")
+            return
         decision_override = task.get("gan_decision")
         try:
             from tools.gan_iteration import GANIteration
@@ -1191,6 +1230,10 @@ class ThinkingEngine:
         if ThinkingEngine._game_mode:
             logger.info("Game mode active, skipping GAN to save computational resources")
             should_use_gan = False
+
+        if self._chat_cancelled():
+            logger.info("[Chat] cancelled after GAN decision (refused)")
+            return
 
         if should_use_gan and gan_enabled:
             logger.info("GAN enabled, performing GAN debate")
@@ -1249,6 +1292,13 @@ class ThinkingEngine:
             logger.info(f"Break silence final reply: {actual_reply}")
             if self.on_response:
                 self.on_response({"type": "chat_response", "reply": actual_reply})
+            # fix4：網頁模式下沒有活躍聊天請求時 on_response 無人接收，
+            # 直接發到事件匯流排，前端 SSE 收到後把消息 PO 進聊天區
+            try:
+                from thinking_engine_api import publish_engine_event
+                publish_engine_event({"type": "autonomous_message", "message": actual_reply})
+            except Exception:
+                pass
         else:
             logger.info("Break silence reply was filtered out, not sending")
     

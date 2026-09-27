@@ -293,7 +293,10 @@ class Agent:
                 if not raw:
                     return ""
                 import locale
-                for enc in (locale.getpreferredencoding(False), "utf-8", "gbk", "cp950", "cp936"):
+                # fix3：utf-8 必須排在系統編碼之前——GBK/cp936 對任意字節幾乎
+                # 都能「解碼成功」卻產生亂碼，而 utf-8 嚴格解碼對 GBK 字節
+                # 幾乎必失敗，可安全回退到系統編碼
+                for enc in ("utf-8", locale.getpreferredencoding(False), "gbk", "cp950", "cp936"):
                     if not enc:
                         continue
                     try:
