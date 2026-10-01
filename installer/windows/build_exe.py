@@ -223,11 +223,8 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False, onefile=F
         "--exclude-module", "playwright",
         "--exclude-module", "docker",
         "--exclude-module", "kubernetes",
-        # pywin32 related (causes hook errors, not needed by core app)
-        "--exclude-module", "pywintypes",
-        "--exclude-module", "pywin32",
+        # 注意：pywin32（win32gui/win32con/win32api/pywintypes）為系統托盤所需，不可排除
         "--exclude-module", "win32com",
-        "--exclude-module", "win32api",
         # More heavy/unnecessary modules
         "--exclude-module", "uvicorn",
         "--exclude-module", "anyio",
