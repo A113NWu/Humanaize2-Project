@@ -18,7 +18,7 @@ import sys
 _version_cache = None
 
 # 找不到任何 version.json 时的兜底版本（发布前随版本號一併更新）
-FALLBACK_VERSION = "2.3.4"
+FALLBACK_VERSION = "2.3.5"
 
 
 def _candidate_paths():

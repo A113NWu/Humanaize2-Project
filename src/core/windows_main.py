@@ -118,6 +118,52 @@ def _enable_ansi_colors():
         pass
 
 
+def _show_log_window():
+    """無參數默認啟動時彈出日誌窗口（AllocConsole），重定向標準流並開啟 VT 顏色。
+
+    攔截窗口關閉（CTRL_CLOSE_EVENT）：點 X 不殺進程，而是 FreeConsole 藏起窗口，
+    進程留在系統托盤。返回是否成功掛上控制台。"""
+    import ctypes
+    kernel32 = ctypes.windll.kernel32
+
+    if not kernel32.GetConsoleWindow():
+        try:
+            if not kernel32.AllocConsole():
+                return False
+        except Exception:
+            return False
+
+    kernel32.SetConsoleTitleW("Humanaize2 日誌")
+
+    def _on_console_close(ctrl_type):
+        # CTRL_CLOSE_EVENT=2 / CTRL_LOGOFF_EVENT=5 / CTRL_SHUTDOWN_EVENT=6
+        if ctrl_type in (2, 5, 6):
+            try:
+                sys.stdout = open(os.devnull, "w")
+                sys.stderr = open(os.devnull, "w")
+            except Exception:
+                pass
+            kernel32.FreeConsole()
+            return True  # 阻止默認的進程終止
+        return False
+
+    global _console_close_handler  # 必須保持引用，防 GC 回收回調
+    _console_close_handler = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_uint)(_on_console_close)
+    kernel32.SetConsoleCtrlHandler(_console_close_handler, True)
+
+    try:
+        sys.stdin = open("CONIN$", "r", encoding="utf-8", errors="replace")
+        sys.stdout = open("CONOUT$", "w", encoding="utf-8", buffering=1, errors="replace")
+        sys.stderr = open("CONOUT$", "w", encoding="utf-8", buffering=1, errors="replace")
+        _enable_ansi_colors()
+        return True
+    except Exception:
+        return False
+
+
+_console_close_handler = None
+
+
 def _attach_parent_console():
     """打包的 --windowed exe 沒有控制台，CLI 模式需附加調用者所在的控制台，
     優先附加進程樹上的 cmd/PowerShell（兼容 onefile bootloader 派生場景），
@@ -162,13 +208,22 @@ def _attach_parent_console():
 
 def main():
     """啟動後端服務並打開瀏覽器管理面板；帶參數時路由到 core.main 的模式分發。"""
+    # --tray / --no-console：無日誌窗口啟動，直接最小化到系統托盤
+    _tray_flags = {"--tray", "--no-console"}
+    _args = set(sys.argv[1:])
+    tray_only = bool(_args) and _args.issubset(_tray_flags)
+
     # 帶參數（boot -m cli / boot -m gui / settings / solve 等）時交給 core/main.py
     # 的 dispatch，修復打包版 CLI 模式無法啟動的問題（argv 之前被完全忽略）。
-    if len(sys.argv) > 1:
+    if len(sys.argv) > 1 and not tray_only:
         _attach_parent_console()
         from main import main as core_main
         core_main()
         return
+
+    # 默認啟動：彈出日誌窗口；分配失敗（或 --tray）則無窗口，靠托盤圖標存活
+    if not tray_only:
+        _show_log_window()
 
     # 检查并启动 LLM 服务器
     from core.main import _check_and_start_server
@@ -250,12 +305,22 @@ def main():
 
     dashboard_url = f"http://{server.host}:{server.port}/"
     print(f"[INFO] Browser dashboard started: {dashboard_url}")
-    webbrowser.open(dashboard_url)
+    if not tray_only:
+        webbrowser.open(dashboard_url)
 
+    # 系統托盤：有日誌窗口時關閉窗口後靠托盤存活；--tray 啟動時只有托盤。
+    # 消息循環必須跑在主線程（PumpMessages 阻塞），替代原先的 sleep 循環。
+    from core.tray_icon import TrayIcon
+
+    def _on_tray_exit():
+        try:
+            server.stop()
+        except Exception:
+            pass
+
+    tray = TrayIcon(tooltip="Humanaize2", dashboard_url=dashboard_url, on_exit=_on_tray_exit)
     try:
-        while True:
-            import time
-            time.sleep(1)
+        tray.run()
     except KeyboardInterrupt:
         server.stop()
 

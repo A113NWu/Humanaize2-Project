@@ -13,6 +13,8 @@ asyncio>=3.4.3
 
 # 网页语音对话 TTS（微软 Edge 免费 TTS，流式分句合成，无需 API Key）
 edge-tts>=7.0.0
+# Windows 系统托盘（日志窗口关闭后最小化到托盘）
+pywin32>=306; sys_platform == 'win32'
 
 # Optional dependencies (uncomment if needed for emotion detection)
 # deepface>=0.0.79
