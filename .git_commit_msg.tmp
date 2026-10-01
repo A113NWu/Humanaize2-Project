@@ -1,7 +1,0 @@
-feat: 默認啟動帶日誌窗口+系統托盤，--tray 無窗口啟動；重寫 README 聚焦配置
-
-- 新增 src/core/tray_icon.py（pywin32 托盤：雙擊打開面板、右鍵菜單退出）
-- windows_main：默認 AllocConsole 顯示日誌窗口，關閉窗口僅 FreeConsole 隱藏，進程駐留托盤；--tray/--no-console 直接托盤啟動；主循環改為托盤消息循環
-- spec hiddenimports 與 requirements 增加 pywin32
-- README 精簡為安裝/啟動/配置教程（模型、安全、技能、Prompt、data 目錄）
-- 版本升至 2.3.5

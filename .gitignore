@@ -101,3 +101,5 @@ data/sensitive_words.txt
 
 # Test outputs
 build_log_*.txt
+
+.git_commit_msg.tmp
