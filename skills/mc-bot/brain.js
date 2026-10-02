@@ -91,6 +91,14 @@ class Brain {
     try { parsed = JSON.parse(text) } catch (e) {
       const m = String(text).match(/\{[\s\S]*\}/)
       if (m) { try { parsed = JSON.parse(m[0]) } catch (e2) {} }
+      // MiniMax 偶發截掉開頭的 {" ：嘗試補全再解析
+      if (!parsed) {
+        const t = String(text).trim()
+        if (t.endsWith('}')) {
+          if (t.startsWith('"action')) { try { parsed = JSON.parse('{' + t) } catch (e3) {} }
+          else if (t.startsWith('action')) { try { parsed = JSON.parse('{"' + t) } catch (e4) {} }
+        }
+      }
     }
     if (!parsed || typeof parsed !== 'object') return fallback
     // 兼容旧字段 say → 同时映射到 speak + chat
@@ -155,16 +163,20 @@ class Brain {
 
   async speakAndAct (reply) {
     if (this.disposed) return
+    // 防禦：解析失敗時 reply 可能是原始 JSON 殘片，不要發到遊戲/語音
+    const looksLikeJson = (s) => typeof s === 'string' && /[{"]\s*"(action|speak|chat|say)"\s*:/.test(s)
     // 语音频道
-    if (reply.speak && this.hooks.speak) {
+    if (reply.speak && this.hooks.speak && !looksLikeJson(reply.speak)) {
       const text = reply.speak.slice(0, 240)
       try { this.hooks.speak(text) } catch (e) {}
     }
     // 游戏聊天框
-    if (reply.chat) {
+    if (reply.chat && !looksLikeJson(reply.chat)) {
       const text = reply.chat.slice(0, 240)
       this.hooks.pushChat(this.bot.username, text)
       this.bot.chat(text)
+    } else if (reply.chat && looksLikeJson(reply.chat)) {
+      console.log('[brain] 已攔截未解析的 JSON 殘片，不發到聊天框:', reply.chat.slice(0, 80))
     }
     if (reply.action && reply.action !== 'none') {
       try {
