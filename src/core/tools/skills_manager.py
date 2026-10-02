@@ -44,13 +44,14 @@ class Skill:
     
     @classmethod
     def from_dict(cls, data: Dict) -> 'Skill':
-        return cls(
+        skill = cls(
             name=data.get("name", ""),
             description=data.get("description", ""),
             instructions=data.get("instructions", ""),
-            metadata=data.get("metadata", {}),
-            enabled=data.get("enabled", True)
+            metadata=data.get("metadata", {})
         )
+        skill.enabled = data.get("enabled", True)
+        return skill
     
     def execute(self, input_data: Any) -> Dict:
         """Execute the skill with given input"""

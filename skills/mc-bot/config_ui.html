@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root{--accent:#5fc7b4;--accent-deep:#3ea393;--text:#f0ebe4;--muted:#9a9187;--line:rgba(255,255,255,.12)}
+  *{box-sizing:border-box}
+  body{margin:0;padding:16px;background:transparent;color:var(--text);font-family:"Segoe UI",sans-serif;font-size:13px}
+  h3{margin:0 0 4px;font-size:14px}
+  .muted{color:var(--muted);font-size:12px;margin:0 0 14px;line-height:1.5}
+  fieldset{border:1px solid var(--line);border-radius:10px;padding:12px;margin:0 0 12px}
+  legend{padding:0 6px;font-size:12px;color:var(--muted)}
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:10px}
+  label.check{display:flex;align-items:center;gap:6px;color:var(--text);margin-top:6px}
+  label.check input{width:auto;margin:0}
+  input,select{display:block;width:100%;margin-top:4px;padding:7px 9px;border-radius:8px;border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--text);font-size:13px}
+  input:focus{outline:none;border-color:var(--accent)}
+  .row{display:flex;gap:10px}
+  .row label{flex:1}
+  .actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:6px 0 12px}
+  button{padding:8px 16px;border:0;border-radius:10px;cursor:pointer;font-weight:700;font-size:12px;color:#0d2428;background:linear-gradient(145deg,#acf0e2,var(--accent-deep))}
+  button:hover{filter:brightness(1.07)}
+  button.ghost{background:rgba(255,255,255,.08);color:var(--text);border:1px solid var(--line);box-shadow:none;font-weight:600}
+  #status-line{margin-left:auto;font-size:12px;color:var(--muted)}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#666;margin-right:6px;vertical-align:middle}
+  .dot.on{background:#4ade80;box-shadow:0 0 6px #4ade80}
+  .dot.off{background:#666}
+  #notice{min-height:16px;font-size:12px;color:var(--accent);margin-bottom:8px}
+  #notice.err{color:#ff7a7a}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  #log-box{margin-top:4px;padding:10px;border:1px solid var(--line);border-radius:10px;background:rgba(0,0,0,.25);max-height:220px;overflow:auto;font-family:Consolas,monospace;font-size:11px;line-height:1.5;white-space:pre-wrap;word-break:break-all;display:none}
+</style>
+</head>
+<body>
+<h3>Minecraft 機器人（Aize）</h3>
+<p class="muted">Java 版 1.20.1 離線模式。啟動後 Aize 會進入指定伺服器自主遊玩；語音面板在 <a id="panel-link" href="http://127.0.0.1:3939" target="_blank">127.0.0.1:3939</a>。</p>
+
+<div class="actions">
+  <span class="dot off" id="run-dot"></span><span id="run-text">未运行</span>
+  <button type="button" id="btn-start">▶ 启动</button>
+  <button type="button" class="ghost" id="btn-stop">⏹ 停止</button>
+  <button type="button" class="ghost" id="btn-logs">📄 查看日志</button>
+  <span id="status-line"></span>
+</div>
+<div id="notice"></div>
+
+<form id="cfg-form">
+<fieldset><legend>服务器连接</legend>
+  <div class="row">
+    <label>服务器地址<input name="host" placeholder="127.0.0.1"></label>
+    <label>端口<input name="port" type="number" min="1" max="65535"></label>
+  </div>
+  <div class="row">
+    <label>游戏内用户名<input name="username"></label>
+    <label>版本<input name="version" placeholder="1.20.1"></label>
+  </div>
+</fieldset>
+<fieldset><legend>Aize 大脑（本机 API）</legend>
+  <div class="row">
+    <label>API 地址<input name="aize.url" placeholder="http://127.0.0.1:8082/v1/chat/completions"></label>
+    <label>登录接口<input name="aize.loginUrl" placeholder="http://127.0.0.1:8082/api/login"></label>
+  </div>
+  <div class="row">
+    <label>账户名<input name="aize.username" autocomplete="off"></label>
+    <label>密码<input name="aize.password" type="password" autocomplete="new-password" placeholder="留空不修改"></label>
+  </div>
+  <div class="row">
+    <label>自主决策间隔（秒）<input name="aize.decisionIntervalSec" type="number" min="10"></label>
+    <label>回复最大 Tokens<input name="aize.maxTokens" type="number" min="16"></label>
+  </div>
+</fieldset>
+<fieldset><legend>安全反射</legend>
+  <div class="row">
+    <label>逃跑血量（低于即逃）<input name="safety.fleeHealth" type="number" min="1" max="20"></label>
+    <label>进食饥饿值<input name="safety.eatBelowFood" type="number" min="1" max="20"></label>
+  </div>
+  <div class="row">
+    <label>危险扫描半径<input name="safety.dangerScanRadius" type="number" min="2"></label>
+    <label>苦力怕恐慌半径<input name="safety.creeperPanicRadius" type="number" min="1"></label>
+  </div>
+</fieldset>
+<fieldset><legend>房间语音（Simple Voice Chat）</legend>
+  <p class="muted" style="margin:0 0 10px">房主需在 Minecraft 安装 Simple Voice Chat（Forge 1.20.1，建议 2.5.24+），并允许 Windows 防火墙的 <b>UDP 24454</b> 入站。Aize 会自动握手加入：能听到你们说话（本地中文识别），也会用语音回复。</p>
+  <div class="row">
+    <label class="check"><input type="checkbox" name="voice.enabled"> 启用房间语音</label>
+    <label class="check"><input type="checkbox" name="voice.speakEnabled"> Aize 语音说话</label>
+  </div>
+  <label>TTS 嗓音<input name="voice.ttsVoice" placeholder="zh-TW-HsiaoChenNeural"></label>
+  <div class="row">
+    <label>听话半径（格）<input name="voice.hearRadius" type="number" min="4" max="256"></label>
+    <label>拾音灵敏度（能量阈值，越小越灵敏）<input name="voice.energyThreshold" type="number" min="50" max="5000"></label>
+  </div>
+  <div class="row">
+    <label>断句静音（毫秒）<input name="voice.silenceMs" type="number" min="300" max="3000" step="100"></label>
+    <label>单句上限（秒）<input name="voice.maxClipSec" type="number" min="3" max="60"></label>
+  </div>
+  <label>主人游戏名（逗号分隔，这些人的语音按主人处理）<input name="owners" placeholder="例如：A113N,Steve"></label>
+  <div class="muted" id="voice-line">语音状态：—</div>
+</fieldset>
+<fieldset><legend>语音面板</legend>
+  <label>面板端口<input name="web.port" type="number" min="1" max="65535"></label>
+</fieldset>
+<div class="actions">
+  <button type="submit">💾 保存配置</button>
+  <span class="muted">保存后需重启机器人服务生效。</span>
+</div>
+</form>
+<pre id="log-box"></pre>
+
+<script>
+const $=s=>document.querySelector(s);
+const NUMERIC=new Set(['port','aize.decisionIntervalSec','aize.maxTokens','safety.fleeHealth','safety.eatBelowFood','safety.dangerScanRadius','safety.creeperPanicRadius','web.port','voice.hearRadius','voice.energyThreshold','voice.silenceMs','voice.maxClipSec']);
+const CHECKS=new Set(['voice.enabled','voice.speakEnabled']);
+function setPath(obj,path,val){const ks=path.split('.');let o=obj;for(let i=0;i<ks.length-1;i++){o=o[ks[i]]=o[ks[i]]||{};}o[ks[ks.length-1]]=val;}
+function getPath(obj,path){return path.split('.').reduce((o,k)=>(o==null?undefined:o[k]),obj);}
+function notice(t,err){const n=$('#notice');n.textContent=t||'';n.className=err?'err':'';}
+async function api(path,opts){
+  const r=await fetch('/api/skills/mc-bot'+path,opts?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(opts)}:undefined);
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok)throw Error((d.error&&d.error.message)||('请求失败 '+r.status));
+  return d;
+}
+async function loadConfig(){
+  const d=await api('/config');
+  const cfg=d.config||{};
+  document.querySelectorAll('#cfg-form [name]').forEach(el=>{
+    let v=getPath(cfg,el.name);
+    if(v===undefined||v===null)return;
+    if(CHECKS.has(el.name)){el.checked=!!v;return;}
+    if(el.name==='owners'){el.value=Array.isArray(v)?v.join(','):'';return;}
+    if(el.name==='aize.password'){el.placeholder=(v==='configured')?'已配置（留空不修改）':'未配置';el.value='';return;}
+    el.value=v;
+  });
+  if(cfg.web&&cfg.web.port)$('#panel-link').textContent='127.0.0.1:'+cfg.web.port;
+  if(cfg.web&&cfg.web.port)$('#panel-link').href='http://127.0.0.1:'+cfg.web.port;
+}
+async function loadStatus(){
+  try{
+    const d=await api('/service');
+    const dot=$('#run-dot');
+    dot.className='dot '+(d.running?'on':'off');
+    $('#run-text').textContent=d.running?('运行中 (PID '+d.pid+')'):'未运行';
+    $('#btn-start').style.display=d.running?'none':'';
+    $('#btn-stop').style.display=d.running?'':'none';
+  }catch(e){$('#run-text').textContent='状态读取失败';}
+}
+async function control(action){
+  notice(action==='start'?'启动中…':'停止中…');
+  try{
+    const d=await api('/service',{action});
+    notice(d.message||'完成');
+    await loadStatus();
+  }catch(e){notice(e.message,true);}
+}
+let logTimer=null;
+async function loadLogs(){
+  try{
+    const d=await api('/logs');
+    const box=$('#log-box');
+    box.style.display='block';
+    box.textContent=(d.lines||[]).join('\n')||'（暂无日志）';
+    box.scrollTop=box.scrollHeight;
+  }catch(e){notice(e.message,true);}
+}
+$('#btn-start').onclick=()=>control('start');
+$('#btn-stop').onclick=()=>control('stop');
+$('#btn-logs').onclick=()=>{
+  const box=$('#log-box');
+  if(logTimer){clearInterval(logTimer);logTimer=null;box.style.display='none';return;}
+  loadLogs();logTimer=setInterval(loadLogs,2000);
+};
+$('#cfg-form').onsubmit=async e=>{
+  e.preventDefault();
+  const cfg={};
+  document.querySelectorAll('#cfg-form [name]').forEach(el=>{
+    if(el.name==='aize.password'&&!el.value)return; // 留空不修改
+    if(CHECKS.has(el.name)){setPath(cfg,el.name,el.checked);return;}
+    if(el.name==='owners'){setPath(cfg,el.name,el.value.split(/[,，\s]+/).map(s=>s.trim()).filter(Boolean));return;}
+    setPath(cfg,el.name,NUMERIC.has(el.name)?Number(el.value):el.value);
+  });
+  notice('保存中…');
+  try{
+    const d=await api('/config',{config:cfg});
+    notice(d.message||'已保存');
+    $('input[name="aize.password"]').value='';
+  }catch(e){notice(e.message,true);}
+};
+loadConfig().catch(e=>notice(e.message,true));
+loadStatus();setInterval(loadStatus,4000);
+// 語音連接狀態（bot 自帶 3939 面板的 /voice/status）
+async function loadVoiceStatus(){
+  const port=(document.querySelector('#cfg-form [name="web.port"]')||{}).value||3939;
+  try{
+    const r=await fetch('http://127.0.0.1:'+port+'/voice/status');
+    if(!r.ok)throw 0;
+    const d=await r.json();
+    let t='语音：'+(d.enabled?'已启用':'已停用');
+    t+=d.connected?' · ✅ 已进入语音频道':' · ⏳ 未进入频道（进服后自动连接）';
+    t+=' · '+(d.asrReady?'中文识别就绪':'识别模型未就绪');
+    if(d.speaking)t+=' · 🔊 说话中';
+    $('#voice-line').textContent=t;
+  }catch(e){$('#voice-line').textContent='语音状态：机器人未运行（端口 '+port+'）';}
+}
+setInterval(loadVoiceStatus,4000);loadVoiceStatus();
+</script>
+</body>
+</html>

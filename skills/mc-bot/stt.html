@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Aize 语音台</title>
+<style>
+  :root{--bg:#12262f;--panel:#1a3540;--accent:#92e4d2;--accent2:#ffab8a;--text:#eef7f4;--muted:#9db7b8}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:linear-gradient(135deg,#071018,#122c35);color:var(--text);font:14px/1.6 'Segoe UI',system-ui,sans-serif;display:flex;justify-content:center;padding:24px}
+  .wrap{width:100%;max-width:640px;display:flex;flex-direction:column;gap:14px}
+  h1{font-size:20px;margin:0}
+  .hint{color:var(--muted);font-size:12px}
+  #log{flex:1;min-height:300px;max-height:55vh;overflow:auto;background:var(--panel);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:6px;border:1px solid rgba(255,255,255,.12)}
+  .msg{padding:6px 10px;border-radius:10px;background:rgba(255,255,255,.06);white-space:pre-wrap}
+  .msg.aize{background:rgba(146,228,210,.14);border:1px solid rgba(146,228,210,.3)}
+  .msg .who{color:var(--accent);font-weight:600;margin-right:6px}
+  .row{display:flex;gap:10px;align-items:center}
+  #mic{flex:0 0 auto;width:64px;height:64px;border-radius:50%;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.1);color:var(--text);font-size:26px;cursor:pointer}
+  #mic.on{background:var(--accent2);animation:pulse 1s infinite}
+  @keyframes pulse{50%{transform:scale(1.08)}}
+  #text{flex:1;padding:10px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:var(--text);outline:0}
+  #send{padding:10px 18px;border:0;border-radius:12px;background:linear-gradient(145deg,#acf0e2,#5fc7b4);font-weight:700;cursor:pointer}
+  #tts{display:flex;gap:6px;align-items:center;color:var(--muted);font-size:12px;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Aize 语音台</h1>
+  <div class="hint">按住麦克风说话（或松开自动发送），Aize 会在游戏聊天栏回复，回复内容也会在下方朗读。也可以直接打字。</div>
+  <div id="log"></div>
+  <div class="row">
+    <button id="mic" title="语音输入">🎤</button>
+    <input id="text" placeholder="打字给 Aize…回车发送">
+    <button id="send">发送</button>
+  </div>
+  <label id="tts"><input type="checkbox" id="ttsOn" checked> 朗读 Aize 的回复</label>
+  <div class="hint" id="status">连接中…</div>
+</div>
+<script>
+const log=document.getElementById('log'),text=document.getElementById('text'),mic=document.getElementById('mic'),statusEl=document.getElementById('status'),ttsOn=document.getElementById('ttsOn')
+let since=0
+function addLine(who,body,me){
+  const d=document.createElement('div');d.className='msg'+(who==='Aize'?' aize':'')
+  const w=document.createElement('span');w.className='who';w.textContent=who;d.appendChild(w);d.appendChild(document.createTextNode(body))
+  log.appendChild(d);log.scrollTop=log.scrollHeight
+  if(who==='Aize'&&ttsOn.checked&&'speechSynthesis' in window){
+    const u=new SpeechSynthesisUtterance(body);u.lang='zh-CN';speechSynthesis.speak(u)
+  }
+}
+async function poll(){
+  try{
+    const r=await fetch('/chats?since='+since);const list=await r.json()
+    for(const c of list){since=Math.max(since,c.ts);addLine(c.from,c.text)}
+    statusEl.textContent='已连接 · 轮询中'
+  }catch(e){statusEl.textContent='连接失败：'+e.message}
+  setTimeout(poll,1500)
+}
+async function say(t){
+  t=t.trim();if(!t)return
+  addLine('你',t)
+  await fetch('/say',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t})})
+}
+document.getElementById('send').onclick=()=>{say(text.value);text.value=''}
+text.onkeydown=e=>{if(e.key==='Enter'){say(text.value);text.value=''}}
+// 语音识别
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition
+if(!SR){mic.disabled=true;mic.title='此浏览器不支持语音识别，请用 Chrome/Edge'}
+else{
+  const rec=new SR();rec.lang='zh-CN';rec.interimResults=false
+  let holding=false
+  rec.onresult=e=>{const t=e.results[e.results.length-1][0].transcript;say(t)}
+  rec.onend=()=>{if(holding)rec.start()}
+  rec.onerror=()=>{holding=false;mic.classList.remove('on')}
+  const start=()=>{holding=true;mic.classList.add('on');try{rec.start()}catch(e){}}
+  const stop=()=>{holding=false;mic.classList.remove('on');rec.stop()}
+  mic.onmousedown=start;mic.onmouseup=stop;mic.onmouseleave=()=>{if(holding)stop()}
+  mic.ontouchstart=e=>{e.preventDefault();start()};mic.ontouchend=e=>{e.preventDefault();stop()}
+}
+poll()
+</script>
+</body>
+</html>

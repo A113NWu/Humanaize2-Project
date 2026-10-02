@@ -1,5 +1,5 @@
 {
-  "version": "2.3.5",
-  "last_updated": "2026-10-01T00:00:00.000000",
-  "release_notes": "v2.3.5：默认启动显示日志窗口并挂系统托盘（双击打开面板、右键退出；关闭日志窗口仅隐藏，进程驻留托盘）；支持 --tray 无窗口静默启动。重写 README，聚焦安装与配置教程（模型配置、安全设置、Prompt 自定义、数据目录）。"
+  "version": "2.3.7",
+  "last_updated": "2026-10-02T00:00:00.000000",
+  "release_notes": "v2.3.7：mc-bot 决策改走乾淨通道——brain.js 请求带 source=mc-bot 标记，8082 端识别后仅叠加人设与记忆上下文，原样透传 messages 到模型，跳过主程序 system_prompt/技能清单/GAN/拒答/联网搜索，修复 MiniMax 将 mc-bot 系统消息误判为提示词注入的问题；并清空 Aize 旧记忆。"
 }

@@ -4,4 +4,4 @@
 LLM 模組初始化
 """
 
-from .llm import chat, chat_stream
+from .llm import chat, chat_stream, chat_with_image

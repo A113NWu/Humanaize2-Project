@@ -314,21 +314,33 @@ class IdleEngine:
             _thought("[Social] social_decide 提示词缺失，本次跳过")
             return
 
-        # 3. 决策-执行循环：她输出 JSON 动作列表；若她选择 search，
-        #    执行搜索后把结果追加进提示词，让她再决策一轮（最多两轮，防止循环）
+        # 3. 决策-执行闭环：每轮她输出 JSON 动作列表 → 我们执行并把结果反馈给她 →
+        #    她看着结果决定下一步，直到她主动输出 done/none、连续没有新动作、
+        #    或达到安全上限（轮数/总动作数）才结束——和普通任务的多轮 followup 同构。
         search_results = ""
+        action_feedback = []  # 每轮动作执行结果的文字记录，反馈进下一轮提示词
         acted = set()    # (动作, 目标) 去重
         done_count = 0
-        max_actions = 3
+        max_actions = 10
+        max_rounds = 10
 
-        for round_no in range(2):
+        for round_no in range(max_rounds):
+            if action_feedback:
+                results_block = "【你上一轮的动作执行结果】\n" + "\n".join(action_feedback)
+            else:
+                results_block = ""
             prompt = (base_prompt
                       .replace("{platforms}", platform["label"])
                       .replace("{context}", context)
                       .replace("{emojis}", emoji_guide)
                       .replace("{mentions}", _fmt(mentions, "（没有人@你）"))
                       .replace("{timeline}", _fmt(notes, "（时间线空空如也）"))
-                      .replace("{search_results}", search_results))
+                      .replace("{search_results}", search_results)
+                      .replace("{action_results}", results_block))
+            # 舊版提示詞（升級前已種植到 Prompt 目錄）沒有 {action_results} 佔位符，
+            # 此時把反饋塊直接追加到末尾，保證閉環依然成立
+            if results_block and "{action_results}" not in base_prompt:
+                prompt += "\n" + results_block
             try:
                 raw = chat(prompt, max_tokens=400, timeout=60).strip()
             except Exception as e:
@@ -339,14 +351,28 @@ class IdleEngine:
                 _thought("[Social] 没看懂 Aize 的决定（输出不是有效 JSON），本次不采取行动")
                 return
 
+            action_feedback = []
             pending_search = None
-            for act in actions:
-                if not isinstance(act, dict):
-                    continue
+            asked_user = False
+            new_actions_this_round = 0
+
+            # 她明确表示结束（done 或空动作列表）→ 闭环正常收尾
+            effective = [a for a in actions if isinstance(a, dict)
+                         and str(a.get("type", "")).strip().lower() not in ("", "none")]
+            if not effective:
+                if round_no == 0:
+                    _thought("[Social] Aize 看了一圈，这次决定什么都不做")
+                else:
+                    _thought(f"[Social] Aize 觉得事情办完了，本次社交结束（共 {done_count} 个动作）")
+                return
+            if any(str(a.get("type", "")).strip().lower() == "done" for a in effective):
+                _thought(f"[Social] Aize 主动结束了这次社交（共 {done_count} 个动作）")
+                return
+
+            for act in effective:
                 atype = str(act.get("type", "")).strip().lower()
-                if atype in ("", "none"):
-                    continue
                 if done_count >= max_actions and atype != "search":
+                    action_feedback.append(f"- 动作 {atype} 未执行：已达到本次社交的动作上限")
                     continue
 
                 if atype == "react":
@@ -358,8 +384,11 @@ class IdleEngine:
                     r = bot.react(nid, reaction)
                     if r.get("success"):
                         done_count += 1
+                        new_actions_this_round += 1
+                        action_feedback.append(f"- 已给帖子 {nid} 点了 {reaction}（成功）")
                         _thought(f"[Social] Aize 给帖子 {nid} 点了 {reaction}")
                     else:
+                        action_feedback.append(f"- 给帖子 {nid} 点 {reaction} 失败：{r.get('error')}")
                         _thought(f"[Social] 点表情失败（{reaction}）：{r.get('error')}")
 
                 elif atype == "reply":
@@ -370,13 +399,17 @@ class IdleEngine:
                     acted.add(("reply", nid))
                     ok, hits = content_filter.check(text)
                     if not ok:
+                        action_feedback.append(f"- 回复 {nid} 未发送：内容被过滤器拦截（{len(hits)} 个敏感词），请换一种表达")
                         _thought(f"[Social] Aize 的回复被过滤器拦截（{len(hits)} 个敏感词），未发送")
                         continue
                     r = bot.post(text, reply_id=nid)
                     if r.get("success"):
                         done_count += 1
+                        new_actions_this_round += 1
+                        action_feedback.append(f"- 已回复 {nid}：「{text[:60]}」（成功）")
                         _thought(f"[Social] Aize 回复了 {nid}：{text[:40]}")
                     else:
+                        action_feedback.append(f"- 回复 {nid} 失败：{r.get('error')}")
                         _thought(f"[Social] 回复失败：{r.get('error')}")
 
                 elif atype == "post":
@@ -386,6 +419,7 @@ class IdleEngine:
                     acted.add(("post", text))
                     ok, hits = content_filter.check(text)
                     if not ok:
+                        action_feedback.append(f"- 新动态未发布：内容被过滤器拦截（{len(hits)} 个敏感词），请换一种表达")
                         _thought(f"[Social] Aize 的动态被过滤器拦截（{len(hits)} 个敏感词），未发布")
                         continue
                     try:
@@ -394,30 +428,53 @@ class IdleEngine:
                         r = {"success": False, "error": str(e)}
                     if r.get("success"):
                         done_count += 1
+                        new_actions_this_round += 1
+                        action_feedback.append(f"- 已发布新动态：「{text[:60]}」({r.get('url', '')})")
                         _thought(f"[Social] Aize 发布了新动态：{text[:50]} ({r.get('url', '')})")
                     else:
+                        action_feedback.append(f"- 发布新动态失败：{r.get('error')}")
                         _thought(f"[Social] 发布被平台拒绝：{r.get('error')}")
 
                 elif atype == "ask_user":
                     question = str(act.get("question", "")).strip()
                     if question and self.callback:
                         done_count += 1
+                        new_actions_this_round += 1
+                        asked_user = True
+                        action_feedback.append(f"- 已向主人提问：{question}")
                         _thought(f"[Social] Aize 有事情想请教你：{question}")
                         self.callback({"type": "autonomous_message",
                                        "message": f"我在 {platform['label']} 闲逛时遇到了想请教你的问题：{question}"})
 
                 elif atype == "search":
                     query = str(act.get("query", "")).strip()
-                    if query and round_no == 0 and pending_search is None:
+                    if query and pending_search is None:
                         pending_search = query
+
+            # 向主人提问后本轮社交收尾：等待主人回复，不继续自顾自行动
+            if asked_user:
+                _thought(f"[Social] 已向主人提问，等待回复中结束本次社交（共 {done_count} 个动作）")
+                return
 
             if pending_search:
                 _thought(f"[Social] Aize 想先搞清楚「{pending_search}」，正在上网搜索…")
                 search_results = self._social_web_search(pending_search)
-                continue  # 带着搜索结果让她再决策一轮
-            if done_count == 0:
-                _thought("[Social] Aize 看了一圈，这次决定什么都不做")
-            return
+                if not action_feedback:
+                    # 纯搜索轮：搜索结果本身即反馈，继续下一轮决策
+                    continue
+                # 既有动作又有搜索：带着动作结果和搜索结果进入下一轮
+                continue
+
+            # 停滞检测：本轮没有任何新动作被执行（全是重复/无效），闭环不再推进
+            if new_actions_this_round == 0:
+                if round_no == 0:
+                    _thought("[Social] Aize 看了一圈，这次决定什么都不做")
+                else:
+                    _thought(f"[Social] 没有新的动作可执行，本次社交结束（共 {done_count} 个动作）")
+                return
+            # 有动作执行 → 把结果反馈给她，进入下一轮决策
+        else:
+            _thought(f"[Social] 达到最大轮数（{max_rounds}），本次社交结束（共 {done_count} 个动作）")
 
     @staticmethod
     def _parse_social_actions(raw: str):

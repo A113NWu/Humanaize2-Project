@@ -1,7 +1,7 @@
 const state={settings:{},messages:0};const $=selector=>document.querySelector(selector);const $$=selector=>document.querySelectorAll(selector);
 /* 401 統一處理：任何 API 返回未登錄 → 刷新頁面（服務器會在 / 返回登錄頁） */
 const rawFetch=window.fetch.bind(window);window.fetch=(...args)=>rawFetch(...args).then(r=>{if(r.status===401){location.reload()}return r});
-const basicSettings=$('[data-section-view="basic"]');basicSettings.insertAdjacentHTML('afterbegin','<div class="openai-settings"><label><input name="openai_enabled" type="checkbox">启用 OpenAI API 模式（默认关闭）</label><label>OpenAI API Key<input name="openai_api_key" type="password" placeholder="留空则使用本地模型"></label><label>OpenAI Base URL<input name="openai_base_url" placeholder="https://api.openai.com/v1"></label><label>OpenAI 模型<input name="openai_model" placeholder="gpt-4o-mini"></label></div>');
+const basicSettings=$('[data-section-view="basic"]');basicSettings.insertAdjacentHTML('afterbegin','<div class="openai-settings"><label><input name="openai_enabled" type="checkbox">启用 OpenAI API 模式（默认关闭）</label><label>OpenAI API Key<input name="openai_api_key" type="password" placeholder="留空则使用本地模型"></label><label>OpenAI Base URL<input name="openai_base_url" placeholder="https://api.openai.com/v1"></label><label>OpenAI 模型<input name="openai_model" placeholder="gpt-4o-mini"></label><label>视觉模型（分析上传的图片用，留空沿用对话模型）<input name="vision_model" placeholder="如 gpt-4o / qwen-vl-max"></label></div>');
 function addMessage(text,role){const item=document.createElement('div');item.className=`message ${role}`;item.textContent=text;$('#messages').appendChild(item);$('#messages').scrollTop=$('#messages').scrollHeight;return item}
 function showView(name){$$('.view').forEach(view=>view.classList.toggle('active',view.id===`view-${name}`));$$('.nav-item[data-view]').forEach(item=>item.classList.toggle('active',item.dataset.view===name));const label={chat:'对话',thoughts:'GAN 思考',skills:'Skill 输出',status:'系统状态',settings:'设置'}[name];$('#page-title').textContent=label;$('#view-label').textContent=label;$('#sidebar').classList.remove('open')}
 async function loadSettings(){const response=await fetch('/api/settings');state.settings=await response.json();for(const [key,value] of Object.entries(state.settings)){const field=$(`#settings-form [name="${key}"]`);if(!field)continue;if(field.type==='checkbox')field.checked=Boolean(value);else field.value=value}const pwField=$('#settings-form [name="web_auth_password"]');if(pwField)pwField.placeholder=state.settings.web_auth_enabled?'已设置密码（留空不修改）':'未设置密码';$('#model-name').textContent=state.settings.model_name||'未设置'}
@@ -10,7 +10,7 @@ async function checkHealth(){try{const response=await fetch('/health');if(!respo
 async function loadChatHistory(){try{const data=await (await fetch('/api/chat/history')).json();const list=data.messages||[];if(!list.length)return;const box=$('#messages');const placeholder=box.querySelector('.message.assistant');for(const m of list){const item=document.createElement('div');item.className=`message ${m.role==='user'?'user':'assistant'}`;item.textContent=m.content;box.appendChild(item)}box.scrollTop=box.scrollHeight;state.messages=list.length;$('#message-count').textContent=list.length}catch(e){/* 歷史加載失敗不影響聊天 */}}
 async function refreshStatus(){try{const data=await (await fetch('/api/status')).json();$('#message-count').textContent=data.messages.length;$('#model-name').textContent=data.model||'本地模型';const av=$('#app-version');if(av)av.textContent=data.version?('v'+data.version):'—'}catch(error){/* 輪詢失敗保持安靜，健康檢查會更新離線狀態 */}}
 $('#collapse-sidebar').onclick=()=>$('#sidebar').classList.toggle('collapsed');$('#open-sidebar').onclick=()=>$('#sidebar').classList.add('open');$$('.nav-item[data-view]').forEach(item=>item.onclick=()=>showView(item.dataset.view));$$('.settings-tab').forEach(tab=>tab.onclick=()=>{$$('.settings-tab').forEach(item=>item.classList.remove('active'));$$('.settings-section').forEach(item=>item.classList.remove('active'));tab.classList.add('active');$(`[data-section-view="${tab.dataset.section}"]`).classList.add('active')});
-$('#chat-form').onsubmit=async event=>{event.preventDefault();const text=$('#prompt').value.trim();if(!text)return;addMessage(text,'user');$('#prompt').value='';voice.resetTurn();const reply=addMessage('','assistant');const thoughtLog=document.createElement('div');thoughtLog.className='thought-log';reply.appendChild(thoughtLog);/* 回覆文本塊與命令塊按事件到達順序交錯插入，避免 followup 總結出現在命令框上方 */const streamRoot=document.createElement('div');streamRoot.className='skill-output';reply.appendChild(streamRoot);let textNode=document.createElement('div');textNode.className='reply-text';textNode.textContent='思考中...';streamRoot.appendChild(textNode);const appendText=()=>{if(!textNode||!textNode.isConnected||streamRoot.lastElementChild!==textNode){textNode=document.createElement('div');textNode.className='reply-text';streamRoot.appendChild(textNode);}return textNode};const clearThinking=()=>{const n0=streamRoot.querySelector('.reply-text');if(n0&&n0.textContent==='思考中...')n0.textContent='';};const addCommand=(ev,c)=>{clearThinking();/* 命令狀態行之後到達的文本要開新文本塊，保證到達順序即顯示順序 */textNode=null;if(ev==='command_start'){const l=document.createElement('div');l.className='skill-cmd-start';l.textContent='⚙ '+(c||'執行技能中...');streamRoot.appendChild(l);}else{const box=document.createElement('div');box.className='skill-cmd-result';const lab=document.createElement('div');lab.className='skill-cmd-label';lab.textContent='輸出 Output';const pre=document.createElement('pre');pre.textContent=(c||'').replace(/\s+$/,'');box.appendChild(lab);box.appendChild(pre);streamRoot.appendChild(box);}};const thoughtLabels={gan_decision:'GAN 決策',gan_topic:'議題',gan_argument:'正方論點',gan_counter_argument:'反方論點',gan_synthesis:'綜合結論',solve_mode:'Solve 模式',skill:'Skill',gan:'思考'};const addThought=(t,c)=>{clearThinking();const line=document.createElement('div');line.className='thought-line '+(t?'t-'+t:'');line.dataset.label=thoughtLabels[t]||'思考';line.textContent=(c||'').replace(/^\[[^\]]+\]\s*/,'');thoughtLog.appendChild(line);$('#messages').scrollTop=$('#messages').scrollHeight};try{const response=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:text}],stream:true})});if(!response.ok){const data=await response.json().catch(()=>({}));const err=new Error(data.error?.message||'请求失败');err.status=response.status;throw err}
+$('#chat-form').onsubmit=async event=>{event.preventDefault();const text=$('#prompt').value.trim();const atts=uploadUI.payload();if(!text&&!atts.length)return;if(uploadUI.files.some(f=>f.uploading)){window.alert('文件還在上傳中，請稍候再發送');return;}addMessage(atts.length?((text?text+'\n':'')+atts.map(a=>`📎 ${a.name}`).join('\n')):text,'user');$('#prompt').value='';uploadUI.clear();voice.resetTurn();const reply=addMessage('','assistant');const thoughtLog=document.createElement('div');thoughtLog.className='thought-log';reply.appendChild(thoughtLog);/* 回覆文本塊與命令塊按事件到達順序交錯插入，避免 followup 總結出現在命令框上方 */const streamRoot=document.createElement('div');streamRoot.className='skill-output';reply.appendChild(streamRoot);let textNode=document.createElement('div');textNode.className='reply-text';textNode.textContent='思考中...';streamRoot.appendChild(textNode);const appendText=()=>{if(!textNode||!textNode.isConnected||streamRoot.lastElementChild!==textNode){textNode=document.createElement('div');textNode.className='reply-text';streamRoot.appendChild(textNode);}return textNode};const clearThinking=()=>{const n0=streamRoot.querySelector('.reply-text');if(n0&&n0.textContent==='思考中...')n0.textContent='';};const addCommand=(ev,c)=>{clearThinking();/* 命令狀態行之後到達的文本要開新文本塊，保證到達順序即顯示順序 */textNode=null;if(ev==='command_start'){const l=document.createElement('div');l.className='skill-cmd-start';l.textContent='⚙ '+(c||'執行技能中...');streamRoot.appendChild(l);}else{const box=document.createElement('div');box.className='skill-cmd-result';const lab=document.createElement('div');lab.className='skill-cmd-label';lab.textContent='輸出 Output';const pre=document.createElement('pre');pre.textContent=(c||'').replace(/\s+$/,'');box.appendChild(lab);box.appendChild(pre);streamRoot.appendChild(box);}};const thoughtLabels={gan_decision:'GAN 決策',gan_topic:'議題',gan_argument:'正方論點',gan_counter_argument:'反方論點',gan_synthesis:'綜合結論',solve_mode:'Solve 模式',skill:'Skill',gan:'思考'};const addThought=(t,c)=>{clearThinking();const line=document.createElement('div');line.className='thought-line '+(t?'t-'+t:'');line.dataset.label=thoughtLabels[t]||'思考';line.textContent=(c||'').replace(/^\[[^\]]+\]\s*/,'');thoughtLog.appendChild(line);$('#messages').scrollTop=$('#messages').scrollHeight};try{const response=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:text}],stream:true,attachments:atts})});if(!response.ok){const data=await response.json().catch(()=>({}));const err=new Error(data.error?.message||'请求失败');err.status=response.status;throw err}
 const reader=response.body?.getReader();if(!reader){throw Error('该浏览器不支持流式响应');}
 const decoder=new TextDecoder();let buffer='';let sawContent=false;while(true){const {value,done}=await reader.read();if(done)break;buffer+=decoder.decode(value,{stream:true});const parts=buffer.split('\n\n');buffer=parts.pop()||'';for(const part of parts){const line=part.trim();if(!line.startsWith('data:'))continue;const payload=line.slice(5).trim();if(!payload||payload==='[DONE]')continue;try{const data=JSON.parse(payload);const content=data.choices?.[0]?.delta?.content;if(data.error){addThought('error',content||'生成失敗');}else if(data.command_event){addCommand(data.command_event,content);}else if(data.thought){addThought(data.thought_type||'',content);}else if(typeof content==='string'&&content){const n=appendText();if(n.textContent==='思考中...')n.textContent='';n.textContent+=content;sawContent=true;voice.feed(content);}if(data.choices?.[0]?.finish_reason==='stop'){if(!sawContent){reply.textContent='錯誤：AI 沒有產生任何有效內容';}}}catch(error){console.warn('Stream parse error',error,payload)}}}
 if(!sawContent){reply.textContent='錯誤：AI 沒有產生任何有效內容';voice.cancel();}else{/* 收尾：去掉每個文本塊首部空行；把「思考下一步」狀態行標記為完成，避免看起來永久卡死 */streamRoot.querySelectorAll('.reply-text').forEach(n=>{n.textContent=n.textContent.replace(/^\n+/,'')});streamRoot.querySelectorAll('.skill-cmd-start').forEach(el=>{if(/thinking about the next step/.test(el.textContent))el.textContent=el.textContent.replace('⚙','✓')});voice.flush();}
@@ -194,6 +194,67 @@ const voice={
 };
 $('#voice-toggle').addEventListener('click',()=>voice.toggle());
 
+/* ====================== 聊天附件上傳 ====================== */
+const uploadUI={
+  files:[],
+  bar:$('#attach-bar'),input:$('#file-input'),btn:$('#upload-toggle'),
+  init(){
+    this.btn.addEventListener('click',()=>this.input.click());
+    this.input.addEventListener('change',()=>this.onSelect(Array.from(this.input.files)));
+  },
+  async onSelect(files){
+    if(!files.length)return;
+    const toUpload=[];
+    for(const f of files){
+      // 附件大小不限
+      const item={name:f.name,file:f,isImage:f.type.startsWith('image/')||/\.(png|jpe?g|gif|webp|bmp)$/i.test(f.name)};
+      toUpload.push(item);this.files.push(item);
+    }
+    this.render();
+    for(const item of toUpload)await this.doUpload(item);
+  },
+  async doUpload(item){
+    const fd=new FormData();fd.append('file',item.file,item.name);
+    item.uploading=true;this.render();
+    try{
+      const resp=await fetch('/api/upload',{method:'POST',body:fd});
+      const data=await resp.json();
+      if(!resp.ok||!data.files||!data.files[0])throw Error(data.error?.message||'上傳失敗');
+      Object.assign(item,data.files[0]);delete item.file;delete item.uploading;
+    }catch(e){
+      item.error=e.message;delete item.file;delete item.uploading;
+      window.alert(`「${item.name}」上傳失敗：${e.message}`);
+      this.files=this.files.filter(x=>x!==item);
+    }
+    this.render();
+  },
+  remove(item){
+    this.files=this.files.filter(x=>x!==item);this.render();
+  },
+  clear(){this.files=[];this.render();},
+  render(){
+    this.bar.innerHTML='';
+    if(!this.files.length){this.bar.classList.remove('has-items');return;}
+    this.bar.classList.add('has-items');
+    for(const f of this.files){
+      const chip=document.createElement('div');chip.className='attach-chip'+(f.uploading?' uploading':'');
+      if(f.isImage&&f.file){
+        const img=document.createElement('img');img.src=URL.createObjectURL(f.file);chip.appendChild(img);
+      }
+      const n=document.createElement('span');n.className='attach-name';n.textContent=f.name;chip.appendChild(n);
+      const del=document.createElement('button');del.className='attach-remove';del.textContent='×';
+      del.addEventListener('click',()=>this.remove(f));chip.appendChild(del);
+      this.bar.appendChild(chip);
+    }
+  },
+  payload(){
+    return this.files.filter(f=>f.path).map(f=>({name:f.name,path:f.path,mime:f.mime||'',is_image:f.isImage}));
+  }
+};uploadUI.init();
+
+/* ====================== 发送聊天：增加附件 ====================== */
+// 原 app.js 的 $('#chat-form').onsubmit 保持不動，只要在其中增加 attachments 字段即可
+
 /* ====================== GAN 面板：閒置思考實時事件流 ====================== */
 const thoughtFeed={
   labels:{gan_decision:'GAN 決策',gan_topic:'議題',gan_argument:'正方論點',gan_counter_argument:'反方論點',gan_synthesis:'綜合結論',solve_mode:'Solve 模式',skill:'Skill',gan:'閒置思考',social:'社交',internal:'思考',web_search:'聯網搜索',error:'錯誤'},
@@ -280,6 +341,28 @@ const skillsAdmin={
       meta.appendChild(name);meta.appendChild(desc);
       row.appendChild(cb);row.appendChild(meta);
       box.appendChild(row);
+      // 有獨立配置界面的技能：加「配置」按鈕，展開內嵌 iframe
+      if(skill.has_config_ui){
+        const btn=document.createElement('button');
+        btn.type='button';btn.className='mini-btn skill-cfg-toggle';btn.textContent='配置';
+        const panel=document.createElement('div');
+        panel.className='skill-cfg-panel';panel.style.display='none';
+        btn.onclick=()=>{
+          const open=panel.style.display!=='none';
+          if(open){panel.style.display='none';btn.textContent='配置';return;}
+          if(!panel.dataset.loaded){
+            const frame=document.createElement('iframe');
+            frame.className='skill-cfg-frame';
+            frame.src='/api/skills/'+encodeURIComponent(skill.name)+'/config_ui';
+            frame.setAttribute('sandbox','allow-scripts allow-same-origin allow-forms allow-popups');
+            panel.appendChild(frame);
+            panel.dataset.loaded='1';
+          }
+          panel.style.display='block';btn.textContent='收起';
+        };
+        row.appendChild(btn);
+        box.appendChild(panel);
+      }
     });
   },
   async toggle(name,enabled,cb){

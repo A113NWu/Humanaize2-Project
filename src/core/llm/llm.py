@@ -114,6 +114,80 @@ def _provider_settings():
         return None
 
 
+def _vision_provider():
+    """读取视觉模型配置：优先独立 vision_model，缺省沿用对话模型。
+    未启用云端 API 时返回 None（本地 llama-server 不走视觉链路）。"""
+    provider = _provider_settings()
+    if not provider:
+        return None
+    settings_path = get_settings_path()
+    try:
+        with open(settings_path, "r", encoding="utf-8") as settings_file:
+            settings = json.load(settings_file)
+        vision_model = str(settings.get("vision_model", "")).strip()
+        if vision_model:
+            provider = dict(provider)
+            provider["model"] = vision_model
+    except (OSError, ValueError, TypeError):
+        pass
+    return provider
+
+
+def chat_with_image(prompt: str, image_path: str, mime: str = "", max_tokens: int = 800,
+                    timeout: int = 120) -> str:
+    """用有视觉能力的云端模型分析图片，返回文字描述/回答。
+
+    未配置视觉能力（云端 API 未启用）时返回 None，调用方需自行降级。
+    """
+    provider = _vision_provider()
+    if not provider:
+        return None
+    try:
+        with open(image_path, "rb") as image_file:
+            import base64 as _b64
+            image_b64 = _b64.b64encode(image_file.read()).decode("ascii")
+    except OSError as error:
+        return f"[vision error] 读取图片失败: {error}"
+    if not mime:
+        import mimetypes
+        mime = mimetypes.guess_type(image_path)[0] or "image/png"
+    request_session = create_session()
+    try:
+        response = request_session.post(
+            f"{provider['base_url']}/chat/completions",
+            headers={"Authorization": f"Bearer {provider['api_key']}", "Content-Type": "application/json"},
+            json={
+                "model": provider["model"],
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url",
+                         "image_url": {"url": f"data:{mime};base64,{image_b64}"}},
+                    ],
+                }],
+                "max_tokens": max_tokens,
+            },
+            timeout=timeout,
+        )
+        try:
+            response.raise_for_status()
+        except requests.exceptions.HTTPError as error:
+            status_code, response_body = _http_error_detail(error)
+            logger.error("Vision API HTTP error %s, response body: %s", status_code, response_body or "<empty>")
+            return f"[vision error] HTTP {status_code}: {response_body or 'provider returned an empty error response'}"
+        data = response.json()
+        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        if isinstance(content, list):
+            content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
+        return _strip_think_blocks(str(content or ""))
+    except Exception as error:
+        logger.error("Vision API request failed: %s", error, exc_info=True)
+        return f"[vision error] {error}"
+    finally:
+        request_session.close()
+
+
 # 各模板家族的 prompt 起始標記：帶標記的 prompt 視為已渲染，直接透傳
 _TEMPLATE_OPENERS = {"chatml": "<|im_start|>", "gemma": "<start_of_turn>"}
 

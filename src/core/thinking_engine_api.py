@@ -22,6 +22,7 @@ import traceback
 import collections
 import hashlib
 import secrets
+import subprocess
 try:
     from http.server import ThreadingHTTPServer as HTTPServer, BaseHTTPRequestHandler
 except ImportError:
@@ -272,6 +273,85 @@ def publish_engine_event(response):
 _SKILL_EXECUTE_WHITELIST = {
     "misskey-bot": {"status", "configure", "set_bot"},
 }
+
+
+# ---------------------------------------------------------------------------
+# 技能配置界面 / 配置讀寫 / 後台服務（通用機制）
+#
+# Skill 在 SKILL.md metadata 裡聲明即可接入 Dashboard 技能配置區：
+#   config_ui: config_ui.html          → GET /api/skills/{name}/config_ui（iframe 嵌入）
+#   config_file: config.json           → GET/POST /api/skills/{name}/config（POST 為深合併）
+#   config_secret_fields: [a.b]        → 讀取時脫敏為 "configured"，寫入空值/"configured" 不覆蓋
+#   service: {command: "node bot.js"}  → GET/POST /api/skills/{name}/service（start/stop/status）
+# ---------------------------------------------------------------------------
+
+# 進程級技能服務註冊表：skill_name -> {"proc": Popen, "started_at": ts, "log": path}
+_SKILL_SERVICES = {}
+
+
+def _get_skill_by_name(name: str):
+    """按名字取技能（交由 SkillsManager 的大小寫不敏感查詢）。"""
+    return _get_skills_manager().get_skill(name)
+
+
+def _skill_subpath(root: str, rel: str):
+    """把技能目錄相對路徑解析為絕對路徑；越界（../ 等）返回 None。"""
+    if not root or not rel or os.path.isabs(rel):
+        return None
+    full = os.path.realpath(os.path.join(root, rel))
+    real_root = os.path.realpath(root)
+    if full != real_root and full.startswith(real_root + os.sep):
+        return full
+    return None
+
+
+def _get_secret_path(secret: str):
+    """脱敏点路径拆段；拒绝数组下标等复杂路径。"""
+    parts = [p for p in str(secret).split(".") if p and p.isidentifier()]
+    return parts or None
+
+
+def _mask_secrets(node, parts):
+    if not parts or not isinstance(node, dict):
+        return
+    key = parts[0]
+    if key not in node:
+        return
+    if len(parts) == 1:
+        if node[key] not in (None, ""):
+            node[key] = "configured"
+        return
+    _mask_secrets(node[key], parts[1:])
+
+
+def _merge_config(dst: dict, patch: dict, secret_dotted, prefix=""):
+    """深合併補丁到配置；秘密字段寫入空值或 'configured' 視為不修改。"""
+    for key, value in patch.items():
+        path = f"{prefix}{key}"
+        if isinstance(value, dict) and isinstance(dst.get(key), dict):
+            _merge_config(dst[key], value, secret_dotted, path + ".")
+            continue
+        if path in secret_dotted and (value in (None, "", "configured")):
+            continue  # 留空 / 脫敏佔位符 → 保留原值
+        dst[key] = value
+
+
+def _service_record(name: str):
+    rec = _SKILL_SERVICES.get(name)
+    if rec:
+        proc = rec["proc"]
+        if proc.poll() is not None:  # 已退出，清掉失效記錄
+            try:
+                rec.get("log_handle") and rec["log_handle"].close()
+            except Exception:
+                pass
+            _SKILL_SERVICES.pop(name, None)
+            return None
+    return rec
+
+
+def _service_running(name: str) -> bool:
+    return _service_record(name) is not None
 
 
 # 延迟导入llm模块，避免循环依赖
@@ -703,6 +783,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._handle_event_stream()
         elif parsed.path == '/api/skills':
             self._handle_list_skills()
+        elif parsed.path.startswith('/api/skills/'):
+            self._route_skill_api_get(parsed.path)
         elif parsed.path == '/':
             self._send_static_file("index.html", "text/html; charset=utf-8")
         elif parsed.path == '/background':
@@ -818,8 +900,175 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._handle_skill_toggle()
         elif parsed.path == '/api/skills/execute':
             self._handle_skill_execute()
+        elif parsed.path.startswith('/api/skills/'):
+            self._route_skill_api_post(parsed.path)
+        elif parsed.path == '/api/upload':
+            self._handle_upload()
         else:
             self._send_error("Not found", 404)
+
+    # 聊天附件大小不限（用戶要求移除 20MB 上限）
+    _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
+
+    def _uploads_dir(self):
+        """聊天上傳文件的持久目錄（與 memory 同級數據目錄下）。"""
+        try:
+            from app_paths import app_data_dir
+        except ImportError:
+            from core.app_paths import app_data_dir
+        target = os.path.join(app_data_dir(), "uploads")
+        os.makedirs(target, exist_ok=True)
+        return target
+
+    @staticmethod
+    def _sanitize_upload_name(name: str) -> str:
+        """只保留安全文件名字符，防止路徑穿越與怪字符。"""
+        base = os.path.basename(name or "").strip().replace(" ", "_")
+        base = re.sub(r'[^\w.\-一-鿿]', "_", base)
+        return base[:80] or "file"
+
+    def _handle_upload(self):
+        """接收聊天附件（multipart/form-data），落盤到 uploads 目錄。
+
+        返回 [{"name","path","mime","size","is_image"}]，path 為絕對路徑，
+        後續 /api/chat 的 attachments 引用該路徑（僅允許 uploads 目錄內）。"""
+        content_type = self.headers.get('Content-Type', '')
+        match = re.match(r'multipart/form-data;\s*boundary=(.+)', content_type)
+        if not match:
+            self._send_error("Content-Type must be multipart/form-data")
+            return
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+        except (TypeError, ValueError):
+            content_length = 0
+        if content_length <= 0:
+            self._send_error("Empty upload body")
+            return
+
+        boundary = match.group(1).strip().strip('"').encode('utf-8')
+        body = self.rfile.read(content_length)
+
+        files = []
+        for part in body.split(b'--' + boundary):
+            part = part.strip(b'\r\n')
+            if not part or part == b'--':
+                continue
+            header_blob, sep, payload = part.partition(b'\r\n\r\n')
+            if not sep:
+                continue
+            headers_text = header_blob.decode('utf-8', errors='replace')
+            disposition = re.search(r'Content-Disposition:[^\n]*filename="([^"]*)"', headers_text, re.I)
+            if not disposition:
+                continue
+            filename = self._sanitize_upload_name(disposition.group(1))
+            mime_match = re.search(r'Content-Type:\s*([^\r\n]+)', headers_text, re.I)
+            mime = (mime_match.group(1).strip() if mime_match else '') or 'application/octet-stream'
+            # part 末尾的 \r\n 屬於分隔符結構，不屬於文件內容
+            if payload.endswith(b'\r\n'):
+                payload = payload[:-2]
+
+            ext = os.path.splitext(filename)[1].lower()
+            is_image = mime.startswith('image/') or ext in self._IMAGE_EXTS
+            stamp = time.strftime('%Y%m%d_%H%M%S')
+            stored_name = f"{stamp}_{uuid.uuid4().hex[:6]}_{filename}"
+            stored_path = os.path.join(self._uploads_dir(), stored_name)
+            try:
+                with open(stored_path, 'wb') as out:
+                    out.write(payload)
+            except OSError as e:
+                self._send_error(f"Failed to save file: {e}", 500)
+                return
+            files.append({
+                "name": filename,
+                "path": stored_path,
+                "mime": mime,
+                "size": len(payload),
+                "is_image": is_image,
+            })
+            logger.info(f"[Upload] saved {filename} ({len(payload)} bytes, mime={mime}, image={is_image})")
+
+        if not files:
+            self._send_error("No file found in upload body")
+            return
+        self._send_json({"status": "ok", "files": files})
+
+    def _validate_attachment(self, item):
+        """校驗前端回傳的附件引用：必須位於 uploads 目錄內且文件存在。"""
+        if not isinstance(item, dict):
+            return None
+        path = str(item.get('path', '') or '')
+        if not path:
+            return None
+        uploads = os.path.realpath(self._uploads_dir())
+        real = os.path.realpath(path)
+        if not real.startswith(uploads + os.sep) or not os.path.isfile(real):
+            return None
+        mime = str(item.get('mime', '') or '')
+        ext = os.path.splitext(real)[1].lower()
+        return {
+            "name": self._sanitize_upload_name(str(item.get('name', '') or os.path.basename(real))),
+            "path": real,
+            "mime": mime,
+            "is_image": bool(item.get('is_image')) or mime.startswith('image/') or ext in self._IMAGE_EXTS,
+        }
+
+    def _build_attachment_context(self, attachments, user_text: str) -> str:
+        """把上傳附件轉成注入聊天的上下文段落。
+
+        圖片：有視覺模型時直接調 vision 模型分析，結果餵給對話；
+        其他文件（或視覺不可用時）：引導 Aize 結合文件類型與用戶需求
+        自己寫代碼閉環分析（走正常聊天的技能 followup 循環）。"""
+        blocks = []
+        for att in attachments:
+            att = self._validate_attachment(att)
+            if not att:
+                continue
+            name, path, mime = att["name"], att["path"], att["mime"]
+            need = (user_text or "").strip() or "分析这个文件并告诉我重点内容"
+
+            if att["is_image"]:
+                description = None
+                try:
+                    from llm import chat_with_image
+                    publish_engine_event({"type": "internal_thought",
+                                          "thought": f"[Upload] 正在用视觉模型分析图片 {name}…",
+                                          "thought_type": "skill"})
+                    description = chat_with_image(
+                        f"用户上传了一张图片。用户需求：{need}\n"
+                        f"请先详细描述图片内容，再结合用户需求给出回应要点。",
+                        path, mime)
+                except Exception as e:
+                    logger.warning(f"[Upload] vision analysis failed: {e}")
+                    description = f"[vision error] {e}"
+                if description and not str(description).startswith("[vision error]"):
+                    blocks.append(
+                        f"【用户上传的图片「{name}」】\n"
+                        f"视觉模型分析结果：\n{description}\n"
+                        f"请结合以上图片内容和我的需求，用你平时的语气回复我。")
+                    continue
+                # 視覺不可用/失敗 → 降級為代碼分析（如提取尺寸、EXIF、OCR 等）
+                reason = "未配置视觉模型（可在设置中启用 OpenAI API 并配置视觉模型）" \
+                    if description is None else f"视觉模型调用失败（{str(description)[:120]}）"
+                blocks.append(
+                    f"【用户上传的图片「{name}」】\n"
+                    f"- 类型：{mime}\n- 已保存到本机路径：{path}\n"
+                    f"- 注意：{reason}，无法直接「看」图。\n"
+                    f"用户需求：{need}\n"
+                    f"请自己编写并执行代码（用 shell 技能运行 Python 脚本）尽可能分析这个图片文件"
+                    f"（尺寸、格式、EXIF、颜色分布、OCR 文字等），执行结果返回后继续下一步，"
+                    f"直到得出能给出的结论，再用自然语言总结给我，并如实说明哪些部分无法确认。")
+                continue
+
+            blocks.append(
+                f"【用户上传的文件「{name}」，需要你分析】\n"
+                f"- 类型：{mime}\n- 已保存到本机路径：{path}\n"
+                f"- 大小：{os.path.getsize(path)} 字节\n"
+                f"用户需求：{need}\n"
+                f"请结合文件类型和用户需求，自己编写并执行代码来解析和分析这个文件"
+                f"（文本类可用 file-read 分块读取；二进制/文档/压缩包等用 shell 技能运行 Python 脚本处理），"
+                f"执行结果返回后继续下一步，直到得出完整结论，最后用自然语言把分析结果总结给我。"
+                f"文件可能很大，不要试图一次性全部读入。")
+        return "\n\n".join(blocks)
 
     def _settings_path(self):
         return get_settings_path()
@@ -890,7 +1139,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
     def _settings_defaults(self):
         return {
             "language": "中文", "theme": "Liquid Glass", "model_name": "tinyllama",
-            "model_path": "", "openai_enabled": False, "openai_api_key": "", "openai_base_url": "https://api.openai.com/v1", "openai_model": "gpt-4o-mini", "gan_enabled": True, "auto_break_silence": True,
+            "model_path": "", "openai_enabled": False, "openai_api_key": "", "openai_base_url": "https://api.openai.com/v1", "openai_model": "gpt-4o-mini", "vision_model": "", "gan_enabled": True, "auto_break_silence": True,
             "skills_prompt": "", "llm_server_url": "http://127.0.0.1:8080",
             "max_tokens": 256, "temperature": 0.7, "guard_enabled": False,
             "guard_auto_start": False, "guard_interval": 5, "guard_firewall": True,
@@ -1053,16 +1302,31 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         finally:
             _idle_event_bus.unsubscribe(queue)
 
+    @staticmethod
+    def _skill_payload(skill):
+        """技能序列化：標記是否有獨立配置界面 / 可啟停服務（metadata 聲明 + 文件實際存在）。"""
+        meta = skill.metadata or {}
+        has_config_ui = bool(
+            meta.get("config_ui")
+            and _skill_subpath(skill.skill_dir, meta["config_ui"])
+            and os.path.isfile(_skill_subpath(skill.skill_dir, meta["config_ui"]))
+        )
+        has_service = bool((meta.get("service") or {}).get("command"))
+        return {
+            "name": skill.name,
+            "description": (skill.description or "")[:300],
+            "enabled": bool(skill.enabled),
+            "executable": bool(skill.executor),
+            "has_config_ui": has_config_ui,
+            "has_service": has_service,
+            "service_running": _service_running(skill.name) if has_service else False,
+        }
+
     def _handle_list_skills(self):
         """返回技能清單（名稱/說明/是否啟用/是否有執行器），不回傳任何密鑰。"""
         try:
             manager = _get_skills_manager()
-            skills = [{
-                "name": skill.name,
-                "description": (skill.description or "")[:300],
-                "enabled": bool(skill.enabled),
-                "executable": bool(skill.executor),
-            } for skill in manager.get_all_skills()]
+            skills = [self._skill_payload(skill) for skill in manager.get_all_skills()]
             skills.sort(key=lambda item: item["name"].lower())
             self._send_json({
                 "skills": skills,
@@ -1102,13 +1366,9 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                 "status": "ok",
                 "name": name,
                 "enabled": enabled,
-                "skills": [{
-                    "name": skill.name,
-                    "description": (skill.description or "")[:300],
-                    "enabled": bool(skill.enabled),
-                    "executable": bool(skill.executor),
-                } for skill in sorted(manager.get_all_skills(),
-                                      key=lambda item: item.name.lower())],
+                "skills": [self._skill_payload(skill) for skill in
+                           sorted(manager.get_all_skills(),
+                                  key=lambda item: item.name.lower())],
             })
         except (OSError, ValueError, json.JSONDecodeError) as e:
             self._send_error(f"Invalid request: {e}")
@@ -1155,6 +1415,268 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         except Exception as e:
             logger.error(f"[Skills] execute failed: {e}\n{traceback.format_exc()}")
             self._send_error(f"技能执行失败: {e}", 500)
+
+    # ------------------------------------------------------------------
+    # 技能子路由：/api/skills/{name}/config_ui|config|service|logs
+    # 通用機制，凡在 SKILL.md metadata 聲明了對應能力的技能都可使用。
+    # ------------------------------------------------------------------
+
+    _SKILL_SUB_ACTIONS_GET = ("config_ui", "config", "service", "logs")
+    _SKILL_SUB_ACTIONS_POST = ("config", "service")
+
+    def _split_skill_subpath(self, path: str, allowed):
+        """/api/skills/{name}/{action} → (name, action)；不合法返回 (None, None)。"""
+        rest = path[len("/api/skills/"):]
+        name, sep, action = rest.partition("/")
+        name = name.strip()
+        action = action.strip().lower()
+        if not name or not sep or action not in allowed:
+            return None, None
+        return name, action
+
+    def _route_skill_api_get(self, path: str):
+        name, action = self._split_skill_subpath(path, self._SKILL_SUB_ACTIONS_GET)
+        if not name:
+            self._send_error("Not found", 404)
+            return
+        if action == "config_ui":
+            self._handle_skill_config_ui(name)
+        elif action == "config":
+            self._handle_skill_config_get(name)
+        elif action == "service":
+            self._handle_skill_service_status(name)
+        elif action == "logs":
+            self._handle_skill_logs(name)
+
+    def _route_skill_api_post(self, path: str):
+        name, action = self._split_skill_subpath(path, self._SKILL_SUB_ACTIONS_POST)
+        if not name:
+            self._send_error("Not found", 404)
+            return
+        if action == "config":
+            self._handle_skill_config_post(name)
+        elif action == "service":
+            self._handle_skill_service_control(name)
+
+    def _resolve_skill(self, name: str):
+        """取技能實例；失敗時已自行回應，返回 None。"""
+        skill = _get_skill_by_name(name)
+        if not skill or not skill.skill_dir:
+            self._send_error(f"未找到技能: {name}", 404)
+            return None
+        return skill
+
+    def _handle_skill_config_ui(self, name: str):
+        """返回技能自帶的配置界面 HTML（供 Dashboard iframe 嵌入）。"""
+        skill = self._resolve_skill(name)
+        if not skill:
+            return
+        rel = (skill.metadata or {}).get("config_ui")
+        path = _skill_subpath(skill.skill_dir, rel) if rel else None
+        if not path or not os.path.isfile(path):
+            self._send_error("该技能没有配置界面", 404)
+            return
+        self._send_file_path(path, "text/html; charset=utf-8")
+
+    def _skill_config_file(self, skill):
+        """技能聲明的配置文件絕對路徑；未聲明或越界返回 None。"""
+        rel = (skill.metadata or {}).get("config_file")
+        return _skill_subpath(skill.skill_dir, rel) if rel else None
+
+    def _skill_secret_paths(self, skill):
+        """脫敏點路徑集合（如 {"aize.password"}），僅接受標識符路徑。"""
+        raw = (skill.metadata or {}).get("config_secret_fields") or []
+        paths = set()
+        for item in raw:
+            parts = _get_secret_path(item)
+            if parts:
+                paths.add(".".join(parts))
+        return paths
+
+    def _handle_skill_config_get(self, name: str):
+        """讀取技能配置文件（JSON），秘密字段脫敏為 'configured'。"""
+        skill = self._resolve_skill(name)
+        if not skill:
+            return
+        path = self._skill_config_file(skill)
+        if not path:
+            self._send_error("该技能未声明配置文件", 404)
+            return
+        try:
+            if os.path.isfile(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+            else:
+                config = {}
+            if not isinstance(config, dict):
+                self._send_error("配置文件不是 JSON 对象", 500)
+                return
+            for dotted in self._skill_secret_paths(skill):
+                _mask_secrets(config, dotted.split("."))
+            self._send_json({"config": config})
+        except (OSError, ValueError, json.JSONDecodeError) as e:
+            self._send_error(f"读取配置失败: {e}", 500)
+
+    def _handle_skill_config_post(self, name: str):
+        """深合併寫入技能配置；秘密字段留空/'configured' 不覆蓋原值。"""
+        skill = self._resolve_skill(name)
+        if not skill:
+            return
+        path = self._skill_config_file(skill)
+        if not path:
+            self._send_error("该技能未声明配置文件", 404)
+            return
+        try:
+            body = self._read_json_body()
+        except (ValueError, json.JSONDecodeError) as e:
+            self._send_error(f"Invalid request: {e}", 400)
+            return
+        patch = body.get("config")
+        if not isinstance(patch, dict):
+            self._send_error("config 必须是 JSON 对象", 400)
+            return
+        try:
+            config = {}
+            if os.path.isfile(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+                if not isinstance(config, dict):
+                    config = {}
+            _merge_config(config, patch, self._skill_secret_paths(skill))
+            tmp_path = path + ".tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+            os.replace(tmp_path, path)
+            logger.info(f"[Skills] config saved name={name} file={path}")
+            self._send_json({"status": "ok", "message": "配置已保存"})
+        except OSError as e:
+            self._send_error(f"保存配置失败: {e}", 500)
+
+    # ---------------------------- 技能服務啟停 ----------------------------
+
+    def _skill_service_command(self, skill):
+        svc = (skill.metadata or {}).get("service") or {}
+        command = svc.get("command")
+        if not isinstance(command, str) or not command.strip():
+            return None
+        return command.strip()
+
+    def _handle_skill_service_status(self, name: str):
+        skill = self._resolve_skill(name)
+        if not skill:
+            return
+        if not self._skill_service_command(skill):
+            self._send_error("该技能未声明服务", 404)
+            return
+        rec = _service_record(skill.name)
+        payload = {"running": bool(rec)}
+        if rec:
+            payload["pid"] = rec["proc"].pid
+            payload["uptime_sec"] = int(time.time() - rec["started_at"])
+        self._send_json(payload)
+
+    def _handle_skill_service_control(self, name: str):
+        """啟停技能後台服務：{"action": "start"|"stop"|"restart"}。"""
+        skill = self._resolve_skill(name)
+        if not skill:
+            return
+        command = self._skill_service_command(skill)
+        if not command:
+            self._send_error("该技能未声明服务", 404)
+            return
+        try:
+            body = self._read_json_body()
+        except (ValueError, json.JSONDecodeError) as e:
+            self._send_error(f"Invalid request: {e}", 400)
+            return
+        action = str(body.get("action", "")).strip().lower()
+        if action not in ("start", "stop", "restart"):
+            self._send_error("action 必须是 start/stop/restart", 400)
+            return
+        if action in ("stop", "restart"):
+            self._stop_skill_service(skill.name)
+        if action in ("start", "restart"):
+            if not self._start_skill_service(skill, command):
+                return  # 已自行回應錯誤
+        self._send_json({
+            "status": "ok",
+            "running": _service_running(skill.name),
+            "message": {"start": "服务已启动", "stop": "服务已停止", "restart": "服务已重启"}[action],
+        })
+
+    def _start_skill_service(self, skill, command: str) -> bool:
+        """spawn 技能服務進程；日誌落到技能目錄 logs/service.log。失敗時已回應。"""
+        if _service_record(skill.name):
+            self._send_json({"status": "ok", "running": True, "message": "服务已在运行"})
+            return False
+        logs_dir = os.path.join(skill.skill_dir, "logs")
+        try:
+            os.makedirs(logs_dir, exist_ok=True)
+            log_path = os.path.join(logs_dir, "service.log")
+            log_handle = open(log_path, "a", encoding="utf-8", buffering=1)
+            log_handle.write(f"\n===== {time.strftime('%Y-%m-%d %H:%M:%S')} 启动 {command} =====\n")
+            proc = subprocess.Popen(
+                command,
+                cwd=skill.skill_dir,
+                shell=True,
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            )
+        except OSError as e:
+            self._send_error(f"启动失败: {e}", 500)
+            return False
+        _SKILL_SERVICES[skill.name] = {
+            "proc": proc,
+            "started_at": time.time(),
+            "log": log_path,
+            "log_handle": log_handle,
+        }
+        logger.info(f"[Skills] service started name={skill.name} pid={proc.pid}")
+        return True
+
+    def _stop_skill_service(self, name: str):
+        rec = _service_record(name)
+        if not rec:
+            return
+        proc = rec["proc"]
+        try:
+            proc.terminate()
+            try:
+                proc.wait(timeout=8)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5)
+        except Exception as e:
+            logger.warning(f"[Skills] service stop failed name={name}: {e}")
+        finally:
+            try:
+                rec.get("log_handle") and rec["log_handle"].close()
+            except Exception:
+                pass
+            _SKILL_SERVICES.pop(name, None)
+        logger.info(f"[Skills] service stopped name={name}")
+
+    def _handle_skill_logs(self, name: str):
+        """返回技能服務日誌末尾 100 行。"""
+        skill = self._resolve_skill(name)
+        if not skill:
+            return
+        if not self._skill_service_command(skill):
+            self._send_error("该技能未声明服务", 404)
+            return
+        rec = _SKILL_SERVICES.get(skill.name)
+        log_path = (rec or {}).get("log") or os.path.join(skill.skill_dir, "logs", "service.log")
+        try:
+            if not os.path.isfile(log_path):
+                self._send_json({"lines": []})
+                return
+            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                lines = f.read().splitlines()[-100:]
+            self._send_json({"lines": lines})
+        except OSError as e:
+            self._send_error(f"读取日志失败: {e}", 500)
 
     def _handle_tts(self):
         """將文本合成為語音音頻（預設 edge-tts，返回 audio/mpeg）。
@@ -1248,6 +1770,12 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._send_error("messages is required")
             return
 
+        # MC-Bot 乾淨通道：brain.js 標記 source=mc-bot 的請求不透過主程序的
+        # prompt 拼裝/GAN/拒答/聯網搜索，只疊加人設與記憶後原樣透傳 messages。
+        if body.get('source') == 'mc-bot':
+            self._handle_mc_bot_chat(messages, max_tokens, temperature)
+            return
+
         # 获取共享状态
         state = ThinkingEngineState()
         thinking_engine = state.get_thinking_engine()
@@ -1277,6 +1805,24 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             if msg.get('role') == 'user':
                 user_text = msg.get('content', '')
                 break
+
+        # 上傳附件分流：圖片→視覺模型分析；其他文件→引導 Aize 寫代碼閉環分析。
+        # 在佔用 _chat_lock 之前完成（視覺調用是外部 HTTP，不阻塞其他聊天排隊）。
+        attachments = body.get('attachments') or []
+        if isinstance(attachments, list) and attachments:
+            try:
+                attachment_context = self._build_attachment_context(attachments, user_text)
+            except Exception as e:
+                logger.warning(f"[Chat] attachment handling failed: {e}")
+                attachment_context = ""
+            if attachment_context:
+                user_text = (user_text or "").strip()
+                user_text = (user_text + "\n\n" + attachment_context) if user_text else attachment_context
+                # 同步改寫最後一條 user 消息，讓 prompt 構建與記憶落盤都帶上附件上下文
+                for msg in reversed(messages):
+                    if msg.get('role') == 'user':
+                        msg['content'] = user_text
+                        break
 
         # 构建完整prompt（系統/人格/記憶上下文統一進入模型的 system 塊，
         # 再按當前模型家族的對話模板渲染，避免特殊標記前混入裸文本）
@@ -1438,6 +1984,86 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                 self._chat_lock.release()
             except RuntimeError:
                 pass
+
+    def _handle_mc_bot_chat(self, messages, max_tokens, temperature):
+        """MC-Bot 乾淨通道：brain.js 的 messages 原樣透傳給模型。
+
+        只疊加兩樣東西（作為額外 system 消息放在最前）：
+          1. agent_prompt.txt 人設
+          2. 記憶上下文（build_context_from_memory）
+        其他一律保持純淨：不疊加 system_prompt.txt、技能清單、GAN 決策、
+        拒答線程、聯網搜索，也不把遊戲狀態寫入主記憶。
+        """
+        system_parts = []
+        try:
+            from data.prompts_manager import load_agent_prompt
+        except ImportError:
+            from core.data.prompts_manager import load_agent_prompt
+        try:
+            agent_prompt = (load_agent_prompt() or "").strip()
+            if agent_prompt:
+                system_parts.append(agent_prompt)
+        except Exception as e:
+            logger.warning(f"[MC-Bot] load agent_prompt failed: {e}")
+        try:
+            memory = ThinkingEngineState().get_memory()
+            context = build_context_from_memory(memory) if memory else ""
+            if context:
+                system_parts.append(context)
+        except Exception as e:
+            logger.warning(f"[MC-Bot] build memory context failed: {e}")
+
+        out_messages = list(messages)
+        if system_parts:
+            out_messages.insert(0, {"role": "system", "content": "\n\n".join(system_parts)})
+
+        try:
+            from llm.llm import _provider_settings, create_session, _strip_think_blocks
+        except ImportError:
+            from core.llm.llm import _provider_settings, create_session, _strip_think_blocks
+        provider = _provider_settings()
+        if not provider:
+            self._send_error("MC-Bot 通道需要啟用雲端模型 API", 503)
+            return
+
+        payload = {
+            "model": provider["model"],
+            "messages": out_messages,
+            "max_tokens": max_tokens or 300,
+            "temperature": temperature if isinstance(temperature, (int, float)) else 0.7,
+        }
+        logger.info(f"[MC-Bot] passthrough messages={len(out_messages)} max_tokens={payload['max_tokens']}")
+        session = create_session()
+        try:
+            resp = session.post(
+                f"{provider['base_url']}/chat/completions",
+                headers={"Authorization": f"Bearer {provider['api_key']}", "Content-Type": "application/json"},
+                json=payload,
+                timeout=120,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            content = _strip_think_blocks(content)
+        except Exception as e:
+            logger.error(f"[MC-Bot] LLM request failed: {e}")
+            self._send_error(f"LLM request failed: {e}", 502)
+            return
+        finally:
+            session.close()
+
+        self._send_json({
+            "id": f"chatcmpl-{uuid.uuid4().hex[:24]}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": provider["model"],
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": content},
+                "finish_reason": "stop"
+            }],
+            "usage": data.get("usage", {})
+        })
 
     def _send_refusal_stream(self):
         """拒答（流式）：只發一條「Aize不想回答你的问题」後立即結束。"""
@@ -1820,11 +2446,52 @@ class ThinkingEngineAPIServer:
         self.running = False
 
     def start(self):
-        """启动API服务器（在后台线程中）"""
+        """启动API服务器（在后台线程中）。
+
+        Windows 上首選端口可能被其他軟件獨占綁定——典型如 QQNT 啟動時隨機
+        占用 8082，此時操作系統返回 WinError 10013（WSAEACCES）而非端口占用的
+        10048；端口落在系統保留段（netsh excludedportrange）時同樣如此。
+        因此首選端口綁定失敗時自動向後探測空閒端口，調用方統一通過
+        server.port 讀取實際端口，托盤菜單與瀏覽器打開的 URL 自動跟隨。
+        """
         if self.running:
             return
 
-        self.server = HTTPServer((self.host, self.port), ThinkingEngineAPIHandler)
+        requested_port = self.port
+        last_error = None
+        bound_server = None
+        bound_port = None
+        # 最多向後探測 20 個端口。
+        # 注意：Windows 上若其他程序占用的是 0.0.0.0:port 而本機綁 127.0.0.1，
+        # 系統允許共存且 loopback 請求按「最長匹配」優先到達本服務，屬正常情形；
+        # 只有綁定真正失敗（0.0.0.0 衝突 10013/10048、保留端口段等）才順延。
+        for candidate in range(requested_port, requested_port + 20):
+            try:
+                bound_server = HTTPServer((self.host, candidate), ThinkingEngineAPIHandler)
+                bound_port = candidate
+                break
+            except OSError as exc:
+                # 10013=被安全策略/獨占綁定/保留端口段攔截；10048=端口已占用
+                last_error = exc
+                logger.warning(
+                    f"端口 {candidate} 無法綁定"
+                    f"（{getattr(exc, 'winerror', exc.__class__.__name__)}: {exc}），嘗試下一個端口..."
+                )
+
+        if bound_server is None:
+            raise OSError(
+                f"端口 {requested_port}~{requested_port + 19} 均無法綁定，"
+                f"請檢查端口占用或防火牆策略。最後一個錯誤: {last_error}"
+            )
+
+        if bound_port != requested_port:
+            logger.warning(
+                f"首選端口 {requested_port} 被占用或被系統攔截，"
+                f"Humanaize2 已自動改用端口 {bound_port}"
+            )
+
+        self.server = bound_server
+        self.port = bound_port
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True, name="ThinkingEngineAPI")
         self.thread.start()
         self.running = True
@@ -1879,13 +2546,16 @@ if __name__ == '__main__':
     parser.add_argument('--port', type=int, default=8082, help='Port to bind')
     args = parser.parse_args()
 
-    print(f"Starting ThinkingEngine API server on http://{args.host}:{args.port}")
-    print(f"OpenAI-compatible endpoint: http://{args.host}:{args.port}/v1/chat/completions")
-    print(f"Models list: http://{args.host}:{args.port}/v1/models")
-    print(f"Health check: http://{args.host}:{args.port}/health")
-
     server = ThinkingEngineAPIServer(args.host, args.port)
     server.start()
+
+    actual_port = server.port
+    if actual_port != args.port:
+        print(f"[WARN] Port {args.port} unavailable, fallback to {actual_port}")
+    print(f"Starting ThinkingEngine API server on http://{args.host}:{actual_port}")
+    print(f"OpenAI-compatible endpoint: http://{args.host}:{actual_port}/v1/chat/completions")
+    print(f"Models list: http://{args.host}:{actual_port}/v1/models")
+    print(f"Health check: http://{args.host}:{actual_port}/health")
 
     try:
         while True:
