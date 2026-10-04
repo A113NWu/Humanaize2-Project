@@ -27,7 +27,7 @@ try:
     from http.server import ThreadingHTTPServer as HTTPServer, BaseHTTPRequestHandler
 except ImportError:
     from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 from queue import Queue, Empty
 
 # 添加路径
@@ -781,6 +781,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._handle_voice_capabilities()
         elif parsed.path == '/api/events':
             self._handle_event_stream()
+        elif parsed.path == '/api/web_search':
+            self._handle_web_search(parsed)
         elif parsed.path == '/api/skills':
             self._handle_list_skills()
         elif parsed.path.startswith('/api/skills/'):
@@ -1267,6 +1269,33 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             "default_voice": default_voice,
             "stt": "webspeech",
         })
+
+    def _handle_web_search(self, parsed):
+        """聯網模塊搜索端點：復用 tools.web_search.WebSearch（DuckDuckGo + 代理配置）。
+
+        供 mc-bot 等技能調用，例如 /api/web_search?q=minecraft%20小木屋&max=5。
+        返回 {"query": "...", "results": [{"title","snippet","url","source"}]}。
+        """
+        qs = parse_qs(parsed.query)
+        query = (qs.get('q') or [''])[0].strip()
+        if not query:
+            self._send_error("query param 'q' is required")
+            return
+        try:
+            max_results = int((qs.get('max') or ['5'])[0])
+        except ValueError:
+            max_results = 5
+        max_results = max(1, min(max_results, 10))
+        try:
+            from tools.web_search import WebSearch
+        except ImportError:
+            from core.tools.web_search import WebSearch
+        try:
+            results = WebSearch().search(query, max_results=max_results) or []
+        except Exception as e:
+            logger.warning(f"[WebSearch] search failed: {e}")
+            results = []
+        self._send_json({"query": query, "results": results})
 
     def _handle_event_stream(self):
         """SSE 長連接：把閒置思考 / GAN 日誌 / 社交事件即時推給網頁 GAN 面板。

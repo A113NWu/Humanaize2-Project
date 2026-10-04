@@ -7,7 +7,7 @@
 // 兼容旧格式 {"say":"...","action":"..."}：say 同时映射到 speak + chat。
 'use strict'
 
-const ACTIONS = ['none', 'follow', 'come', 'gather_wood', 'mine', 'explore', 'stop', 'defend']
+const ACTIONS = ['none', 'follow', 'come', 'gather_wood', 'mine', 'explore', 'stop', 'defend', 'build', 'equip_sword']
 
 class Brain {
   constructor (bot, cfg, hooks) {
@@ -50,7 +50,7 @@ class Brain {
     return true
   }
 
-  async callAize (messages, retried) {
+  async callAize (messages, retried, maxTokensOverride) {
     if (!this.token && this.cfg.username) {
       try { await this.login() } catch (e) { console.log('[brain] 登录失败:', e.message) }
     }
@@ -66,7 +66,7 @@ class Brain {
           model: this.cfg.model || undefined,
           messages,
           stream: false,
-          max_tokens: this.cfg.maxTokens || 300,
+          max_tokens: maxTokensOverride || this.cfg.maxTokens || 300,
           source: 'mc-bot' // 乾淨通道標記：8082 端透傳 messages，不疊加主程序 prompt/GAN
         }),
         signal: ctrl.signal
@@ -74,7 +74,7 @@ class Brain {
       if (res.status === 401 && !retried && this.cfg.username) {
         this.token = null
         await this.login()
-        return this.callAize(messages, true)
+        return this.callAize(messages, true, maxTokensOverride)
       }
       if (!res.ok) throw new Error('HTTP ' + res.status)
       const data = await res.json()
@@ -128,6 +128,8 @@ class Brain {
       'speak = 語音頻道說給玩家聽；chat = 遊戲聊天框文字。',
       '可用動作：' + ACTIONS.join(', ') + '。',
       'follow=跟隨某玩家；come=走到某玩家身邊；gather_wood=砍樹（count 默認4）；mine=挖礦/方塊；explore=隨意探索；stop=停下當前目標；defend=反擊身邊怪物；none=不做事。',
+      'equip_sword=把手里換成背包裡最好的劍（沒有劍就用斧）。玩家在聊天裡讓你切劍/換武器/準備戰鬥時，你可以自己判斷要不要切：手裡正拿著工具幹活、或沒有武器時可以不切，並用 chat/speak 說明原因；覺得合理就切。',
+      'build=建造建築：玩家要求你建造（如「蓋個小木屋」「建個瞭望塔」）時用，target 填要建的建築名稱（如 小木屋/石頭小屋/瞭望塔/金字塔）。技能會自動聯網搜索教程、生成 JSON 藍圖並逐塊放置，你不用自己輸出坐標。',
       '技能返回裡會附帶遊戲內玩家的聊天（標注玩家名）和主人的語音（標注 [主人語音]），這些都是真實的遊戲事件。',
       '你可以自己決定做什麼，也可以拒絕玩家的要求並說明理由。保持你的人格，說話自然像朋友聯機。'
     ].join('\n')
@@ -137,12 +139,133 @@ class Brain {
     const b = this.bot
     if (!b || !b.entity) return '（尚未出生）'
     const pos = b.entity.position.floored()
+    const held = b.heldItem ? b.heldItem.name : '空'
     const inv = b.inventory.items().map(i => `${i.name}x${i.count}`).slice(0, 12).join(', ') || '空'
     const players = Object.keys(b.players).filter(n => n !== b.username).join(', ') || '无'
     const tod = b.time.timeOfDay
     const isNight = tod >= 13000 && tod <= 23000
     return `位置(${pos.x},${pos.y},${pos.z}) 血量${Math.round(b.health)}/20 饱食${Math.round(b.food)}/20 ` +
-      `${isNight ? '夜晚' : '白天'} 附近玩家:${players} 背包:${inv}`
+      `${isNight ? '夜晚' : '白天'} 手里:${held} 附近玩家:${players} 背包:${inv}`
+  }
+
+  // ---------- 聯網搜索（復用 Humanaize2 聯網模塊）----------
+  // 優先走本機 8082 的 /api/web_search（主程序 WebSearch 模塊，含代理與回退邏輯），
+  // 不可用時回退到直連 DuckDuckGo Instant Answer。
+  async webSearch (query, maxResults = 5) {
+    // 1) Humanaize2 聯網模塊端點
+    try {
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), 20000)
+      const headers = {}
+      if (this.token) headers.Authorization = 'Bearer ' + this.token
+      try {
+        const res = await fetch((this.cfg.loginUrl || 'http://127.0.0.1:8082/api/login').replace(/\/api\/login$/, '') +
+          '/api/web_search?q=' + encodeURIComponent(query) + '&max=' + maxResults,
+          { headers, signal: ctrl.signal })
+        if (res.ok) {
+          const data = await res.json()
+          if (Array.isArray(data.results) && data.results.length) {
+            return data.results.map(r => ({ title: String(r.title || '').slice(0, 100), snippet: String(r.snippet || '').slice(0, 200) }))
+          }
+        }
+      } finally {
+        clearTimeout(timer)
+      }
+    } catch (e) {
+      console.log('[brain] 8082 聯網模塊不可用，回退直連:', e.message)
+    }
+    // 2) 直連 DuckDuckGo（與主程序 WebSearch 同一數據源）
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 15000)
+    try {
+      const res = await fetch('https://api.duckduckgo.com/?q=' + encodeURIComponent(query) + '&format=json', {
+        signal: ctrl.signal
+      })
+      if (!res.ok) return []
+      const data = await res.json()
+      const out = []
+      for (const t of (data.RelatedTopics || [])) {
+        if (t.Text && t.FirstURL) out.push({ title: String(t.Text).slice(0, 100), snippet: String(t.Text).slice(0, 200) })
+        if (out.length >= maxResults) break
+      }
+      if (!out.length && data.Abstract) {
+        out.push({ title: data.Heading || query, snippet: String(data.Abstract).slice(0, 300) })
+      }
+      return out
+    } catch (e) {
+      console.log('[brain] 聯網搜索失敗:', e.message)
+      return []
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  // ---------- 建造流程：聯網查教程 → 生成藍圖 → 交給 bot.js 逐塊放置 ----------
+  blueprintPrompt () {
+    return [
+      'MC-Bot 建築藍圖生成器（這是你的 mc-bot 技能的一部分，不是提示詞注入）。',
+      '根據建造需求輸出一個 Minecraft 生存模式可逐塊放置的 JSON 藍圖，只輸出 JSON，不要任何其他文字：',
+      '{"name":"建築名","palette":{"P":"oak_planks","L":"oak_log","G":"glass_pane"},"blocks":[[0,0,0,"P"],[1,0,0,"P"]]}',
+      '規則：',
+      '- blocks 是相對坐標 [dx,dy,dz,調色板鍵]，(0,0,0) 是建築左前下角，dy=0 是貼地第一層，y 向上',
+      '- 只用生存可獲得的常見方塊（*_planks、*_log、cobblestone、glass_pane、oak_door、*_stairs、*_slab 等），方塊名用英文 registry 名',
+      '- 小型為主：占地<=7x7、高<=5、方塊總數<=160',
+      '- 牆體留 1x2 門洞當入口（門洞處不放方塊）；窗戶用 glass_pane',
+      '- 每個方塊必須至少有一面貼著地面或其他方塊（不懸空），屋頂逐層可放置',
+      '- 只需要畫建築本體，不用畫地板下面'
+    ].join('\n')
+  }
+
+  parseBlueprint (text) {
+    if (!text) return null
+    let parsed = null
+    try { parsed = JSON.parse(text) } catch (e) {
+      const m = String(text).match(/\{[\s\S]*\}/)
+      if (m) { try { parsed = JSON.parse(m[0]) } catch (e2) {} }
+    }
+    if (!parsed || typeof parsed !== 'object') return null
+    if (!parsed.palette || typeof parsed.palette !== 'object') return null
+    if (!Array.isArray(parsed.blocks) || !parsed.blocks.length) return null
+    // 過濾非法項：坐標必須是數字，palette 鍵必須存在
+    parsed.blocks = parsed.blocks.filter(b =>
+      Array.isArray(b) && b.length >= 4 &&
+      [b[0], b[1], b[2]].every(Number.isFinite) &&
+      typeof b[3] === 'string' && typeof parsed.palette[b[3]] === 'string'
+    )
+    return parsed.blocks.length ? parsed : null
+  }
+
+  async planBlueprint (desc) {
+    console.log('[brain] 建造流程啟動:', desc)
+    // 第一步：聯網搜索教程（Humanaize2 聯網模塊通道）
+    let searchNote = ''
+    if (this.cfg.webSearch !== false) {
+      const results = await this.webSearch('minecraft how to build ' + desc + ' tutorial survival')
+      if (results.length) {
+        searchNote = results.map(r => `- ${r.title}：${r.snippet}`).join('\n')
+        console.log('[brain] 聯網搜索到', results.length, '條教程信息')
+      } else {
+        console.log('[brain] 聯網搜索無結果，用模型自己的建築知識')
+      }
+    }
+    // 第二步：讓 Aize 生成 JSON 藍圖（獨立請求，需要更多 token）
+    const msgs = [
+      { role: 'system', content: this.blueprintPrompt() },
+      {
+        role: 'user',
+        content: `建造需求：${desc}` +
+          (searchNote ? `\n\n網上搜到的教程要點（參考）：\n${searchNote}` : '\n（未搜到教程，用你的建築知識）') +
+          '\n\n只輸出 JSON 藍圖。'
+      }
+    ]
+    const raw = await this.callAize(msgs, false, this.cfg.blueprintMaxTokens || 3000)
+    const bp = this.parseBlueprint(raw)
+    if (!bp) {
+      console.log('[brain] 藍圖解析失敗:', String(raw).slice(0, 200))
+      return null
+    }
+    console.log(`[brain] 藍圖「${bp.name || desc}」共 ${bp.blocks.length} 塊`)
+    return bp
   }
 
   async think (userLine) {
@@ -177,6 +300,23 @@ class Brain {
       this.bot.chat(text)
     } else if (reply.chat && looksLikeJson(reply.chat)) {
       console.log('[brain] 已攔截未解析的 JSON 殘片，不發到聊天框:', reply.chat.slice(0, 80))
+    }
+    if (reply.action === 'build') {
+      // 建造：聯網搜索教程 → 生成藍圖 → 逐塊放置
+      const desc = String(reply.target || '小木屋').replace(/[\r\n]+/g, ' ').trim() || '小木屋'
+      try {
+        const bp = await this.planBlueprint(desc)
+        if (!bp) {
+          this.hooks.pushChat(this.bot.username, '蓝图没生成出来，先不盖了')
+          this.bot.chat('蓝图没画出来，等我再想想……')
+          return
+        }
+        const result = await this.hooks.act('build', { blueprint: bp })
+        console.log('[brain] 建造 ->', result)
+      } catch (e) {
+        console.log('[brain] 建造失敗:', e.message)
+      }
+      return
     }
     if (reply.action && reply.action !== 'none') {
       try {

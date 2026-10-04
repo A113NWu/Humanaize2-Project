@@ -1,5 +1,5 @@
 {
-  "version": "2.3.7",
-  "last_updated": "2026-10-02T00:00:00.000000",
-  "release_notes": "v2.3.7：mc-bot 决策改走乾淨通道——brain.js 请求带 source=mc-bot 标记，8082 端识别后仅叠加人设与记忆上下文，原样透传 messages 到模型，跳过主程序 system_prompt/技能清单/GAN/拒答/联网搜索，修复 MiniMax 将 mc-bot 系统消息误判为提示词注入的问题；并清空 Aize 旧记忆。"
+  "version": "2.3.8",
+  "last_updated": "2026-10-04T00:00:00.000000",
+  "release_notes": "v2.3.8：mc-bot 战斗与建造增强——打怪反击前自动装备背包里最好的剑/斧（修复手里拿镐打怪的 bug）；新增 equip_sword 自主切剑动作，玩家在聊天里要求切剑时 Aize 可自行判断并说明理由；状态文本新增「手里」当前手持物；新增联网建造 build 动作（搜索教程→LLM 生成蓝图→逐块放置）；8082 端新增 /api/web_search 供 mc-bot 复用主程序联网搜索。"
 }

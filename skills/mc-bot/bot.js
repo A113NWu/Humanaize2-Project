@@ -8,6 +8,7 @@ const path = require('path')
 const http = require('http')
 
 const mineflayer = require('mineflayer')
+const vec3 = require('vec3')
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder')
 const collectBlock = require('mineflayer-collectblock').plugin
 const pvp = require('mineflayer-pvp').plugin
@@ -109,10 +110,11 @@ function cleanup () {
 
 // ---------- 状态与目标 ----------
 const state = {
-  goal: 'none',       // none | follow | gather_wood | mine | explore | come
+  goal: 'none',       // none | follow | gather_wood | mine | explore | come | build
   targetPlayer: null,
   busy: false,        // 正在执行收集类任务时不再被新目标打断
-  fleeing: false
+  fleeing: false,
+  buildAbort: false   // 建造过程中收到 stop 时中断
 }
 
 let defaultMoves = null
@@ -213,10 +215,65 @@ function dangerScan () {
     bot.chat(`血量太低，我先跑了！`)
     fleeFrom(near.entity)
   } else if (near && near.dist < 3 && !state.fleeing && bot.pvp) {
-    // 被贴身就反击
-    if (bot.pvp.target !== near.entity) {
-      try { bot.pvp.attack(near.entity) } catch (e) {}
+    // 被贴身就反击（开战前自动切到身上最好的剑/斧）
+    if (bot.pvp.target !== near.entity) ensureWeaponAndAttack(near.entity)
+  }
+}
+
+// ---------- 自动切武器（近战反射：开战前装备身上最好的剑/斧）----------
+// 剑优先于斧；同类型按材质排序。pvp 插件不会自己换武器，必须手动 equip。
+const WEAPON_RANK = [
+  'netherite_sword', 'diamond_sword', 'iron_sword', 'golden_sword', 'stone_sword', 'wooden_sword',
+  'netherite_axe', 'diamond_axe', 'iron_axe', 'stone_axe', 'golden_axe', 'wooden_axe'
+]
+
+function findBestWeapon () {
+  let best = null
+  let bestRank = WEAPON_RANK.length
+  for (const it of bot.inventory.items()) {
+    const r = WEAPON_RANK.indexOf(it.name)
+    if (r !== -1 && r < bestRank) { best = it; bestRank = r }
+  }
+  return best
+}
+
+async function equipBestWeapon () {
+  const w = findBestWeapon()
+  if (!w) return false
+  // 手里已经拿着同级武器就不重复切换
+  if (bot.heldItem && bot.heldItem.name === w.name) return true
+  try {
+    await bot.equip(w, 'hand')
+    console.log('[bot] 自动切换武器:', w.name)
+    return true
+  } catch (e) {
+    console.log('[bot] 装备武器失败:', e.message)
+    return false
+  }
+}
+
+// 切武器是异步的，await 期间怪可能移动/死亡，装备完再校验目标有效才开打
+async function ensureWeaponAndAttack (entity) {
+  await equipBestWeapon()
+  try {
+    if (entity && typeof entity.isValid === 'function' && entity.isValid &&
+        bot.entity && bot.entity.position.distanceTo(entity.position) < 6) {
+      bot.pvp.attack(entity)
     }
+  } catch (e) {}
+}
+
+// 聊天里 Aize 自己决定切剑时调用：返回中文结果（brain 只记日志，她自己会用 chat/speak 回应玩家）
+async function equipSword () {
+  const w = findBestWeapon()
+  if (!w) return '背包里没有剑或斧'
+  if (bot.heldItem && bot.heldItem.name === w.name) return `手上已经拿着 ${w.name}`
+  try {
+    await bot.equip(w, 'hand')
+    console.log('[bot] 应要求切换武器:', w.name)
+    return `已切换到 ${w.name}`
+  } catch (e) {
+    return '切换武器失败: ' + e.message
   }
 }
 
@@ -252,6 +309,8 @@ async function act (action, opts = {}) {
     case 'explore': return explore()
     case 'stop': return stopAll()
     case 'defend': return defendSelf()
+    case 'equip_sword': return equipSword()
+    case 'build': return buildBlueprint(opts.blueprint)
     default: return 'none'
   }
 }
@@ -339,18 +398,130 @@ function explore () {
   return '去附近逛逛'
 }
 
+// ---------- 建造（藍圖逐塊放置，由 brain.js 聯網查教程後生成藍圖）----------
+const PLACE_DIRS = [[0, 1, 0], [0, -1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]]
+const AIR_NAMES = new Set(['air', 'cave_air', 'void_air', 'light', 'structure_void'])
+
+function itemForBlock (blockName) {
+  const items = bot.inventory.items()
+  let it = items.find(i => i.name === blockName)
+  if (it) return it
+  // 材料家族回退：藍圖方塊身上沒有時，用同家族的頂替
+  if (blockName.endsWith('_planks')) it = items.find(i => i.name.endsWith('_planks'))
+  else if (blockName.endsWith('_log') || blockName.endsWith('_wood')) it = items.find(i => i.name.endsWith('_log'))
+  else if (blockName.includes('glass')) it = items.find(i => i.name.includes('glass'))
+  else if (blockName.endsWith('_stairs')) it = items.find(i => i.name.endsWith('_stairs'))
+  else if (blockName.endsWith('_slab')) it = items.find(i => i.name.endsWith('_slab'))
+  else if (blockName === 'cobblestone' || blockName === 'stone') it = items.find(i => i.name === 'cobblestone' || i.name === 'cobbled_deepslate' || i.name === 'dirt')
+  else if (blockName.endsWith('_fence')) it = items.find(i => i.name.endsWith('_fence'))
+  return it || null
+}
+
+async function gotoNear (x, y, z, range, timeoutMs = 10000) {
+  try {
+    await Promise.race([
+      bot.pathfinder.goto(new goals.GoalNear(x, y, z, range)),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('goto超时')), timeoutMs))
+    ])
+    return true
+  } catch (e) {
+    try { bot.pathfinder.setGoal(null) } catch (e2) {}
+    return false
+  }
+}
+
+async function placeBlockAt (pos, blockName) {
+  try {
+    const cur = bot.blockAt(pos)
+    if (!cur) return 'unloaded'
+    if (!AIR_NAMES.has(cur.name) && cur.boundingBox !== 'empty') return 'occupied'
+    const item = itemForBlock(blockName)
+    if (!item) return 'no-item'
+    // 距離太遠先走過去
+    if (bot.entity.position.distanceTo(pos) > 4.5) {
+      await gotoNear(pos.x, pos.y, pos.z, 3)
+    }
+    // 自己站在目標位置上時先讓開
+    if (bot.entity.position.floored().equals(pos)) {
+      await gotoNear(pos.x + 2, pos.y, pos.z + 2, 1, 6000)
+    }
+    await bot.equip(item, 'hand')
+    let lastErr = null
+    for (const [dx, dy, dz] of PLACE_DIRS) {
+      const ref = bot.blockAt(pos.offset(dx, dy, dz))
+      if (!ref || AIR_NAMES.has(ref.name) || ref.boundingBox !== 'block') continue
+      try {
+        await bot.placeBlock(ref, vec3(-dx, -dy, -dz))
+        return 'ok'
+      } catch (e) { lastErr = e }
+    }
+    return 'no-ref' + (lastErr ? ':' + lastErr.message : '')
+  } catch (e) {
+    return 'err:' + e.message
+  }
+}
+
+async function buildBlueprint (bp) {
+  if (!bp || !bp.palette || !Array.isArray(bp.blocks) || !bp.blocks.length) return '蓝图无效'
+  if (state.busy) return '手头有活，等下'
+  state.busy = true
+  state.goal = 'build'
+  state.buildAbort = false
+  try {
+    // 從腳邊前方 2 格開始蓋，地面對齊腳下
+    const origin = bot.entity.position.floored().offset(2, 0, 2)
+    // 統計材料缺口
+    const need = {}
+    for (const b of bp.blocks) {
+      const name = bp.palette[b[3]] || b[3]
+      need[name] = (need[name] || 0) + 1
+    }
+    const missing = Object.entries(need)
+      .map(([n, c]) => [n, c - countItem(x => x === n)])
+      .filter(([, lack]) => lack > 0)
+    const missText = missing.length
+      ? `（缺材料：${missing.map(([n, l]) => `${n}缺${l}`).join('、')}，用相近方塊頂替或跳過）`
+      : ''
+    pushChat(cfg.username, `開工！建造「${bp.name || '建築'}」，共 ${bp.blocks.length} 塊${missText}`)
+    // 自下而上逐塊放（同層從裡到外），結構穩定不易懸空
+    const sorted = [...bp.blocks].sort((a, b) => (a[1] - b[1]) || (a[2] - b[2]) || (a[0] - b[0]))
+    let done = 0
+    let skipped = 0
+    const total = sorted.length
+    for (let i = 0; i < total; i++) {
+      if (state.buildAbort) {
+        pushChat(cfg.username, '建造被叫停了')
+        break
+      }
+      const [dx, dy, dz, key] = sorted[i]
+      const r = await placeBlockAt(origin.offset(dx, dy, dz), bp.palette[key] || key)
+      if (r === 'ok' || r === 'occupied') done++
+      else skipped++
+      if ((i + 1) % 40 === 0) pushChat(cfg.username, `建造進度 ${done}/${total}…`)
+    }
+    const summary = `建造結束：「${bp.name || '建築'}」完成 ${done}/${total} 塊${skipped ? `，跳過 ${skipped} 塊` : ''}`
+    pushChat(cfg.username, summary)
+    return summary
+  } finally {
+    state.busy = false
+    state.buildAbort = false
+  }
+}
+
 function stopAll () {
   state.goal = 'none'
   state.targetPlayer = null
   state.busy = false
+  state.buildAbort = true
   bot.pathfinder.setGoal(null)
   try { bot.pvp.stop() } catch (e) {}
   return '停下来了'
 }
 
-function defendSelf () {
+async function defendSelf () {
   const near = nearestHostile(10)
   if (near) {
+    await equipBestWeapon()
     try { bot.pvp.attack(near.entity) } catch (e) {}
     return `反击 ${near.entity.name}`
   }
