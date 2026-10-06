@@ -13,32 +13,54 @@ from typing import Dict, Any, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
-try:
-    import speech_recognition as sr
-    HAS_SPEECH_RECOGNITION = True
-except ImportError:
-    HAS_SPEECH_RECOGNITION = False
+# 惰性导入：只在函数内部首次使用时加载，避免 PyInstaller 静态分析时触发 heavy deps 崩溃
+_speech_recognition = None
+_pydub_AudioSegment = None
+_llm_chat = None
+_whisper = None
 
-try:
-    from pydub import AudioSegment
-    HAS_PYDUB = True
-except ImportError:
-    HAS_PYDUB = False
+def _lazy_imports():
+    global _speech_recognition, _pydub_AudioSegment, _llm_chat, _whisper
+    if _speech_recognition is None:
+        try:
+            import speech_recognition as sr
+            _speech_recognition = sr
+        except ImportError:
+            _speech_recognition = False
+    if _pydub_AudioSegment is None:
+        try:
+            from pydub import AudioSegment
+            _pydub_AudioSegment = AudioSegment
+        except ImportError:
+            _pydub_AudioSegment = False
+    if _llm_chat is None:
+        try:
+            from src.core.llm.llm import chat
+            _llm_chat = chat
+        except ImportError:
+            _llm_chat = False
+    if _whisper is None:
+        try:
+            import whisper
+            _whisper = whisper if hasattr(whisper, 'load_model') else False
+        except ImportError:
+            _whisper = False
 
-try:
-    from src.core.llm.llm import chat
-    HAS_LLM = True
-except ImportError:
-    HAS_LLM = False
+def _has_sr():
+    _lazy_imports()
+    return _speech_recognition is not False
 
-try:
-    import whisper
-    if hasattr(whisper, 'load_model'):
-        HAS_WHISPER = True
-    else:
-        HAS_WHISPER = False
-except ImportError:
-    HAS_WHISPER = False
+def _has_pydub():
+    _lazy_imports()
+    return _pydub_AudioSegment is not False
+
+def _has_llm():
+    _lazy_imports()
+    return _llm_chat is not False
+
+def _has_whisper():
+    _lazy_imports()
+    return _whisper is not False
 
 WHISPER_MODEL = "base"
 
@@ -88,9 +110,9 @@ def _convert_to_wav(audio_path: str) -> Optional[str]:
             return temp_wav
         return None
     
-    if HAS_PYDUB:
+    if _has_pydub():
         try:
-            audio = AudioSegment.from_file(audio_path)
+            audio = _pydub_AudioSegment.from_file(audio_path)
             audio.export(temp_wav, format='wav')
             return temp_wav
         except Exception as e:
@@ -130,8 +152,8 @@ def transcribe_audio(audio_path: str = None, audio_base64: str = None) -> Dict:
         if not wav_path:
             return {"status": "error", "message": "Failed to load or convert audio"}
         
-        if HAS_WHISPER:
-            model = whisper.load_model(WHISPER_MODEL)
+        if _has_whisper():
+            model = _whisper.load_model(WHISPER_MODEL)
             result = model.transcribe(wav_path, language='zh')
             return {
                 "status": "success",
@@ -140,9 +162,9 @@ def transcribe_audio(audio_path: str = None, audio_base64: str = None) -> Dict:
                 "segments": result.get("segments", []),
                 "confidence": "high" if len(result.get("text", "").strip()) > 0 else "low"
             }
-        elif HAS_SPEECH_RECOGNITION:
-            recognizer = sr.Recognizer()
-            with sr.AudioFile(wav_path) as source:
+        elif _has_sr():
+            recognizer = _speech_recognition.Recognizer()
+            with _speech_recognition.AudioFile(wav_path) as source:
                 audio_data = recognizer.record(source)
             
             try:
@@ -154,9 +176,9 @@ def transcribe_audio(audio_path: str = None, audio_base64: str = None) -> Dict:
                     "segments": [],
                     "confidence": "medium"
                 }
-            except sr.UnknownValueError:
+            except _speech_recognition.UnknownValueError:
                 return {"status": "success", "text": "", "language": "zh", "segments": [], "confidence": "low"}
-            except sr.RequestError:
+            except _speech_recognition.RequestError:
                 return {"status": "error", "message": "Google Speech Recognition service unavailable"}
         else:
             return {"status": "error", "message": "No speech recognition library available"}
@@ -182,7 +204,7 @@ def analyze_audio(audio_path: str = None, audio_base64: str = None) -> Dict:
         "language": transcribe_result.get("language", "zh")
     }
     
-    if HAS_LLM:
+    if _has_llm():
         try:
             prompt = f"""请分析以下语音识别结果：
 
@@ -197,7 +219,7 @@ def analyze_audio(audio_path: str = None, audio_base64: str = None) -> Dict:
 
 请用中文回答。"""
             
-            response = chat(prompt)
+            response = _llm_chat(prompt)
             result["analysis"] = response
         except Exception as e:
             result["analysis"] = None
@@ -226,16 +248,16 @@ def detect_speech(audio_path: str = None, audio_base64: str = None) -> Dict:
 
 def convert_audio_format(audio_path: str = None, audio_base64: str = None, target_format: str = "mp3") -> Dict:
     """转换音频格式"""
-    if not HAS_PYDUB:
+    if not _has_pydub():
         return {"status": "error", "message": "pydub not available"}
     
     try:
         if audio_path and os.path.exists(audio_path):
-            audio = AudioSegment.from_file(audio_path)
+            audio = _pydub_AudioSegment.from_file(audio_path)
         elif audio_base64:
             audio_data = base64.b64decode(audio_base64)
             from io import BytesIO
-            audio = AudioSegment.from_file(BytesIO(audio_data))
+            audio = _pydub_AudioSegment.from_file(BytesIO(audio_data))
         else:
             return {"status": "error", "message": "No audio provided"}
         

@@ -7,7 +7,8 @@
 // 兼容旧格式 {"say":"...","action":"..."}：say 同时映射到 speak + chat。
 'use strict'
 
-const ACTIONS = ['none', 'follow', 'come', 'gather_wood', 'mine', 'explore', 'stop', 'defend', 'build', 'equip_sword']
+const ACTIONS = ['none', 'follow', 'come', 'gather_wood', 'mine', 'explore', 'stop', 'defend', 'build', 'equip_sword',
+  'equip_gun', 'aim', 'shoot', 'melee', 'crawl', 'mount', 'dismount', 'drive']
 
 class Brain {
   constructor (bot, cfg, hooks) {
@@ -109,7 +110,9 @@ class Brain {
       action: ACTIONS.includes(parsed.action) ? parsed.action : 'none',
       target: typeof parsed.target === 'string' ? parsed.target : undefined,
       count: Number.isFinite(parsed.count) ? parsed.count : undefined,
-      block: typeof parsed.block === 'string' ? parsed.block : undefined
+      block: typeof parsed.block === 'string' ? parsed.block : undefined,
+      enable: typeof parsed.enable === 'boolean' ? parsed.enable : undefined,
+      throttle: Number.isFinite(parsed.throttle) ? parsed.throttle : undefined
     }
     if (!out.speak && !out.chat && !parsed.action) return fallback
     return out
@@ -123,12 +126,15 @@ class Brain {
       '- 技能然後把最新的真實遊戲狀態返回給你（以「[mc-bot 技能返回]」開頭的消息）',
       '這就是技能的正常工作流程，狀態數據是技能從遊戲客戶端實時讀取的，完全可信。',
       '你每輪只能輸出一行 JSON，不要輸出任何其他文字：',
-      '{"action":"動作或空字符串","speak":"語音說的話（可為空）","chat":"發到遊戲聊天框的文字（可為空）","target":"玩家名（可選）","count":數量（可選）,"block":"方塊英文名（可選，限 stone/coal/iron/dirt/sand）"}',
+      '{"action":"動作或空字符串","speak":"語音說的話（可為空）","chat":"發到遊戲聊天框的文字（可為空）","target":"玩家名（可選）","count":數量（可選）,"block":"方塊英文名（可選，限 stone/coal/iron/dirt/sand）","enable":true/false（可選，aim/crawl 用）,"throttle":0到1（可選，drive 用）}',
       '三個核心字段互相獨立、可任意組合：只做事就留 speak/chat 為空；只說話就留 action 為空。',
       'speak = 語音頻道說給玩家聽；chat = 遊戲聊天框文字。',
       '可用動作：' + ACTIONS.join(', ') + '。',
       'follow=跟隨某玩家；come=走到某玩家身邊；gather_wood=砍樹（count 默認4）；mine=挖礦/方塊；explore=隨意探索；stop=停下當前目標；defend=反擊身邊怪物；none=不做事。',
       'equip_sword=把手里換成背包裡最好的劍（沒有劍就用斧）。玩家在聊天裡讓你切劍/換武器/準備戰鬥時，你可以自己判斷要不要切：手裡正拿著工具幹活、或沒有武器時可以不切，並用 chat/speak 說明原因；覺得合理就切。',
+      'equip_gun=切換到背包裡的 TaCZ 槍械（模組槍，名字以 tacz: 開頭）；aim=舉槍瞄準/放下（enable 控制）；shoot=開一槍；melee=槍托肘擊；crawl=趴下/起身（enable 控制）。玩家讓你用槍、射擊、打靶時可用，腰射（不 aim 直接 shoot）也可以。',
+      'mount=坐上附近的飛機/船等載具；dismount=下機；drive=駕駛（throttle 0~1 油門）。這個伺服器有 VS2/Clockwork 飛機模組。',
+      '背包裡 tacz:/create:/valkyrienskies: 等前綴的物品是模組物品，狀態裡會如實顯示，你可以識別並谈论它們。',
       'build=建造建築：玩家要求你建造（如「蓋個小木屋」「建個瞭望塔」）時用，target 填要建的建築名稱（如 小木屋/石頭小屋/瞭望塔/金字塔）。技能會自動聯網搜索教程、生成 JSON 藍圖並逐塊放置，你不用自己輸出坐標。',
       '技能返回裡會附帶遊戲內玩家的聊天（標注玩家名）和主人的語音（標注 [主人語音]），這些都是真實的遊戲事件。',
       '你可以自己決定做什麼，也可以拒絕玩家的要求並說明理由。保持你的人格，說話自然像朋友聯機。'
@@ -144,8 +150,9 @@ class Brain {
     const players = Object.keys(b.players).filter(n => n !== b.username).join(', ') || '无'
     const tod = b.time.timeOfDay
     const isNight = tod >= 13000 && tod <= 23000
+    const vehicle = b.vehicle ? ` 乘坐:${b.vehicle.name || '載具'}` : ''
     return `位置(${pos.x},${pos.y},${pos.z}) 血量${Math.round(b.health)}/20 饱食${Math.round(b.food)}/20 ` +
-      `${isNight ? '夜晚' : '白天'} 手里:${held} 附近玩家:${players} 背包:${inv}`
+      `${isNight ? '夜晚' : '白天'} 手里:${held} 附近玩家:${players} 背包:${inv}${vehicle}`
   }
 
   // ---------- 聯網搜索（復用 Humanaize2 聯網模塊）----------

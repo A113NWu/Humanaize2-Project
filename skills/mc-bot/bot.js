@@ -263,6 +263,169 @@ async function ensureWeaponAndAttack (entity) {
   } catch (e) {}
 }
 
+// ==================== TaCZ 枪械支持 ====================
+// TaCZ 物品 name 規則：tacz:modern_kinetic_gun / tacz:attachment 等，
+// data 里 gunId 存在 nbt 中。mineflayer item.name 會是 'tacz:modern_kinetic_gun' 或帶自定義。
+// 判斷一把槍：name 以 tacz: 開頭且不是 attachment/ammo。
+function isTaczGun (item) {
+  if (!item || !item.name) return false
+  const n = item.name
+  return n.startsWith('tacz:') && !n.includes('attachment') && !n.includes('ammo')
+}
+
+function findTaczGun () {
+  return bot.inventory.items().find(isTaczGun) || null
+}
+
+// TaCZ 網絡包 channel: tacz:network
+// 上行消息 ID（來自 TaCZ 源碼 NetworkHandler）：
+//   1=SHOOT  5=AIM  6=CRAWL  22=MELEE
+// mineflayer 寫 plugin message：bot._client.writeChannel('tacz:network', Buffer)
+// 但實際上 TaCZ 1.20.1 走自定義 payload，包體首字節為消息類型 ordinal。
+// 這裡提供高階封裝：舉槍/開火/肘擊/趴下。
+const TACZ_CHANNEL = 'tacz:network'
+const TACZ_MSG = { SHOOT: 1, AIM: 5, CRAWL: 6, MELEE: 22 }
+
+let taczAiming = false
+let taczCrawling = false
+
+function taczSend (msgId, pressed) {
+  try {
+    // TaCZ 封包格式（1.20.1）：varint msgId + bool pressed
+    const buf = Buffer.alloc(2)
+    buf.writeUInt8(msgId, 0)
+    buf.writeUInt8(pressed ? 1 : 0, 1)
+    bot._client.writeChannel(TACZ_CHANNEL, buf)
+    return true
+  } catch (e) {
+    console.log('[tacz] 發包失敗:', e.message)
+    return false
+  }
+}
+
+async function taczAim (enable) {
+  const gun = bot.heldItem && isTaczGun(bot.heldItem) ? bot.heldItem : findTaczGun()
+  if (!gun) return '身上沒有 TaCZ 槍械'
+  if (bot.heldItem !== gun) {
+    try { await bot.equip(gun, 'hand') } catch (e) { return '切槍失敗: ' + e.message }
+  }
+  if (taczSend(TACZ_MSG.AIM, enable)) {
+    taczAiming = enable
+    return enable ? '已舉槍瞄準' : '已放下槍'
+  }
+  return '發送瞄準封包失敗'
+}
+
+async function taczShoot () {
+  const gun = bot.heldItem && isTaczGun(bot.heldItem) ? bot.heldItem : findTaczGun()
+  if (!gun) return '身上沒有 TaCZ 槍械'
+  if (bot.heldItem !== gun) {
+    try { await bot.equip(gun, 'hand') } catch (e) { return '切槍失敗: ' + e.message }
+  }
+  // TaCZ 客戶端實際是按住左鍵觸發連發；這裡發一次 SHOOT press+release 模擬單發
+  taczSend(TACZ_MSG.SHOOT, true)
+  setTimeout(() => taczSend(TACZ_MSG.SHOOT, false), 80)
+  return '砰！'
+}
+
+async function taczMelee () {
+  const gun = bot.heldItem && isTaczGun(bot.heldItem) ? bot.heldItem : findTaczGun()
+  if (!gun) return '身上沒有 TaCZ 槍械'
+  if (bot.heldItem !== gun) {
+    try { await bot.equip(gun, 'hand') } catch (e) { return '切槍失敗: ' + e.message }
+  }
+  if (taczSend(TACZ_MSG.MELEE, true)) return '肘擊！'
+  return '發送肘擊封包失敗'
+}
+
+function taczCrawl (enable) {
+  if (taczSend(TACZ_MSG.CRAWL, enable)) {
+    taczCrawling = enable
+    return enable ? '趴下了' : '站起來了'
+  }
+  return '發送趴下封包失敗'
+}
+
+// ==================== VS2 / Clockwork 飞机构 ====================
+// Clockwork 提供飛機用引擎與螺旋槳。玩家右鍵坐上「駕駛座」實體後，
+// 客戶端通過 vs2 的 PacketPlayerDriving 上傳輸入（前傾/油門/視角）。
+// 該包為 CBOR 格式，channel: valkyrienskies:vs_packet。
+// 實現複雜度較高，先做「上機/下機 + 簡易油門模擬」。
+const VS2_CHANNEL = 'valkyrienskies:vs_packet'
+
+// 坐上附近的駕駛座（或船/礦車等可騎乘實體）
+async function mountNearestVehicle () {
+  // VS2 飛機的座位實體在客戶端類型一般是 minecraft:boat / minecraft:minecart 或 vs2 自定義。
+  // 這裡找半徑 6 內最近的可騎乘實體。
+  let best = null
+  let bestDist = 6
+  for (const id in bot.entities) {
+    const e = bot.entities[id]
+    if (!e || !e.name) continue
+    const n = String(e.name).toLowerCase()
+    const rideable = n.includes('boat') || n.includes('minecart') || n.includes('seat') ||
+      n.includes('ship') || n.includes('plane') || n.includes('vehicle') ||
+      (e.metadata && e.metadata[6] && typeof e.metadata[6] === 'object')
+    if (!rideable) continue
+    const d = bot.entity.position.distanceTo(e.position)
+    if (d < bestDist) { best = e; bestDist = d }
+  }
+  if (!best) return '附近沒有可乘坐的載具/飛機'
+  try {
+    await bot.mount(best)
+    return `已上機：${best.name || '載具'}`
+  } catch (e) {
+    return '上機失敗: ' + e.message
+  }
+}
+
+function dismountVehicle () {
+  try { bot.dismount(); return '已下機' } catch (e) { return '下機失敗: ' + e.message }
+}
+
+// VS2 駕駛封包：CBOR 編碼 {seat:..., inputs:{throttle, pitch, yaw, ...}}
+// 真實包結構需要對照 VS2 源碼 PacketPlayerDriving。此處發送一個簡化版：
+// 只送 throttle (0..1)。若伺服器拒收，會被忽略，不影響其他邏輯。
+function vs2SendDrive (throttle, forward) {
+  if (!bot.vehicle) return '沒有坐在載具上'
+  try {
+    // CBOR 手工編碼一個最小 map：{"t": throttle, "f": forward}
+    // VS2 真實字段名可能不同，這裡使用 0xA2 開頭的 map(2)
+    const t = Math.max(0, Math.min(1, throttle))
+    const f = forward ? 1 : 0
+    // 極簡 CBOR: A2 61 74 FB <double t> 61 66 FB <double f>
+    const buf = Buffer.alloc(2 + 2 + 9 + 2 + 9)
+    let o = 0
+    buf.writeUInt8(0xA2, o); o += 1
+    buf.writeUInt8(0x61, o); o += 1
+    buf.writeUInt8(0x74, o); o += 1 // 't'
+    buf.writeUInt8(0xFB, o); o += 1
+    buf.writeDoubleBE(t, o); o += 8
+    buf.writeUInt8(0x61, o); o += 1
+    buf.writeUInt8(0x66, o); o += 1 // 'f'
+    buf.writeUInt8(0xFB, o); o += 1
+    buf.writeDoubleBE(f, o); o += 8
+    bot._client.writeChannel(VS2_CHANNEL, buf)
+    return `油門 ${(t * 100) | 0}%`
+  } catch (e) {
+    return 'VS2 發包失敗: ' + e.message
+  }
+}
+
+// 裝備 TaCZ 槍械
+async function equipGun () {
+  const gun = findTaczGun()
+  if (!gun) return '背包里沒有 TaCZ 槍械'
+  if (bot.heldItem && bot.heldItem.name === gun.name) return `手上已經拿著 ${gun.name}`
+  try {
+    await bot.equip(gun, 'hand')
+    console.log('[bot] 裝備槍械:', gun.name)
+    return `已切換到 ${gun.name}`
+  } catch (e) {
+    return '切槍失敗: ' + e.message
+  }
+}
+
 // 聊天里 Aize 自己决定切剑时调用：返回中文结果（brain 只记日志，她自己会用 chat/speak 回应玩家）
 async function equipSword () {
   const w = findBestWeapon()
@@ -310,6 +473,14 @@ async function act (action, opts = {}) {
     case 'stop': return stopAll()
     case 'defend': return defendSelf()
     case 'equip_sword': return equipSword()
+    case 'equip_gun': return equipGun()
+    case 'aim': return taczAim(opts.enable !== false)
+    case 'shoot': return taczShoot()
+    case 'melee': return taczMelee()
+    case 'crawl': return taczCrawl(opts.enable !== false)
+    case 'mount': return mountNearestVehicle()
+    case 'dismount': return dismountVehicle()
+    case 'drive': return vs2SendDrive(opts.throttle != null ? opts.throttle : 1, opts.forward !== false)
     case 'build': return buildBlueprint(opts.blueprint)
     default: return 'none'
   }

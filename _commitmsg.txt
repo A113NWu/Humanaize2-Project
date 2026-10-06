@@ -1,0 +1,6 @@
+feat: v2.3.9 OpenRouter 通道 + mc-bot 模组适配（TaCZ/VS2）
+
+- LLM 通道切换 OpenRouter，空回复检测+本地兜底，修复流式（API key 本地配置，不入库）
+- 修复 Windows 打包丢失托盘 win32 依赖
+- mc-bot：TaCZ 枪械（切枪/瞄准/开火/肘击/趴下）、VS2 载具（上机/下机/油门）、模组物品识别
+- 音频技能整理、ngrok 隧道备用脚本

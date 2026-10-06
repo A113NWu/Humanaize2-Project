@@ -116,7 +116,7 @@ def _provider_settings():
 
 def _vision_provider():
     """读取视觉模型配置：优先独立 vision_model，缺省沿用对话模型。
-    未启用云端 API 时返回 None（本地 llama-server 不走视觉链路）。"""
+    未启用云端 API、或 vision_model 显式为空字符串时返回 None（走本地视觉）。"""
     provider = _provider_settings()
     if not provider:
         return None
@@ -125,9 +125,11 @@ def _vision_provider():
         with open(settings_path, "r", encoding="utf-8") as settings_file:
             settings = json.load(settings_file)
         vision_model = str(settings.get("vision_model", "")).strip()
-        if vision_model:
-            provider = dict(provider)
-            provider["model"] = vision_model
+        # 显式空字串 = 關閉雲端視覺（比如當前免費模型不支持圖片）
+        if not vision_model:
+            return None
+        provider = dict(provider)
+        provider["model"] = vision_model
     except (OSError, ValueError, TypeError):
         pass
     return provider
@@ -288,8 +290,23 @@ def _openai_chat(prompt, provider, max_tokens, temperature, top_p, session, time
                 f"HTTP error {status_code}: {response_body or 'provider returned an empty error response'}"
             ) from error
         data = response.json()
-        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-        return _strip_think_blocks(content)
+        msg = data.get("choices", [{}])[0].get("message", {})
+        content = msg.get("content", "")
+        # content 可能是 str 或多模態 list（[{"type":"text","text":"..."}]）
+        if isinstance(content, list):
+            content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
+        # 思考模型把最終答案放 content，但 reasoning 字段也可能有內容，一併 strip
+        content = _strip_think_blocks(str(content or ""))
+        # reasoning 模型常因 max_tokens 不足返回空 content，此時丟出錯誤讓上層走本地 fallback
+        if not content:
+            reasoning = msg.get("reasoning", "")
+            finish = data.get("choices", [{}])[0].get("finish_reason", "")
+            raise RuntimeError(
+                f"Empty completion from provider (finish_reason={finish!r}, "
+                f"reasoning_chars={len(str(reasoning or ''))}, model={provider.get('model')}). "
+                f"Thinking model may have exhausted max_tokens before producing content."
+            )
+        return content
     finally:
         if own_session:
             request_session.close()
@@ -333,8 +350,8 @@ def chat(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top_p=TOP_
         try:
             return _openai_chat(prompt, provider, max_tokens, temperature, top_p, session, timeout, system)
         except Exception as error:
-            logger.error("OpenAI request failed: %s", error, exc_info=True)
-            return f"[llm error] OpenAI request failed: {error}"
+            logger.warning("Cloud provider failed, falling back to local llama-server: %s", error)
+            # 雲端失敗時繼續走下方本地鏈路，不 return error 字符串
 
     try:
         max_tokens = max(1, int(max_tokens))
@@ -472,6 +489,7 @@ def chat_stream(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top
     if provider:
         if max_tokens == MAX_TOKENS:
             max_tokens = 1024  # 雲端思考模型需要推理預算，默認 512 不夠
+        cloud_failed = False
         try:
             request_session = session or create_session()
             own_session = session is None
@@ -483,21 +501,31 @@ def chat_stream(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top
                 stream=True,
             )
             response.raise_for_status()
+            produced_any = False
             for line in response.iter_lines():
                 if not line:
                     continue
                 text = line.decode("utf-8", errors="ignore")
                 if text.startswith("data:") and text[5:].strip() != "[DONE]":
-                    data = json.loads(text[5:].strip())
-                    content = data.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                    try:
+                        data = json.loads(text[5:].strip())
+                    except json.JSONDecodeError:
+                        continue
+                    delta = data.get("choices", [{}])[0].get("delta", {})
+                    # 思考模型在 streaming 裡走 delta.reasoning，直接丟棄（UI 端會分流到思考區）
+                    content = delta.get("content", "")
                     if content:
+                        produced_any = True
                         yield content
             if own_session:
                 request_session.close()
+            if produced_any:
+                return
+            # 思考模型可能因 token 不足整段 stream 都沒 content，視為失敗走本地
+            logger.warning("Cloud streaming produced no content (thinking model exhausted tokens?), falling back to local")
         except Exception as error:
-            logger.error("OpenAI streaming request failed: %s", error)
-            yield f"[llm error] OpenAI request failed: {error}"
-        return
+            logger.warning("Cloud streaming failed, falling back to local llama-server: %s", error)
+        # 雲端失敗：繼續走下方本地鏈路
 
     request_session = session or create_session()
     own_session = session is None
