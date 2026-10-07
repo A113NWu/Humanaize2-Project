@@ -65,7 +65,11 @@ class ThinkingEngine:
         # Initialize web search capability
         self.web_search = WebSearch()
         logger.info("ThinkingEngine initialized successfully")
-        self.search_enabled = True  # Enable web search by default
+        # 自動聯網搜索（關鍵詞規則觸發）默認關閉：
+        # 雲端模型自身有知識，需要時由模型主動調用 web-search 技能，
+        # 避免規則誤判（尤其用戶文本提取異常時拿整段 prompt 當搜索詞）。
+        # 可在 ui_settings.json 設 "auto_web_search": true 重新開啟。
+        self.search_enabled = bool(self._load_ui_settings().get("auto_web_search", False))
         
         self._stream_callbacks = []
     
@@ -142,9 +146,26 @@ class ThinkingEngine:
             response = chat(decision_input, max_tokens=400, temperature=0.3, timeout=60, max_retries=0, system=decision_system).strip()
             logger.info(f"should_answer LLM response: {response[:100] if response else 'Empty'}")
             decision = self._parse_json_decision(response)
-            should_answer = decision.get("decision") == "answer"
-            if not decision:
-                should_answer = "是" in response or "YES" in response.upper() or "会" in response
+            # 判定規則：只有「明確拒答」才中斷工作流；空回覆/格式錯誤一律默認回答，
+            # 避免模型在資源爭搶下返回空內容時把正常對話誤殺。
+            raw_decision = str(decision.get("decision", "")).strip().lower() if decision else ""
+            if raw_decision == "answer":
+                should_answer = True
+            elif raw_decision == "continue_gan":
+                should_answer = False
+            elif not response:
+                # 模型返回空內容（常見於本地推理被佔用或思考模型吃光 token 預算）
+                logger.warning("[should_answer] empty decision response, defaulting to answer")
+                should_answer = True
+            else:
+                # 非 JSON 或格式不符：僅當響應「整體就是拒答詞」時才拒答，
+                # 其餘一律回答。絕不用子串匹配——skip/refuse 是日常用詞，
+                # 子串匹配會把「我來回答，skip 掉細節」誤殺成拒答。
+                stripped = response.strip().lower().rstrip('。.!?！？，,、 ')
+                refused = stripped in ("continue_gan", "不回答", "不回复", "不回覆", "refuse", "skip")
+                should_answer = not refused
+                if not refused:
+                    logger.info(f"[should_answer] non-JSON decision text, defaulting to answer: {response[:80]}")
             # 发送AI决策通知
             decision = "YES" if should_answer else "NO"
             notify_ai_decision(decision, response)
@@ -297,8 +318,17 @@ class ThinkingEngine:
             prompt += "\n\n# Skills configuration\n" + skills_prompt.strip()
         return prompt
 
-    def _build_model_prompt(self, main_prompt, memory, user_question, gan_prompt="", other_prompts=None):
+    def _build_model_prompt(self, main_prompt, memory, user_question, gan_prompt="", other_prompts=None, tail=None):
         """Build the English-labeled prompt contract used for user responses."""
+        def _is_machine_message(content):
+            """技能調用/命令回執等機器消息不進記憶上下文：弱模型會模仿它們
+            重複同一動作或假裝任務已完成。"""
+            c = str(content or "")
+            return ('{"skill"' in c or "'skill'" in c or
+                    c.startswith("[Command executed") or
+                    c.startswith("Command output:") or
+                    c.startswith("[Skill]"))
+
         memory_messages = (memory or {}).get("messages", []) if isinstance(memory, dict) else []
         memory_lines = []
         for message in memory_messages[-20:]:
@@ -306,13 +336,14 @@ class ThinkingEngine:
                 continue
             role = message.get("role", "unknown")
             content = message.get("content", "")
-            if content:
+            if content and not _is_machine_message(content):
                 memory_lines.append(f"{role}: {content}")
 
         memory_text = "\n".join(memory_lines) or "No previous memory."
         other_text = "\n\n".join(str(item).strip() for item in (other_prompts or []) if str(item).strip())
         other_text = other_text or "None."
         gan_text = str(gan_prompt or "").strip() or "None."
+        tail_text = str(tail).strip() if tail else "Respond concisely. Respond in the same language as the user's input."
 
         return (
             "MAIN PROMPT:\n"
@@ -325,10 +356,10 @@ class ThinkingEngine:
             f"{gan_text}\n\n"
             "OTHER PROMPTS:\n"
             f"{other_text}\n\n"
-            "Respond concisely. Respond in the same language as the user's input."
+            f"{tail_text}"
         )
 
-    def _build_response_prompt(self, exec_instr, prompt, memory, user_text):
+    def _build_response_prompt(self, exec_instr, prompt, memory, user_text, tail=None):
         """Place task-specific context into the standard response prompt."""
         prompt_text = str(prompt or "")
         gan_prompt = ""
@@ -336,7 +367,7 @@ class ThinkingEngine:
         if "[GAN synthesis:" in prompt_text or "[GAN topic:" in prompt_text:
             gan_prompt = prompt_text
             other_prompts = []
-        return self._build_model_prompt(exec_instr, memory, user_text, gan_prompt, other_prompts)
+        return self._build_model_prompt(exec_instr, memory, user_text, gan_prompt, other_prompts, tail=tail)
 
     def _extract_thought_and_response(self, text: str):
         if not text:
@@ -532,13 +563,19 @@ class ThinkingEngine:
                 
                 # 如果有RESPONSE内容，使用它；否则清理命令后作为回复
                 if response_content:
-                    final_reply = response_content
+                    # RESPONSE 內容若包含技能調用，說明是純動作回覆，不展示給用戶
+                    rc_cleaned, rc_calls = self._extract_skill_calls(response_content)
+                    if rc_calls:
+                        final_reply = "[Command executed; see command output]"
+                    else:
+                        final_reply = rc_cleaned.strip() or "[Command executed; see command output]"
                 else:
                     # 用 _extract_skill_calls 把 JSON 技能調用從回覆中剔除（只留自然語言），
                     # 否則 {"skill":...} 會原樣展示給用戶。
-                    cleaned, _calls = self._extract_skill_calls(actual_reply)
+                    cleaned, calls = self._extract_skill_calls(actual_reply)
                     cleaned = re.sub(r'!.*?!', '', cleaned, flags=re.S).strip()
-                    if not cleaned or (cleaned.startswith('{') and cleaned.endswith('}')):
+                    # 包含技能調用的回覆：解釋性文字也不展示，避免打斷工作流
+                    if calls or not cleaned or (cleaned.startswith('{') and cleaned.endswith('}')):
                         final_reply = "[Command executed; see command output]"
                     else:
                         final_reply = cleaned
@@ -561,6 +598,11 @@ class ThinkingEngine:
                 try:
                     followup_out = out
                     seen_calls = set()
+                    # 首輪已執行的調用一併計入去重：模型若在 followup 第一輪就原樣重複
+                    # （典型：拿著搜索結果又搜一次），能立刻被停滯檢測抓住並糾偏。
+                    for _sn, _si in self._extract_skill_calls(actual_reply)[1]:
+                        seen_calls.add(f"{_sn}:{json.dumps(_si, sort_keys=True, ensure_ascii=False)}")
+                    stall_nudges = 0
                     for loop_idx in range(10):
                         followup_prompt = load_followup_prompt(followup_out, user_text)
                         logger.info(f"Generating followup response (round {loop_idx + 1})")
@@ -570,10 +612,13 @@ class ThinkingEngine:
                             self.on_response({"type": "command_start",
                                               "message": f"AI is thinking about the next step... (round {loop_idx + 1})\n"})
                         followup_model_prompt = self._build_response_prompt(
-                            exec_instr, followup_prompt, memory, user_text)
-                        logger.info(f"[Followup] round {loop_idx + 1}: generating, prompt_length={len(followup_model_prompt)}")
+                            exec_instr, followup_prompt, memory, user_text,
+                            tail="這是任務執行的中間步驟，不是閒聊。請按 OTHER PROMPTS 的要求"
+                                 "完整輸出下一步：需要寫文件就把完整內容放進 JSON 的 content，"
+                                 "輸出可能較長是正常的，絕對不要只寫幾句就停、也不要宣稱尚未完成的事已經完成。"
+                                 "使用與用戶相同的語言。")
                         freply, fadapt = generate_with_emotion_feedback(
-                            followup_model_prompt, emotion_monitor)
+                            followup_model_prompt, emotion_monitor, max_tokens=4096)
                         logger.info(f"[Followup] round {loop_idx + 1}: reply received, length={len(freply) if freply else 0}, content={freply[:200] if freply else 'Empty'}")
 
                         if not (freply or "").strip():
@@ -590,6 +635,11 @@ class ThinkingEngine:
                         fcleaned, f_calls = self._extract_skill_calls(ffinal_reply)
                         logger.info(f"[Followup] round {loop_idx + 1}: skill_calls={len(f_calls)}, cleaned_length={len(fcleaned.strip())}")
                         if not f_calls:
+                            # 想調技能但 JSON 被截斷/壞掉 → 餵回錯誤讓模型立即重試，不結束工作流
+                            if self._looks_truncated_skill_call(ffinal_reply) and loop_idx < 9:
+                                logger.warning(f"[Followup] round {loop_idx + 1}: truncated skill JSON, retrying")
+                                followup_out = self._truncated_skill_feedback()
+                                continue
                             # 沒有更多技能調用 → 展示最終總結
                             if self.on_response and fcleaned.strip():
                                 self.on_response({"type": "chat_response", "reply": fcleaned.strip()})
@@ -601,6 +651,13 @@ class ThinkingEngine:
                             for name, inp in f_calls
                         )
                         if all(sig in seen_calls for sig in call_signatures):
+                            # 不立刻結束：先強制糾偏兩輪（禁止重複、要求換動作推進任務），
+                            # 仍停滯才收尾，避免「搜索→重複搜索→工作流結束」。
+                            if stall_nudges < 2:
+                                stall_nudges += 1
+                                logger.warning(f"Followup round {loop_idx + 1}: stalled, nudge #{stall_nudges}")
+                                followup_out = self._stall_nudge_feedback(user_text)
+                                continue
                             logger.warning(f"Followup loop stalled (repeated calls), stopping.")
                             if fcleaned.strip() and self.on_response:
                                 self.on_response({"type": "chat_response", "reply": fcleaned.strip()})
@@ -821,6 +878,10 @@ class ThinkingEngine:
                                         self.on_response({"type": "internal_thought",
                                                           "thought": f"[Skill] 調用技能 {skill_name}",
                                                           "thought_type": "skill"})
+                                # 包含技能調用的句子：整句不發送給用戶（避免解釋性文字打斷工作流），
+                                # 只由技能執行結果區展示進度。
+                                if skill_calls:
+                                    continue
                             if cleaned:
                                 cleaned = self._hallucination_check(cleaned, user_text)
                                 logger.info(f"Streaming sentence: {cleaned[:50]}...")
@@ -844,6 +905,7 @@ class ThinkingEngine:
                         self.on_response({"type": "internal_thought", "thought": body.strip(), "thought_type": "internal"})
                 else:
                     cleaned = self._clean_and_humanize_reply(body)
+                    skill_calls = []
                     if cleaned and cleaned not in sent_sentences:
                         cleaned, skill_calls = self._extract_skill_calls(cleaned)
                         for skill_name, _ in skill_calls:
@@ -851,7 +913,8 @@ class ThinkingEngine:
                                 self.on_response({"type": "internal_thought",
                                                   "thought": f"[Skill] 調用技能 {skill_name}",
                                                   "thought_type": "skill"})
-                    if cleaned and cleaned not in sent_sentences:
+                    # 包含技能調用的句子：不展示解釋性文字，只由執行結果區呈現
+                    if cleaned and cleaned not in sent_sentences and not skill_calls:
                         cleaned = self._hallucination_check(cleaned, user_text)
                         sent_sentences.append(cleaned)
                         logger.info(f"Final streaming sentence: {cleaned[:50]}...")
@@ -921,6 +984,10 @@ class ThinkingEngine:
                         # 若她決定收尾（輸出純文本總結），就展示給用戶並結束循環。
                         followup_out = out
                         seen_calls = set()  # 進度追蹤：檢測重複調用，避免死循環
+                        # 首輪調用計入去重（同非流式路徑）
+                        for _sn, _si in self._extract_skill_calls(full_reply)[1]:
+                            seen_calls.add(f"{_sn}:{json.dumps(_si, sort_keys=True, ensure_ascii=False)}")
+                        stall_nudges = 0
                         for loop_idx in range(10):  # 最多 10 輪，防止無限循環
                             followup_prompt = load_followup_prompt(followup_out, user_text)
                             logger.info(f"Generating followup response (round {loop_idx + 1})")
@@ -932,7 +999,7 @@ class ThinkingEngine:
                             followup_model_prompt = self._build_response_prompt(
                                 exec_instr, followup_prompt, memory, user_text)
                             freply, fadapt = generate_with_emotion_feedback(
-                                followup_model_prompt, emotion_monitor)
+                                followup_model_prompt, emotion_monitor, max_tokens=4096)
                             logger.info(f"Followup reply: {freply[:200] if freply else 'Empty'}")
 
                             if not (freply or "").strip():
@@ -951,6 +1018,11 @@ class ThinkingEngine:
                             fcleaned, f_calls = self._extract_skill_calls(ffinal_reply)
 
                             if not f_calls:
+                                # 想調技能但 JSON 被截斷/壞掉 → 餵回錯誤讓模型立即重試，不結束工作流
+                                if self._looks_truncated_skill_call(ffinal_reply) and loop_idx < 9:
+                                    logger.warning(f"Followup round {loop_idx + 1}: truncated skill JSON, retrying")
+                                    followup_out = self._truncated_skill_feedback()
+                                    continue
                                 # 沒有更多技能調用 → 這是最終總結，展示給用戶
                                 fsentences = self._split_sentences(fcleaned)
                                 for sentence in fsentences:
@@ -968,6 +1040,12 @@ class ThinkingEngine:
                                 for name, inp in f_calls
                             )
                             if all(sig in seen_calls for sig in call_signatures):
+                                # 停滯時先強制糾偏兩輪再收尾（同非流式路徑）
+                                if stall_nudges < 2:
+                                    stall_nudges += 1
+                                    logger.warning(f"Followup round {loop_idx + 1}: stalled, nudge #{stall_nudges}")
+                                    followup_out = self._stall_nudge_feedback(user_text)
+                                    continue
                                 logger.warning(f"Followup loop stalled (repeated calls), stopping. calls={call_signatures}")
                                 if fcleaned.strip() and self.on_response:
                                     self.on_response({"type": "chat_response", "reply": fcleaned.strip()})
@@ -1144,23 +1222,45 @@ class ThinkingEngine:
             logger.error(f"Error learning from command result: {e}")
                 
     def _extract_user_text_from_prompt(self, prompt):
-        """Extract user text from the prompt"""
-        # Try to find user message in the prompt
-        patterns = [
+        """Extract the latest user message from the prompt.
+
+        支持 Gemma（<start_of_turn>user ... <end_of_turn>）、ChatML
+        （<|im_start|>user ... <|im_end|>）及旧式 USER:/用户: 格式。
+        多轮对话时必须取最后一条 user 消息；全部匹配失败时返回空串，
+        由调用方按「无用户文本」处理（不能把整段 prompt 当用户输入，
+        否则联网搜索会拿系统提示词当关键词）。
+        """
+        if not prompt:
+            return ""
+
+        # 带明确结束边界的模板格式：取最后一个匹配（最新一轮）
+        bounded_patterns = [
+            r'<start_of_turn>user\s*\n?(.*?)<end_of_turn>',
+            r'<\|im_start\|>\s*user\s*\n?(.*?)<\|im_end\|>',
+        ]
+        for pattern in bounded_patterns:
+            matches = re.findall(pattern, prompt, re.DOTALL | re.IGNORECASE)
+            if matches:
+                text = matches[-1].strip()
+                # 去掉可能混入的附件/系统标记行
+                text = re.sub(r'^\[系统\].*$', '', text, flags=re.MULTILINE).strip()
+                if text:
+                    return text
+
+        # 旧式无结束边界格式
+        legacy_patterns = [
             r'USER:\s*(.+?)\s*(?:ASSISTANT:|$)',
             r'User:\s*(.+?)\s*(?:AI:|$)',
             r'user:\s*(.+?)\s*(?:assistant:|$)',
             r'你:\s*(.+?)\s*(?:我:|$)',
             r'用户:\s*(.+?)\s*(?:助手:|$)'
         ]
-        
-        for pattern in patterns:
-            match = re.search(pattern, prompt, re.DOTALL)
-            if match:
-                return match.group(1).strip()
-                
-        # If no pattern matches, return the whole prompt (truncated)
-        return prompt[:500].strip()
+        for pattern in legacy_patterns:
+            matches = re.findall(pattern, prompt, re.DOTALL)
+            if matches:
+                return matches[-1].strip()
+
+        return ""
     
     def _extract_response_content(self, text):
         """
@@ -1345,6 +1445,45 @@ class ThinkingEngine:
                 st["pending"] = st["pending"][idx + len(OPEN_TAG):]
                 st["in_think"] = True
         return out
+
+    @staticmethod
+    def _looks_truncated_skill_call(text):
+        """模型明顯想調技能（文本裡有 skill 調用開頭），但沒解析出完整 JSON。
+
+        常見原因：長內容（如整篇 Word 文檔）超過 max_tokens 被截斷，
+        或 JSON 引號/換行格式錯誤。此時不能當成「最終總結」收尾，
+        應把截斷錯誤餵回模型讓她立即重試（縮短內容或分段 append）。
+        """
+        if not text:
+            return False
+        t = text.strip()
+        if '"skill"' not in t and not re.search(r'\bskill\s*:', t, re.IGNORECASE):
+            return False
+        return '{' in t
+
+    @staticmethod
+    def _truncated_skill_feedback():
+        import json as _json
+        return _json.dumps({
+            "success": False,
+            "error": "上一條技能調用的 JSON 不完整（輸出可能被長度截斷），動作未執行。"
+                     "請立即重新輸出完整可解析的 JSON，不要重複搜索：內容很長時，"
+                     "先調用 file-write 寫入前面部分，再用相同 path、mode=append 追加後續部分。"
+        }, ensure_ascii=False)
+
+    @staticmethod
+    def _stall_nudge_feedback(user_text):
+        """followup 中模型重複已成功的動作（典型：拿著搜索結果反復搜索）時的強制糾偏。"""
+        import json as _json
+        return _json.dumps({
+            "success": False,
+            "error": "你重複了剛剛已經成功的同一動作，任務並未因此推進。"
+                     "禁止以相同或相近參數再次調用同一個技能（尤其不要再 web-search）。"
+                     "請立即換成推進任務的不同動作：如果手上已有搜索/查詢結果，"
+                     "就直接把資料整理好調用 file-write 寫入用戶指定的文件（.docx 路徑會生成真正的 Word 文檔，"
+                     "content 必須是完整的整理內容、不能留空）；完成文件後再用中文口頭總結。",
+            "user_original_request": str(user_text or "")[:300]
+        }, ensure_ascii=False)
 
     @staticmethod
     def _extract_skill_calls(text):
@@ -1564,7 +1703,19 @@ class ThinkingEngine:
         
         try:
             response = chat(decision_prompt).strip()
-            should_answer = "是" in response or "YES" in response.upper() or "会" in response
+            # 僅在模型明確拒答時才中斷；空回覆/格式不符一律回答，避免誤殺正常對話
+            decision = self._parse_json_decision(response)
+            raw = str(decision.get("decision", "")).strip().lower() if decision else ""
+            if raw == "answer":
+                should_answer = True
+            elif raw == "continue_gan":
+                should_answer = False
+            elif not response:
+                should_answer = True
+            else:
+                stripped = response.strip().lower().rstrip('。.!?！？，,、 ')
+                refused = stripped in ("continue_gan", "不回答", "不回复", "不回覆", "refuse", "skip")
+                should_answer = not refused
             return should_answer, response
         except Exception as e:
             return True, f"Error: {e}"

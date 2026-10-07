@@ -40,6 +40,23 @@ except Exception:  # pragma: no cover
     edge_tts = None
 
 
+def _kokoro_backend():
+    """懶加載本地 Kokoro TTS（sherpa-onnx）；不可用時返回 None。"""
+    try:
+        from voice.kokoro_tts import KokoroTTS, available as kokoro_available
+    except ImportError:
+        try:
+            from core.voice.kokoro_tts import KokoroTTS, available as kokoro_available
+        except ImportError:
+            return None
+    try:
+        if kokoro_available():
+            return KokoroTTS.instance()
+    except Exception:
+        return None
+    return None
+
+
 # ============================================================
 # 常量与默认配置
 # ============================================================
@@ -659,6 +676,26 @@ def _synthesize_edge_tts(opts: SynthesizeOptions, _api_url: str) -> Dict[str, An
     }
 
 
+def _synthesize_kokoro(opts: SynthesizeOptions, _api_url: str) -> Dict[str, Any]:
+    """本地 Kokoro 神經語音（sherpa-onnx，WAV 24kHz）。"""
+    backend = _kokoro_backend()
+    if backend is None:
+        raise TTSError("Kokoro TTS 不可用（sherpa-onnx 或模型缺失）", 500)
+    try:
+        data = backend.synthesize(opts.text, voice=opts.voice, speed=float(opts.speed or 1.0))
+    except Exception as exc:
+        raise TTSError(f"Kokoro 合成失敗: {exc}", 500)
+    if not data:
+        raise TTSError("Kokoro 合成返回空音頻", 502)
+    if len(data) > MAX_TTS_AUDIO_BYTES:
+        raise TTSError("TTS 音頻響應過大", 413)
+    return {
+        "audio_bytes": data,
+        "content_type": "audio/wav",
+        "provider": "kokoro",
+    }
+
+
 # ============================================================
 # 路由：synthesize_speech 统一入口
 # ============================================================
@@ -699,9 +736,17 @@ def _resolve_provider_defaults(opts: SynthesizeOptions) -> Tuple[str, str, str, 
     elif use_provider == "edge_tts":
         use_voice = default_voice or "zh-CN-XiaoxiaoNeural"
         use_api_url = env_api_url or ""
+    elif use_provider == "kokoro":
+        use_voice = default_voice or "zf_001"
+        use_api_url = env_api_url or ""
     elif use_provider in ("auto", ""):
-        use_provider = "edge_tts" if edge_tts else "pyttsx3"  # 最后由上层回退
-        use_voice = default_voice or "zh-CN-XiaoxiaoNeural"
+        # 默認優先本地 Kokoro（音質好、免聯網），不可用再回落 edge_tts
+        if _kokoro_backend() is not None:
+            use_provider = "kokoro"
+            use_voice = default_voice or "zf_001"
+        else:
+            use_provider = "edge_tts" if edge_tts else "pyttsx3"
+            use_voice = default_voice or "zh-CN-XiaoxiaoNeural"
         use_api_url = env_api_url or ""
 
     return use_provider, env_api_key, use_voice, use_model, use_api_url  # type: ignore
@@ -737,12 +782,16 @@ def synthesize_speech(opts: SynthesizeOptions) -> Dict[str, Any]:
         # 上层 VoiceService 会处理本地引擎，这里抛错让其回退
         raise TTSError(f"Provider '{use_provider}' 由 VoiceService 本地处理", 501)
 
+    # edge_tts / kokoro 均為免密鑰引擎
+    keyless_providers = {"edge_tts", "kokoro"}
     if use_provider != "gpt-sovits" and not opts.api_key:
-        # edge_tts 不需要密钥
-        if use_provider != "edge_tts":
+        if use_provider not in keyless_providers:
             raise TTSError("TTS API 未配置，请设置 API Key", 400)
 
-    use_api_url_final = validate_tts_url(use_api_url, use_provider) if use_provider != "edge_tts" else ""
+    if use_provider in keyless_providers or use_provider == "gpt-sovits":
+        use_api_url_final = validate_tts_url(use_api_url, use_provider) if use_provider == "gpt-sovits" else ""
+    else:
+        use_api_url_final = validate_tts_url(use_api_url, use_provider)
 
     if use_provider == "gpt-sovits":
         return _synthesize_gpt_sovits(opts, use_api_url_final)
@@ -754,6 +803,8 @@ def synthesize_speech(opts: SynthesizeOptions) -> Dict[str, Any]:
         return _synthesize_minimax(opts, use_api_url_final)
     if use_provider == "openai":
         return _synthesize_openai(opts, use_api_url_final)
+    if use_provider == "kokoro":
+        return _synthesize_kokoro(opts, "")
     if use_provider == "edge_tts":
         return _synthesize_edge_tts(opts, "")
 

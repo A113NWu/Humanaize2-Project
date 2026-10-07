@@ -202,28 +202,23 @@ def _search_baidu(query: str, num_results: int = 5) -> list:
 
 def _search_bing(query: str, num_results: int = 5) -> list:
     """
-    Search using Bing HTML interface
-
-    Args:
-        query: Search query
-        num_results: Number of results to return
-
-    Returns:
-        List of search results with title, url, snippet, and source
+    Search using Bing HTML interface (cn.bing.com，国内可访问，中文结果准确)
     """
     params = {
         "q": query,
         "count": num_results,
-        "first": 1
+        "first": 1,
+        "setlang": "zh-CN",
+        "cc": "CN"
     }
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9"
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
     }
 
     response = requests.get(
-        "https://www.bing.com/search",
+        "https://cn.bing.com/search",
         params=params,
         headers=headers,
         timeout=10
@@ -238,46 +233,48 @@ def _search_bing(query: str, num_results: int = 5) -> list:
     result_container_pattern = r'<li[^>]*class="[^"]*b_algo[^"]*"[^>]*>(.*?)</li>'
     containers = re.findall(result_container_pattern, html, re.DOTALL)
 
-    for container in containers[:num_results]:
-        title_pattern = r'<h2[^>]*><a[^>]+href="([^"]+)"[^>]*>(.*?)</a></h2>'
-        title_match = re.search(title_pattern, container, re.DOTALL)
-        
-        snippet_pattern = r'<p[^>]*class="[^"]*b_lineclamp[^"]*"[^>]*>(.*?)</p>'
-        snippet_match = re.search(snippet_pattern, container, re.DOTALL)
+    def _extract(container):
+        title_match = re.search(r'<h2[^>]*>\s*<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>', container, re.DOTALL)
+        if not title_match:
+            return None
+        url = _decode_bing_url(title_match.group(1))
+        title = _clean_html(title_match.group(2))
+        snippet_match = re.search(r'<p[^>]*>(.*?)</p>', container, re.DOTALL)
+        snippet = _clean_html(snippet_match.group(1)) if snippet_match else ""
+        if url and title:
+            return {"title": title, "url": url, "snippet": snippet, "source": "Bing"}
+        return None
 
-        if title_match:
-            url = title_match.group(1)
-            title = _clean_html(title_match.group(2))
-            snippet = _clean_html(snippet_match.group(1)) if snippet_match else ""
-
-            if url and title:
-                results.append({
-                    "title": title,
-                    "url": url,
-                    "snippet": snippet,
-                    "source": "Bing"
-                })
-
-    if not results:
-        result_pattern = r'<h2[^>]*><a[^>]+href="([^"]+)"[^>]*>(.*?)</a></h2>'
-        snippet_pattern = r'<p[^>]*class="[^"]*b_lineclamp[^"]*"[^>]*>(.*?)</p>'
-        
-        matches = re.findall(result_pattern, html, re.DOTALL)
-        snippets = re.findall(snippet_pattern, html, re.DOTALL)
-
-        for i, (url, title) in enumerate(matches[:num_results]):
-            title = _clean_html(title)
-            snippet = _clean_html(snippets[i]) if i < len(snippets) else ""
-
-            if url and title:
-                results.append({
-                    "title": title,
-                    "url": url,
-                    "snippet": snippet,
-                    "source": "Bing"
-                })
+    for container in containers[:num_results * 2]:
+        item = _extract(container)
+        if item and item not in results:
+            results.append(item)
+        if len(results) >= num_results:
+            break
 
     return results
+
+
+def _decode_bing_url(url: str) -> str:
+    """把必应跳转链接 bing.com/ck/a?...&u=a1<base64> 还原成真实 URL。"""
+    if not url or "bing.com/ck/a" not in url or "u=" not in url:
+        return url
+    try:
+        qs = urllib.parse.urlparse(url).query
+        params = urllib.parse.parse_qs(qs)
+        u = params.get("u", [""])[0]
+        # u 参数形如 a1aHR0cHM...（前缀 a1 + base64url 编码的真实地址）
+        if u[:2] in ("a1", "a2"):
+            import base64
+            raw = u[2:]
+            raw += "=" * (-len(raw) % 4)
+            real = base64.urlsafe_b64decode(raw).decode("utf-8", "ignore")
+            if real.startswith("http"):
+                return real
+    except Exception:
+        pass
+    return url
+
 
 
 def _search_ddg(query: str, num_results: int = 5, safe_search: bool = True) -> list:

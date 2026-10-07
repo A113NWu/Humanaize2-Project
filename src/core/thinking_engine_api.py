@@ -501,15 +501,17 @@ class ResponseCollector:
     """响应收集器 - 收集ThinkingEngine的回调响应
     支持流式和同步两种模式，在最后一个块后等待一段时间没有新消息则认为任务完成"""
     
-    def __init__(self, timeout=600, completion_wait=90, first_chunk_wait=600):
+    def __init__(self, timeout=600, completion_wait=300, first_chunk_wait=600):
         """非流式生成在 CPU 上可能 60-90 秒後才返回唯一的一個 chunk，
         首塊等待必須遠大於 chunk 間隔，否則會在生成完成前誤判為空回覆。
         低配機器（RAM 不足換頁）上 prompt 評估可達 3 分鐘以上，因此
         總超時與首塊等待都取 10 分鐘。
         completion_wait 僅作兜底：worker 正常結束時會發送 task_done 信號，
         collector 收到後立即完成；只有 worker 意外掛死時才靠靜默超時兜底。
-        閉環模式下 followup 的 LLM 生成可達 90 秒，靜默兜底取 90 秒避免
-        把「正在思考下一步」誤判為任務完成而截斷回覆。"""
+        閉環模式下 followup 的 LLM 生成可達 2-3 分鐘（寫長文檔/複雜推理），
+        靜默兜底取 300 秒避免把「正在思考下一步」誤判為任務完成而截斷回覆。
+        同時 internal_thought / command_start / command_result 都會刷新
+        計時器——只要 worker 還在產出任何事件，就不該被當成掛死。"""
         self._queue = Queue()
         self._timeout = timeout
         self._completion_wait = completion_wait
@@ -531,8 +533,9 @@ class ResponseCollector:
             thought_type = response.get("thought_type", "")
             self._thoughts.append(thought)
             logger.info(f"[ThinkingEngine] Internal thought: {thought[:100]}...")
-            # 注意：思考片段不更新 _last_chunk_time——真正的 LLM 回覆可能
-            # 在思考後數分鐘才到（慢機器），若按 5 秒靜默判完成會截斷回覆
+            # 思考片段也刷新計時器：worker 還在思考就說明活著，
+            # 不該因「90 秒沒正文 chunk」就誤判任務完成。
+            self._last_chunk_time = time.time()
             self._queue.put({"type": "thought", "content": thought, "thought_type": thought_type})
         elif response.get("type") == "gan_complete":
             pass
@@ -598,6 +601,48 @@ class ResponseCollector:
     def get_thoughts(self):
         """获取思考内容"""
         return self._thoughts
+
+
+# ============================================================
+# 進程級對話時間線（內存，不落盤）
+# ------------------------------------------------------------
+# 實時流式對話把事件分成「思考行 / 命令區塊 / 回覆正文」三類渲染，
+# 但持久化的 memory.json 只保存混合後的純文本 content。網頁刷新時
+# /api/chat/history 只能拿回純文本，導致思考框/命令框全部錯位成
+# AI 原話。這裡按輪次保存結構化事件，供刷新後原樣重建。
+# 進程重啟即消失（與思考框的臨時性質一致），最多保留 60 輪。
+# ============================================================
+_CHAT_TIMELINE = collections.deque(maxlen=60)
+_CHAT_TIMELINE_LOCK = threading.Lock()
+
+
+def _timeline_add_turn(user_text, items):
+    """記錄一輪對話。items: [{k: text|thought|cmd_start|cmd_result, t: str, c: str}]"""
+    # 壓縮：去掉空塊；正文合併後若整輪無內容則不記錄
+    clean_items = []
+    for it in items:
+        c = (it.get("c") or "")
+        if not c:
+            continue
+        # 相鄰同類事件合併（token chunk / 同類思考幀）
+        if clean_items and clean_items[-1].get("k") == it.get("k") \
+                and clean_items[-1].get("t", "") == it.get("t", ""):
+            clean_items[-1]["c"] += c
+        else:
+            clean_items.append({"k": it.get("k"), "t": it.get("t", ""), "c": c})
+    if not (user_text or "").strip() and not clean_items:
+        return
+    with _CHAT_TIMELINE_LOCK:
+        _CHAT_TIMELINE.append({
+            "user": user_text or "",
+            "items": clean_items,
+            "ts": int(time.time()),
+        })
+
+
+def _timeline_snapshot():
+    with _CHAT_TIMELINE_LOCK:
+        return list(_CHAT_TIMELINE)
 
 
 EMPTY_REPLY_ERROR = "錯誤：AI 沒有產生任何有效內容"
@@ -777,6 +822,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._send_json(self._status_payload())
         elif parsed.path == '/api/chat/history':
             self._handle_chat_history()
+        elif parsed.path == '/api/chat/timeline':
+            self._handle_chat_timeline()
         elif parsed.path == '/api/voice/capabilities':
             self._handle_voice_capabilities()
         elif parsed.path == '/api/events':
@@ -1115,6 +1162,11 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                 continue
             items.append({"role": out_role, "content": content, "time": msg.get("time", "")})
         self._send_json({"messages": items})
+
+    def _handle_chat_timeline(self):
+        """返回進程級結構化對話時間線（思考/命令/正文分離），
+        供網頁刷新後原樣重建思考框與技能輸出框。"""
+        self._send_json({"turns": _timeline_snapshot()})
 
     def _status_payload(self):
         memory = ThinkingEngineState().get_memory() or {}
@@ -1973,7 +2025,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                     logger.info(f"[Chat] refused to answer: {str(decision_reason)[:200]}")
                     self._send_refusal_stream()
                 else:
-                    self._handle_stream_response(collector, state)
+                    self._handle_stream_response(collector, state, user_text=user_text)
             else:
                 # 通过ThinkingEngine队列提交聊天任务
                 thinking_engine.queue_chat_task(
@@ -2144,22 +2196,31 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         try:
             # 等待响应完成（最多等待collector的timeout）
             full_reply = ""
+            tl_items = []
             while True:
                 chunk = collector.get_chunk()
                 if chunk["type"] == "chunk":
                     full_reply += chunk["content"]
+                    tl_items.append({"k": "text", "t": "", "c": chunk["content"]})
+                elif chunk["type"] == "thought":
+                    tl_items.append({"k": "thought", "t": chunk.get("thought_type", ""), "c": chunk.get("content", "")})
+                elif chunk["type"] in ("command_start", "command_result"):
+                    tl_items.append({"k": chunk["type"], "t": "", "c": chunk.get("message") or chunk.get("output") or ""})
                 elif chunk["type"] == "done":
                     # 任务完成，退出循环
                     break
                 elif chunk["type"] == "error":
                     full_reply = f"错误: {chunk['content']}"
+                    tl_items.append({"k": "text", "t": "", "c": full_reply})
                     break
                 elif chunk["type"] == "timeout":
                     full_reply = "抱歉，我刚才走神了～能再说一遍吗？😊"
+                    tl_items.append({"k": "text", "t": "", "c": full_reply})
                     break
 
             # 标记完成
             collector.set_finished()
+            _timeline_add_turn(user_text, tl_items)
 
             # 清理回复
             cleaned_reply = clean_reply(full_reply) if full_reply else ""
@@ -2229,7 +2290,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                 "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
             })
 
-    def _handle_stream_response(self, collector, state):
+    def _handle_stream_response(self, collector, state, user_text=""):
         """处理流式响应 - SSE格式
         通过ResponseCollector收集ThinkingEngine的响应，实现QQ-bot和客户端共用同样的处理逻辑"""
         self.send_response(200)
@@ -2244,6 +2305,9 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         chat_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
         created = int(time.time())
 
+        # 結構化事件時間線：刷新頁面後原樣重建思考框/命令輸出框
+        tl_items = []
+
         try:
             # 累积完整回复用于清理和UI更新
             full_reply = ""
@@ -2255,6 +2319,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                 if chunk["type"] == "chunk":
                     content = chunk["content"]
                     full_reply += content
+                    tl_items.append({"k": "text", "t": "", "c": content})
 
                     # 发送SSE块
                     sse_chunk = {
@@ -2280,6 +2345,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                 elif chunk["type"] == "thought":
                     thought_content = chunk["content"]
                     thought_type = chunk.get("thought_type", "")
+                    tl_items.append({"k": "thought", "t": thought_type, "c": thought_content})
                     thought_chunk = {
                         "id": chat_id,
                         "object": "chat.completion.chunk",
@@ -2304,6 +2370,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                         
                 elif chunk["type"] in ("command_start", "command_result"):
                     # 技能執行事件：前端渲染成終端風格區塊，不混入回覆正文
+                    cmd_content = chunk.get("message") or chunk.get("output") or ""
+                    tl_items.append({"k": chunk["type"], "t": "", "c": cmd_content})
                     cmd_chunk = {
                         "id": chat_id,
                         "object": "chat.completion.chunk",
@@ -2316,7 +2384,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                             {
                                 "index": 0,
                                 "delta": {
-                                    "content": chunk.get("message") or chunk.get("output") or ""
+                                    "content": cmd_content
                                 },
                                 "finish_reason": None
                             }
@@ -2332,6 +2400,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                     # 发送错误消息
                     error_content = f"错误: {chunk['content']}"
                     full_reply += error_content
+                    tl_items.append({"k": "text", "t": "", "c": error_content})
                     error_chunk = {
                         "id": chat_id,
                         "object": "chat.completion.chunk",
@@ -2355,6 +2424,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                 elif chunk["type"] == "done":
                     if not full_reply:
                         error_content = EMPTY_REPLY_ERROR
+                        tl_items.append({"k": "text", "t": "", "c": error_content})
                         logger.warning("[ThinkingEngine API] Stream completed without any content; likely no LLM output was produced.")
                         error_chunk = {
                             "id": chat_id,
@@ -2379,6 +2449,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                 elif chunk["type"] == "timeout":
                     timeout_content = "錯誤：AI 回應超時，沒有產生有效內容"
                     full_reply += timeout_content
+                    tl_items.append({"k": "text", "t": "", "c": timeout_content})
                     timeout_chunk = {
                         "id": chat_id,
                         "object": "chat.completion.chunk",
@@ -2422,6 +2493,9 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             # 标记完成
             collector.set_finished()
 
+            # 保存本輪結構化時間線（刷新頁面後重建思考框/命令框用）
+            _timeline_add_turn(user_text, tl_items)
+
             # 通知QQ UI更新（显示Aize发送的消息）
             cleaned_reply = clean_reply(full_reply) if full_reply else ""
             if cleaned_reply:
@@ -2462,6 +2536,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                 self.wfile.flush()
             except BrokenPipeError:
                 pass
+            # 異常結束也保留已有時間線（思考過程可能已記錄）
+            _timeline_add_turn(user_text, tl_items)
 
 
 class ThinkingEngineAPIServer:

@@ -146,8 +146,12 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False, onefile=F
         # 網頁語音對話 TTS（edge-tts，純 Python 包）
         "--hidden-import", "edge_tts",
         "--collect-submodules", "edge_tts",
+        # 本地 Kokoro 神經 TTS（sherpa-onnx：自帶 onnxruntime 靜態鏈接的 .pyd，
+        # 不依賴 pip onnxruntime/numpy；collect-all 確保原生二進制被收入）
+        "--collect-all", "sherpa_onnx",
         "--hidden-import", "voice",
         "--hidden-import", "voice.tts_synthesizer",
+        "--hidden-import", "voice.kokoro_tts",
         # 統一持久化路徑解析（設置文件等）
         "--hidden-import", "app_paths",
         # 按模型家族渲染對話模板（ChatML/Gemma）

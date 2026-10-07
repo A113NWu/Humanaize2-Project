@@ -181,22 +181,28 @@ class Brain {
     } catch (e) {
       console.log('[brain] 8082 聯網模塊不可用，回退直連:', e.message)
     }
-    // 2) 直連 DuckDuckGo（與主程序 WebSearch 同一數據源）
+    // 2) 直連必應搜索（國內可訪問，中文支持好）
     const ctrl = new AbortController()
     const timer = setTimeout(() => ctrl.abort(), 15000)
     try {
-      const res = await fetch('https://api.duckduckgo.com/?q=' + encodeURIComponent(query) + '&format=json', {
+      const res = await fetch('https://cn.bing.com/search?q=' + encodeURIComponent(query), {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Accept-Language': 'zh-CN,zh;q=0.9' },
         signal: ctrl.signal
       })
       if (!res.ok) return []
-      const data = await res.json()
+      const html = await res.text()
       const out = []
-      for (const t of (data.RelatedTopics || [])) {
-        if (t.Text && t.FirstURL) out.push({ title: String(t.Text).slice(0, 100), snippet: String(t.Text).slice(0, 200) })
+      const liRe = /<li[^>]*class="b_algo"[^>]*>([\s\S]*?)<\/li>/g
+      let m
+      while ((m = liRe.exec(html)) !== null) {
+        const block = m[1]
+        const titleM = block.match(/<h2[^>]*>\s*<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/)
+        if (!titleM) continue
+        const title = titleM[2].replace(/<[^>]+>/g, '').trim()
+        const snipM = block.match(/<p[^>]*>([\s\S]*?)<\/p>/)
+        const snippet = snipM ? snipM[1].replace(/<[^>]+>/g, '').trim() : ''
+        if (title) out.push({ title: title.slice(0, 100), snippet: (snippet || title).slice(0, 200) })
         if (out.length >= maxResults) break
-      }
-      if (!out.length && data.Abstract) {
-        out.push({ title: data.Heading || query, snippet: String(data.Abstract).slice(0, 300) })
       }
       return out
     } catch (e) {

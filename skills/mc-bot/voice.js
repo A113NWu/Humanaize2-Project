@@ -1,6 +1,6 @@
 // Simple Voice Chat 語音橋：讓 Aize 在房間語音裡「能聽會說」
 // 聽：玩家麥克風 PCM（48k mono）-> 能量 VAD 斷句 -> 16k 重採樣 -> sherpa-onnx 本地中文識別 -> 餵給 brain
-// 說：Aize 文本 -> Humanaize2 /api/tts（edge-tts）-> mp3 -> SVC 頻道播放
+// 說：Aize 文本 -> Humanaize2 /api/tts（本地 Kokoro / edge-tts）-> wav/mp3 -> SVC 頻道播放
 'use strict'
 
 const fs = require('fs')
@@ -58,6 +58,7 @@ class VoiceBridge {
         console.log('[voice] 找不到語音識別模型，聽力禁用（說話不受影響）')
         return
       }
+      // Node 版 sherpa-onnx 採用 featConfig/modelConfig 嵌套結構
       this.recognizer = sherpa.createOnlineRecognizer({
         featConfig: { sampleRate: RATE_ASR, featureDim: 80 },
         modelConfig: {
@@ -67,11 +68,14 @@ class VoiceBridge {
             joiner: path.join(dir, 'joiner-epoch-99-avg-1.int8.onnx')
           },
           tokens: path.join(dir, 'tokens.txt'),
-          numThreads: 1,
+          numThreads: 2,
           provider: 'cpu',
           debug: 0
         },
         enableEndpoint: 1,
+        rule1MinTrailingSilence: 2.0,
+        rule2MinTrailingSilence: 0.8,
+        rule3MinUtteranceLength: 20,
         decodingMethod: 'greedy_search'
       })
       this.asrReady = true
@@ -207,12 +211,15 @@ class VoiceBridge {
       const res = await fetch(base + '/api/tts', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ text, voice: this.cfg.ttsVoice || 'zh-TW-HsiaoChenNeural' }),
+        body: JSON.stringify({ text, voice: this.cfg.ttsVoice || 'zf_001' }),
         signal: ctrl.signal
       })
       if (!res.ok) throw new Error('TTS HTTP ' + res.status)
       const buf = Buffer.from(await res.arrayBuffer())
-      const file = path.join(os.tmpdir(), `mcbot-tts-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.mp3`)
+      // 本地 Kokoro 返回 audio/wav，edge-tts 返回 audio/mpeg；按 Content-Type 定後綴
+      const ct = (res.headers.get('Content-Type') || '').toLowerCase()
+      const ext = ct.includes('wav') ? '.wav' : '.mp3'
+      const file = path.join(os.tmpdir(), `mcbot-tts-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`)
       fs.writeFileSync(file, buf)
       return file
     } finally {

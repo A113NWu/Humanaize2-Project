@@ -105,11 +105,21 @@ def _provider_settings():
         api_key = str(settings.get("openai_api_key", "")).strip()
         if not bool(settings.get("openai_enabled", False)) or not api_key:
             return None
-        return {
-            "api_key": api_key,
-            "base_url": str(settings.get("openai_base_url", "https://api.openai.com/v1")).strip().rstrip("/"),
-            "model": str(settings.get("openai_model", "gpt-4o-mini")).strip() or "gpt-4o-mini",
-        }
+        base_url = str(settings.get("openai_base_url", "https://api.openai.com/v1")).strip().rstrip("/")
+        model = str(settings.get("openai_model", "gpt-4o-mini")).strip() or "gpt-4o-mini"
+        provider = {"api_key": api_key, "base_url": base_url, "model": model}
+        # 智譜 GLM-4.5/4.6 系列默認開啟深度思考：streaming 時 reasoning 吃光 token 預算、
+        # 正文姍姍來遲（頁面長時間「思考中」）。顯式關閉 thinking，讓正文立即流式輸出。
+        # 僅對 bigmodel 網關下發該參數，其他 OpenAI 兼容網關不識此字段。
+        model_supports_thinking = bool(
+            re.match(r"^glm-4\.(5|6)", model)
+        )
+        if "bigmodel.cn" in base_url and (
+            settings.get("openai_thinking_enabled") is False
+            or (settings.get("openai_thinking_enabled") is None and model_supports_thinking)
+        ):
+            provider["disable_thinking"] = True
+        return provider
     except (OSError, ValueError, TypeError):
         return None
 
@@ -271,6 +281,22 @@ def _to_openai_messages(prompt: str, system: str = None) -> list:
     return messages
 
 
+def _cloud_payload(provider, messages, max_tokens, temperature, top_p, stream=False):
+    """構造雲端 chat/completions 請求體；智譜思考模型按需關閉 thinking。"""
+    payload = {
+        "model": provider["model"],
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "top_p": top_p,
+    }
+    if stream:
+        payload["stream"] = True
+    if provider.get("disable_thinking"):
+        payload["thinking"] = {"type": "disabled"}
+    return payload
+
+
 def _openai_chat(prompt, provider, max_tokens, temperature, top_p, session, timeout, system=None):
     request_session = session or create_session()
     own_session = session is None
@@ -278,7 +304,8 @@ def _openai_chat(prompt, provider, max_tokens, temperature, top_p, session, time
         response = request_session.post(
             f"{provider['base_url']}/chat/completions",
             headers={"Authorization": f"Bearer {provider['api_key']}", "Content-Type": "application/json"},
-            json={"model": provider["model"], "messages": _to_openai_messages(prompt, system), "max_tokens": max_tokens, "temperature": temperature, "top_p": top_p},
+            json=_cloud_payload(provider, _to_openai_messages(prompt, system),
+                                max_tokens, temperature, top_p),
             timeout=timeout,
         )
         try:
@@ -496,7 +523,8 @@ def chat_stream(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top
             response = request_session.post(
                 f"{provider['base_url']}/chat/completions",
                 headers={"Authorization": f"Bearer {provider['api_key']}", "Content-Type": "application/json"},
-                json={"model": provider["model"], "messages": _to_openai_messages(prompt, system), "max_tokens": max_tokens, "temperature": temperature, "top_p": top_p, "stream": True},
+                json=_cloud_payload(provider, _to_openai_messages(prompt, system),
+                                    max_tokens, temperature, top_p, stream=True),
                 timeout=300,
                 stream=True,
             )

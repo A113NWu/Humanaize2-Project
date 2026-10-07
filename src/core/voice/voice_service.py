@@ -43,7 +43,7 @@ except Exception:  # pragma: no cover - optional dependency
     TTSError = None
 
 
-CLOUD_BACKENDS = {"gpt-sovits", "minimax", "elevenlabs", "edge_tts", "mimo"}
+CLOUD_BACKENDS = {"gpt-sovits", "minimax", "elevenlabs", "edge_tts", "mimo", "kokoro"}
 
 
 def resolve_tts_config(tts_settings: Optional[dict] = None) -> dict:
@@ -60,8 +60,10 @@ def resolve_tts_config(tts_settings: Optional[dict] = None) -> dict:
         backend = "gpt-sovits"
     elif backend in {"elevenlabs", "eleven-labs", "eleven_labs"}:
         backend = "elevenlabs"
+    elif backend in {"kokoro", "kokoro-tts", "local_kokoro"}:
+        backend = "kokoro"
     elif backend not in {"auto", "pyttsx3", "piper", "openai", "gtts",
-                         "edge_tts", "gpt-sovits", "minimax", "elevenlabs", "mimo"}:
+                         "edge_tts", "gpt-sovits", "minimax", "elevenlabs", "mimo", "kokoro"}:
         backend = "auto"
     return {
         "backend": backend,
@@ -212,8 +214,10 @@ class VoiceService:
         if backend == "piper":
             return self._speak_with_piper(text, config)
 
-        # 自动模式：优先尝试 edge_tts，再回退到 pyttsx3
+        # 自动模式：优先本地 Kokoro（音質好、免聯網），再 edge_tts，最後 pyttsx3
         if backend == "auto" and synthesize_speech is not None and SynthesizeOptions is not None:
+            if self._speak_with_synthesizer(text, {**config, "backend": "kokoro"}):
+                return True
             if self._speak_with_synthesizer(text, {**config, "backend": "edge_tts"}):
                 return True
 

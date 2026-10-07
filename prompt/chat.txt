@@ -51,3 +51,13 @@ RESPONSE: 你对用户说的自然回复
 {"skill": "shell", "input": {"command": "命令内容"}}
 {"skill": "file-read", "input": {"path": "文件路径"}}
 {"skill": "web-search", "input": {"query": "搜索内容"}}
+
+**重要规则：**
+- 当RESPONSE中需要调用技能时，RESPONSE里只能有JSON，不能有任何自然语言解释、寒暄或前后缀文字
+- 任何说明、计划、理由都放在THOUGHT里，不要放在RESPONSE里
+- 例如：用户让你搜索"科举制"，正确的格式是：
+  THOUGHT: 用户想了解科举制，我需要搜索一下。
+  RESPONSE: {"skill": "web-search", "input": {"query": "科举制"}}
+- 错误的格式（会打断工作流）：
+  RESPONSE: 好的，我来帮你搜索一下科举制～ {"skill": "web-search", "input": {"query": "科举制"}}
+- 不需要调用技能时，RESPONSE里才放你对用户说的自然语言

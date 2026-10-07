@@ -35,21 +35,20 @@ class WebSearch:
             
     def search(self, query, max_results=5):
         """
-        Perform a web search using DuckDuckGo API
+        Perform a web search using Bing (国内可访问)
         Returns list of results with title, snippet, and URL
         """
         try:
-            # Use curl to query DuckDuckGo API
             import urllib.parse
+            import re as _re
             encoded_query = urllib.parse.quote(query)
-            
-            # DuckDuckGo Instant Answer API
-            url = f"https://api.duckduckgo.com/?q={encoded_query}&format=json&pretty=1"
-            
+
+            # 必应搜索（国内可访问，中文支持好）
+            url = f"https://cn.bing.com/search?q={encoded_query}"
+
             try:
                 import requests
-                
-                # 使用系统代理（如果配置了）
+
                 proxies = None
                 http_proxy = os.environ.get('http_proxy') or os.environ.get('HTTP_PROXY')
                 https_proxy = os.environ.get('https_proxy') or os.environ.get('HTTPS_PROXY')
@@ -58,64 +57,70 @@ class WebSearch:
                         'http': http_proxy,
                         'https': https_proxy
                     }
-                
-                response = requests.get(url, timeout=15, proxies=proxies)
-                data = response.json()
+
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml',
+                    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                }
+                response = requests.get(url, timeout=15, proxies=proxies, headers=headers)
+                html = response.text
             except ImportError:
-                # Fallback to curl if requests is not available
-                curl_cmd = ['curl', '-s', '-L', url]
+                curl_cmd = ['curl', '-s', '-L', url,
+                            '-H', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                            '-H', 'Accept-Language: zh-CN,zh;q=0.9']
                 http_proxy = os.environ.get('http_proxy') or os.environ.get('HTTP_PROXY')
                 if http_proxy:
                     curl_cmd.extend(['--proxy', http_proxy])
                 result = subprocess.run(
-                    curl_cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=30
+                    curl_cmd, capture_output=True, text=True, timeout=30
                 )
                 if result.returncode != 0:
                     return self._get_fallback_results(query)
-                data = json.loads(result.stdout)
-            
+                html = result.stdout
+
             results = []
-            
-            # Extract results from DuckDuckGo API
-            if 'RelatedTopics' in data:
-                for topic in data['RelatedTopics'][:max_results]:
-                    if 'Text' in topic and 'FirstURL' in topic:
-                        results.append({
-                            'title': topic.get('Text', '')[:100],
-                            'snippet': topic.get('Text', '')[:200],
-                            'url': topic.get('FirstURL', ''),
-                            'source': 'DuckDuckGo'
-                        })
-            
-            # If no results from RelatedTopics, check Abstract
-            if len(results) == 0 and 'Abstract' in data and data['Abstract']:
-                results.append({
-                    'title': data.get('Heading', query),
-                    'snippet': data.get('Abstract', '')[:300],
-                    'url': data.get('AbstractURL', ''),
-                    'source': 'DuckDuckGo'
-                })
-                
-            # Add to history
+            # 必应结果结构：<li class="b_algo"><h2><a href="URL">标题</a></h2><p>摘要</p></li>
+            for m in _re.finditer(
+                r'<li[^>]*class="b_algo"[^>]*>(.*?)</li>',
+                html, _re.S
+            ):
+                block = m.group(1)
+                # 标题和链接
+                title_m = _re.search(r'<h2[^>]*>\s*<a[^>]*href="([^"]*)"[^>]*>(.*?)</a>', block, _re.S)
+                if not title_m:
+                    continue
+                href = title_m.group(1)
+                title = _re.sub(r'<[^>]+>', '', title_m.group(2)).strip()
+                # 摘要
+                snip_m = _re.search(r'<p[^>]*>(.*?)</p>', block, _re.S)
+                snippet = _re.sub(r'<[^>]+>', '', snip_m.group(1)).strip() if snip_m else ''
+                if title and href and not href.startswith('javascript:'):
+                    results.append({
+                        'title': title[:100],
+                        'snippet': (snippet or title)[:300],
+                        'url': href,
+                        'source': 'Bing'
+                    })
+                if len(results) >= max_results:
+                    break
+
+            # 如果必应没拿到结果，回退 DuckDuckGo Instant Answer API
+            if not results:
+                results = self._instant_answer_search(query, max_results)
+
             self.search_history.append({
                 'query': query,
                 'timestamp': datetime.now().isoformat(),
                 'result_count': len(results)
             })
-            
-            # Keep only last 100 searches
             if len(self.search_history) > 100:
                 self.search_history = self.search_history[-100:]
-                
             self._save_history()
-            
+
             return results
-            
+
         except Exception as e:
-            # 记录详细错误以便调试，但使用简化的错误信息
             error_str = str(e)
             if 'Network is unreachable' in error_str or 'Connection refused' in error_str:
                 print(f"[WARN] Web search unavailable (network error). Using fallback response.")
@@ -124,6 +129,41 @@ class WebSearch:
             else:
                 print(f"[ERROR] Web search failed: {e}")
             return self._get_fallback_results(query)
+
+    def _instant_answer_search(self, query, max_results=5):
+        """兜底：DuckDuckGo Instant Answer API（中文效果差，仅作后备）"""
+        try:
+            import urllib.parse
+            import requests
+            encoded_query = urllib.parse.quote(query)
+            url = f"https://api.duckduckgo.com/?q={encoded_query}&format=json&pretty=1"
+            proxies = None
+            http_proxy = os.environ.get('http_proxy') or os.environ.get('HTTP_PROXY')
+            https_proxy = os.environ.get('https_proxy') or os.environ.get('HTTPS_PROXY')
+            if http_proxy or https_proxy:
+                proxies = {'http': http_proxy, 'https': https_proxy}
+            response = requests.get(url, timeout=15, proxies=proxies)
+            data = response.json()
+            results = []
+            if 'RelatedTopics' in data:
+                for topic in data['RelatedTopics'][:max_results]:
+                    if isinstance(topic, dict) and 'Text' in topic and 'FirstURL' in topic:
+                        results.append({
+                            'title': topic.get('Text', '')[:100],
+                            'snippet': topic.get('Text', '')[:200],
+                            'url': topic.get('FirstURL', ''),
+                            'source': 'DuckDuckGo'
+                        })
+            if not results and 'Abstract' in data and data['Abstract']:
+                results.append({
+                    'title': data.get('Heading', query),
+                    'snippet': data.get('Abstract', '')[:300],
+                    'url': data.get('AbstractURL', ''),
+                    'source': 'DuckDuckGo'
+                })
+            return results
+        except Exception:
+            return []
             
     def _get_fallback_results(self, query):
         """Get fallback results when API fails"""
@@ -156,58 +196,54 @@ class WebSearch:
         
     def needs_search(self, user_message):
         """
-        Determine if the user's message requires a web search
-        Returns True if search is needed
+        Determine if the user's message requires a web search.
+        只對時效性強或明確要求搜索的內容觸發；常識/歷史/文化類問題直接讓 LLM 回答。
         """
         message_lower = user_message.lower()
-        
-        # Keywords that indicate need for search
-        search_triggers = [
-            '最新', '最新消息', '最新资讯', '最新动态', '最新进展',
-            '今天', '现在', '最近', '目前', '当前',
-            '新闻', '资讯', '报道', '发布',
-            '多少', '什么', '哪个', '谁', '何时', '哪里',
-            'how', 'what', 'when', 'where', 'who', 'which', 'latest',
-            'news', 'update', 'today', 'now', 'current', 'recent'
-        ]
-        
-        # Check for explicit questions
-        question_patterns = [
-            r'什么是.*', r'.*是什么',
-            r'怎么.*', r'.*怎么办',
-            r'为什么.*', r'.*为什么',
-            r'如何.*', r'.*如何',
-            r'是否.*', r'.*是否',
-            r'有哪些.*', r'.*有哪些',
-            r'谁.*', r'.*是谁',
-            r'何时.*', r'.*何时',
-            r'哪里.*', r'.*哪里',
-            r'how.*', r'what.*', r'why.*', r'when.*', r'where.*'
-        ]
-        
-        # Check if message contains search triggers
-        for trigger in search_triggers:
-            if trigger in message_lower:
+
+        # 1) 用戶明確要求搜索 → 必搜
+        explicit_search = ['搜索', '搜一下', '搜尋', '查一下', '查詢', '幫我查', '上网查', '上網查',
+                           'search', 'look up', 'google', 'baidu']
+        for kw in explicit_search:
+            if kw in message_lower:
                 return True
-                
-        # Check for question patterns
-        for pattern in question_patterns:
-            if re.search(pattern, message_lower):
-                return True
-                
-        # Check for specific topics that need up-to-date info
+
+        # 2) 強時效性話題 → 必搜
         time_sensitive_topics = [
-            '天气', '股票', '股价', '汇率', '新闻',
-            '比赛', '比分', '赛事', '体育',
-            '疫情', '新冠', '政策', '法规',
-            '发布会', '新品', '发布', '上市',
-            'weather', 'stock', 'news', 'sports', 'match'
+            '天气', '天氣', '股票', '股价', '股價', '汇率', '匯率', '新闻', '新聞',
+            '比赛', '比賽', '比分', '賽事', '体育', '體育',
+            '疫情', '新冠', '政策', '法规', '法規',
+            '发布会', '發佈會', '新品', '上市', '开盘', '收盤',
+            'weather', 'stock', 'news', 'sports', 'match', 'score',
+            '币价', '幣價', 'crypto', '比特幣', '比特币', '房价', '房價'
         ]
-        
         for topic in time_sensitive_topics:
             if topic in message_lower:
                 return True
-                
+
+        # 3) 明確的時間限定詞 → 必搜
+        time_triggers = ['最新', '今天', '現在', '最近', '目前', '当前', '當前',
+                         '今日', '昨日', '明天', '本周', '本月', '今年',
+                         'latest', 'today', 'now', 'current', 'recent', 'just now']
+        for t in time_triggers:
+            if t in message_lower:
+                return True
+
+        # 4) 定义性问题（"什么是X"、"谁是X"、"X是什么"）→ 不自动搜索，LLM 训练数据足够
+        #    常识、历史、科学、文化类问题直接回答
+        definition_patterns = [
+            r'什么是', r'什麼是', r'是什么', r'是什麼',
+            r'谁是', r'誰是', r'是谁', r'是誰',
+            r'介绍一下', r'介紹一下', r'解释', r'解釋',
+            r'意思', r'含义', r'含義', r'定义', r'定義'
+        ]
+        is_definition = any(re.search(p, message_lower) for p in definition_patterns)
+        if is_definition:
+            return False
+
+        # 5) 其他疑问词（怎么、如何、为什么等）→ 不自动搜索
+        #    让 LLM 自己判断是否需要调用 web-search 技能
+
         return False
         
     def get_search_history(self, limit=10):
