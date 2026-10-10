@@ -180,7 +180,7 @@ const voice={
       try{this.cap=await (await fetch('/api/voice/capabilities')).json();}catch(e){this.cap={};}
     }
     if(this.cap&&this.cap.tts_available===false){
-      window.alert('伺服器尚未安裝 TTS 引擎（edge-tts），AI 回覆將不會朗讀，語音輸入仍可使用。');
+      window.alert('伺服器尚未安裝 TTS 引擎，AI 回覆將不會朗讀，語音輸入仍可使用。');
     }
     this.on=true;this._updateUI();this._startRecognition();
   },

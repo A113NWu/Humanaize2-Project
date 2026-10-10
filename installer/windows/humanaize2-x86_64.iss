@@ -1,11 +1,16 @@
 ; Inno Setup script for Humanaize 2.0 Agent (x86_64)
 ; SourceDir 指向專案根目錄（installer\windows 的上兩層）
+; 版本號可由構建腳本覆蓋：ISCC /DAppVersion=2.3.11
+
+#ifndef AppVersion
+  #define AppVersion "2.3.11"
+#endif
 
 [Setup]
 AppId={{HUMANAIZE2-X64-2024}}
 AppName=Humanaize 2.0 Agent
-AppVersion=2.3.9
-AppVerName=Humanaize 2.0 Agent (x64) v2.3.9
+AppVersion={#AppVersion}
+AppVerName=Humanaize 2.0 Agent (x64) v{#AppVersion}
 AppPublisher=Humanaize Project
 AppPublisherURL=https://github.com/A113NWu/Humanaize2-Project
 AppSupportURL=https://github.com/A113NWu/Humanaize2-Project/issues
@@ -13,10 +18,13 @@ AppUpdatesURL=https://github.com/A113NWu/Humanaize2-Project/releases
 DefaultDirName={autopf}\Humanaize2-x64
 DefaultGroupName=Humanaize 2.0 Agent
 AllowNoIcons=yes
+; 靜默升級時自動關閉運行中的舊版（自動更新走 /VERYSILENT）
+CloseApplications=force
+RestartApplications=no
 ; 所有 Source 路徑相對於專案根目錄
 SourceDir=..\..\
 OutputDir=installer\windows\output
-OutputBaseFilename=Humanaize2-Setup-x86_64-v2.3.9
+OutputBaseFilename=Humanaize2-Setup-x86_64-v{#AppVersion}
 Compression=lzma2
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible
@@ -39,10 +47,14 @@ Source: "installer_output\x86_64\Humanaize2.exe"; DestDir: "{app}"; Flags: ignor
 ; humanaize2 命令啟動腳本（讓用戶可在任意目錄使用 'humanaize2' 命令）
 Source: "installer\windows\humanaize2.cmd"; DestDir: "{app}"; Flags: ignoreversion
 ; Skills 目錄（可寫，供運行時安裝/更新技能）
-Source: "skills\*"; DestDir: "{app}\skills"; Excludes: "venv\*"; Flags: ignoreversion recursesubdirs createallsubdirs
+; 排除 mc-bot 本地依賴（node_modules 600+MB、ASR 模型、本地 vendor 均未入庫，
+; 由 mc-bot 首次運行時自行 npm install / 下載）及運行日誌（會被運行中的
+; bot.js 鎖定，曾導致靜默安裝中止回滾），保持安裝包體積合理。
+; noregerror：個別文件被占用時跳過而非中止整個安裝。
+Source: "skills\*"; DestDir: "{app}\skills"; Excludes: "venv\*,mc-bot\node_modules\*,mc-bot\models\*,mc-bot\vendor\*,mc-bot\logs\*"; Flags: ignoreversion recursesubdirs createallsubdirs noregerror
 ; 配置與運行時資料
 Source: "config\version.json"; DestDir: "{app}\config"; Flags: ignoreversion
-Source: "data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs noregerror
 ; 文檔
 Source: "docs\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "docs\README.md"; DestDir: "{app}"; Flags: ignoreversion

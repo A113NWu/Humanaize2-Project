@@ -1310,12 +1310,23 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         """告知網頁端語音能力：TTS 引擎是否可用及默認音色。
         STT 使用瀏覽器內建 Web Speech API，由前端自行探測。"""
         tts_available = False
-        default_voice = "zh-CN-XiaoxiaoNeural"
+        default_voice = "zf_001"
         try:
-            import edge_tts  # noqa: F401
-            tts_available = True
+            from voice.kokoro_tts import model_dir  # noqa: F401
+            tts_available = bool(model_dir())
         except Exception:
-            tts_available = False
+            try:
+                from core.voice.kokoro_tts import model_dir  # noqa: F401
+                tts_available = bool(model_dir())
+            except Exception:
+                tts_available = False
+        if not tts_available:
+            try:
+                import edge_tts  # noqa: F401
+                tts_available = True
+                default_voice = "zh-CN-XiaoxiaoNeural"
+            except Exception:
+                tts_available = False
         self._send_json({
             "tts_available": tts_available,
             "default_voice": default_voice,
@@ -1760,9 +1771,9 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._send_error(f"读取日志失败: {e}", 500)
 
     def _handle_tts(self):
-        """將文本合成為語音音頻（預設 edge-tts，返回 audio/mpeg）。
+        """將文本合成為語音音頻（預設 Kokoro 本地神經 TTS，返回 audio/wav）。
 
-        請求體: {"text": "...", "voice"?: "zh-CN-XiaoxiaoNeural"}
+        請求體: {"text": "...", "voice"?: "zf_001"}
         網頁端按句調用，配合流式對話實現「AI 輸出多少就朗讀多少」。
         """
         try:

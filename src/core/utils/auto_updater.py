@@ -4,7 +4,9 @@ Handles software updates from GitHub
 """
 
 import os
+import sys
 import json
+import tempfile
 import subprocess
 import zipfile
 import shutil
@@ -112,6 +114,7 @@ class AutoUpdater:
             "current_tag": self._format_release_tag(current_internal),
             "release_notes": "",
             "download_url": "",
+            "installer_url": "",
             "error": None
         }
 
@@ -140,8 +143,10 @@ class AutoUpdater:
                 result["latest_version"] = latest_ver
                 result["latest_tag"] = self._format_release_tag(latest_ver)
                 result["release_notes"] = data.get("body", "No release notes available.")
-                # 优先使用标准 vX.X.X 标签名的 zipball 链接
-                result["download_url"] = data.get("zipball_url", "") or (
+                # 優先選取 Windows x64 的 Inno 安裝包資產
+                result["installer_url"] = self._select_installer_asset(data.get("assets") or [])
+                # 向後兼容：下載鏈接直接指向安裝包；無安裝包時退回 zipball（僅開發態使用）
+                result["download_url"] = result["installer_url"] or data.get("zipball_url", "") or (
                     f"https://github.com/A113NWu/Humanaize2-Project/archive/refs/tags/{result['latest_tag']}.zip"
                 )
 
@@ -199,118 +204,221 @@ class AutoUpdater:
                 pass
         return None
     
+    @staticmethod
+    def _select_installer_asset(assets: list) -> str:
+        """從 Release assets 中挑選 Windows x64 安裝包。
+
+        優先級：Humanaize2-Setup-x86_64-v*.exe > 任意 Setup*.exe > 任意 .exe。
+        """
+        exes = []
+        for a in assets or []:
+            name = str(a.get("name") or "").lower()
+            url = str(a.get("browser_download_url") or "")
+            if name.endswith(".exe") and url:
+                exes.append((name, url))
+        for needle in ("setup-x86_64", "setup_x86_64", "setup-x64", "x86_64", "x64", "amd64"):
+            for name, url in exes:
+                if needle in name:
+                    return url
+        if exes:
+            return exes[0][1]
+        return ""
+
     def download_and_install_update(self, progress_callback=None, force=False) -> Dict:
         result = {
             "success": False,
             "message": "",
             "error": None
         }
-        
+
         try:
             update_info = self.check_for_updates()
             if not update_info.get("has_update") and not force:
                 result["message"] = "You are already on the latest version."
                 return result
-            
-            download_url = update_info.get("download_url")
-            if not download_url:
-                result["error"] = "No download URL available"
-                return result
-            
-            if progress_callback:
-                progress_callback("Downloading update...")
-            
-            temp_dir = os.path.join(os.path.dirname(__file__), "temp_update")
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
-            os.makedirs(temp_dir)
-            
-            zip_path = os.path.join(temp_dir, "update.zip")
-            
-            # Download the update
-            if USE_REQUESTS:
-                session = self._get_session()
-                response = session.get(download_url, stream=True, timeout=60)
-                response.raise_for_status()
-                
-                total_size = int(response.headers.get("Content-Length", 0))
-                downloaded = 0
-                
-                with open(zip_path, "wb") as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-                            downloaded += len(chunk)
-                            if progress_callback and total_size > 0:
-                                progress = int((downloaded / total_size) * 100)
-                                progress_callback(f"Downloading... {progress}%")
-            else:
-                req = urllib.request.Request(download_url, headers={"User-Agent": get_downloader_agent()})
-                with urllib.request.urlopen(req, timeout=60) as response:
-                    total_size = int(response.headers.get("Content-Length", 0))
-                    downloaded = 0
-                    chunk_size = 8192
-                    
-                    with open(zip_path, "wb") as f:
-                        while True:
-                            chunk = response.read(chunk_size)
-                            if not chunk:
-                                break
-                            f.write(chunk)
-                            downloaded += len(chunk)
-                            if progress_callback and total_size > 0:
-                                progress = int((downloaded / total_size) * 100)
-                                progress_callback(f"Downloading... {progress}%")
-            
-            if progress_callback:
-                progress_callback("Extracting files...")
-            
-            extract_dir = os.path.join(temp_dir, "extracted")
-            with zipfile.ZipFile(zip_path, "r") as zip_ref:
-                zip_ref.extractall(extract_dir)
-            
-            if progress_callback:
-                progress_callback("Installing files...")
-            
-            extracted_items = os.listdir(extract_dir)
-            if extracted_items:
-                source_dir = os.path.join(extract_dir, extracted_items[0])
-                
-                # Directories to skip during update (preserve user data and AI self-developed content)
-                skip_dirs = [
-                    ".git", 
-                    "models", 
-                    "llama", 
-                    "temp_update", 
-                    "data",
-                    "ai_selfdevelop"  # AI self-developed skills and customizations - NOT overwritten
-                ]
-                
-                for item in os.listdir(source_dir):
-                    if item in skip_dirs:
-                        continue
-                    
-                    src = os.path.join(source_dir, item)
-                    dst = os.path.join(os.path.dirname(__file__), item)
-                    
-                    if os.path.isdir(src):
-                        if os.path.exists(dst):
-                            shutil.rmtree(dst)
-                        shutil.copytree(src, dst)
-                    elif os.path.isfile(src):
-                        shutil.copy2(src, dst)
-            
-            shutil.rmtree(temp_dir)
-            
-            self.save_local_version(update_info["latest_version"])
-            
-            result["success"] = True
-            result["message"] = f"Successfully updated to version {update_info['latest_version']}. Please restart the application."
-            
+
+            # 打包後的 Windows 本體：下載 Inno 安裝包並靜默升級。
+            # 舊邏輯（解壓源碼 zip 覆蓋文件）只適用於開發態，在 onefile 安裝版上
+            # 只會覆蓋 PyInstaller 內部文件、無法更新 exe，已廢棄。
+            if sys.platform == "win32" and getattr(sys, "frozen", False):
+                return self._install_via_inno(update_info, progress_callback)
+
+            return self._install_from_zip(update_info, progress_callback)
+
         except Exception as e:
             result["error"] = str(e)
             result["message"] = f"Update failed: {e}"
-        
+
+        return result
+
+    def _download_file(self, url: str, dest_path: str, progress_callback, label: str):
+        """流式下載文件，支持 requests / urllib 雙後端。"""
+        if USE_REQUESTS:
+            session = self._get_session()
+            response = session.get(url, stream=True, timeout=60, allow_redirects=True)
+            response.raise_for_status()
+            total_size = int(response.headers.get("Content-Length", 0))
+            downloaded = 0
+            with open(dest_path, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if progress_callback and total_size > 0:
+                            progress = int((downloaded / total_size) * 100)
+                            progress_callback(f"{label}... {progress}%")
+        else:
+            req = urllib.request.Request(url, headers={"User-Agent": get_downloader_agent()})
+            with urllib.request.urlopen(req, timeout=60) as response:
+                total_size = int(response.headers.get("Content-Length", 0))
+                downloaded = 0
+                with open(dest_path, "wb") as f:
+                    while True:
+                        chunk = response.read(8192)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if progress_callback and total_size > 0:
+                            progress = int((downloaded / total_size) * 100)
+                            progress_callback(f"{label}... {progress}%")
+
+    def _install_via_inno(self, update_info: Dict, progress_callback) -> Dict:
+        """下載 Inno 安裝包，交由獨立 PowerShell 引導進程靜默安裝並重啟。"""
+        result = {"success": False, "message": "", "error": None}
+
+        installer_url = update_info.get("installer_url") or ""
+        if not installer_url:
+            result["error"] = "該版本未提供 Windows 安裝包（Setup .exe），請到 Releases 頁面手動下載。"
+            result["message"] = result["error"]
+            return result
+
+        version = update_info.get("latest_version", "new")
+        setup_path = os.path.join(tempfile.gettempdir(), f"Humanaize2-Setup-v{version}.exe")
+
+        if progress_callback:
+            progress_callback("Downloading installer...")
+        self._download_file(installer_url, setup_path, progress_callback, "Downloading installer")
+
+        # 基本完整性校驗：MZ 頭 + 體積（安裝包通常 50MB+）
+        if os.path.getsize(setup_path) < 1024 * 1024:
+            result["error"] = "安裝包下載不完整（體積異常）"
+            result["message"] = result["error"]
+            return result
+        with open(setup_path, "rb") as f:
+            if f.read(2) != b"MZ":
+                result["error"] = "下載文件不是有效的 Windows 可執行文件"
+                result["message"] = result["error"]
+                return result
+
+        # 當前 exe 所在目錄（Inno 會記住上次安裝目錄，靜默升級裝到同一處）
+        install_dir = os.path.dirname(os.path.abspath(sys.executable))
+        exe_after_install = os.path.join(install_dir, "Humanaize2.exe")
+        log_path = os.path.join(tempfile.gettempdir(), "humanaize2_update.log")
+
+        # 引導腳本：等本體退出 → 管理員靜默安裝 → 重新啟動本體。
+        # 必須是獨立進程（DETACHED_PROCESS），否則本體被關閉時腳本一併死亡。
+        bootstrap = (
+            "$ErrorActionPreference = 'Continue'\n"
+            "Start-Sleep -Seconds 3\n"
+            "Stop-Process -Name 'Humanaize2' -Force -ErrorAction SilentlyContinue\n"
+            "Start-Sleep -Seconds 2\n"
+            f"$setup = {json.dumps(setup_path)}\n"
+            f"$exe = {json.dumps(exe_after_install)}\n"
+            f"Start-Transcript -Path {json.dumps(log_path)} -Force | Out-Null\n"
+            "$p = Start-Process -FilePath $setup -ArgumentList "
+            "'/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CLOSEAPPLICATIONS','/NOCANCEL' "
+            "-Verb RunAs -Wait -PassThru\n"
+            "Write-Output ('InstallerExitCode=' + $p.ExitCode)\n"
+            "Start-Sleep -Seconds 2\n"
+            "if (Test-Path $exe) { Start-Process -FilePath $exe -ArgumentList '--tray' }\n"
+            "Stop-Transcript | Out-Null\n"
+        )
+        bootstrap_path = os.path.join(tempfile.gettempdir(), "humanaize2_update_bootstrap.ps1")
+        with open(bootstrap_path, "w", encoding="utf-8-sig") as f:
+            f.write(bootstrap)
+
+        # 0x00000008 DETACHED_PROCESS | 0x00000200 NEW_PROCESS_GROUP | 0x08000000 NO_WINDOW
+        subprocess.Popen(
+            [
+                "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                "-File", bootstrap_path,
+            ],
+            creationflags=0x00000008 | 0x00000200 | 0x08000000,
+            close_fds=True,
+        )
+
+        result["success"] = True
+        result["message"] = (
+            f"安裝包已下載完成。應用即將自動關閉，請在 UAC 彈窗中允許安裝 v{version}，"
+            "安裝完成後會自動重啟。"
+        )
+        return result
+
+    def _install_from_zip(self, update_info: Dict, progress_callback) -> Dict:
+        """開發態/源碼部署：下載源碼 zip 覆蓋更新（打包版不再使用此路徑）。"""
+        result = {"success": False, "message": "", "error": None}
+
+        download_url = update_info.get("download_url")
+        if not download_url:
+            result["error"] = "No download URL available"
+            return result
+
+        if progress_callback:
+            progress_callback("Downloading update...")
+
+        temp_dir = os.path.join(os.path.dirname(__file__), "temp_update")
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
+        os.makedirs(temp_dir)
+
+        zip_path = os.path.join(temp_dir, "update.zip")
+        self._download_file(download_url, zip_path, progress_callback, "Downloading")
+
+        if progress_callback:
+            progress_callback("Extracting files...")
+
+        extract_dir = os.path.join(temp_dir, "extracted")
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            zip_ref.extractall(extract_dir)
+
+        if progress_callback:
+            progress_callback("Installing files...")
+
+        extracted_items = os.listdir(extract_dir)
+        if extracted_items:
+            source_dir = os.path.join(extract_dir, extracted_items[0])
+
+            # Directories to skip during update (preserve user data and AI self-developed content)
+            skip_dirs = [
+                ".git",
+                "models",
+                "llama",
+                "temp_update",
+                "data",
+                "ai_selfdevelop"  # AI self-developed skills and customizations - NOT overwritten
+            ]
+
+            for item in os.listdir(source_dir):
+                if item in skip_dirs:
+                    continue
+
+                src = os.path.join(source_dir, item)
+                dst = os.path.join(os.path.dirname(__file__), item)
+
+                if os.path.isdir(src):
+                    if os.path.exists(dst):
+                        shutil.rmtree(dst)
+                    shutil.copytree(src, dst)
+                elif os.path.isfile(src):
+                    shutil.copy2(src, dst)
+
+        shutil.rmtree(temp_dir)
+
+        self.save_local_version(update_info["latest_version"])
+
+        result["success"] = True
+        result["message"] = f"Successfully updated to version {update_info['latest_version']}. Please restart the application."
         return result
     
     def pull_latest_from_git(self, progress_callback=None, force=False) -> Dict:

@@ -4,8 +4,9 @@ Humanaize 2.0 版本管理模块
 统一管理版本号，从 config/version.json 读取。
 
 查找順序（開發態/打包態均適用）：
-  1. 打包後可執行文件同目錄的 config/version.json（綠色版/安裝目錄，可被用戶更新）
-  2. PyInstaller onefile 解包目錄 _MEIPASS/config/version.json（安裝包內置）
+  1. PyInstaller onefile 解包目錄 _MEIPASS/config/version.json（發布權威版本，
+     隨 exe 一起更新；Inno 升級只換本體、不動用戶 config 時也能拿到正確版本）
+  2. 打包後可執行文件同目錄的 config/version.json（綠色版/外部釘選版本覆蓋用）
   3. 項目倉庫 config/version.json（開發態）
   4. Linux 系统目录 / 当前目录兜底
 """
@@ -18,7 +19,7 @@ import sys
 _version_cache = None
 
 # 找不到任何 version.json 时的兜底版本（发布前随版本號一併更新）
-FALLBACK_VERSION = "2.3.9"
+FALLBACK_VERSION = "2.3.11"
 
 
 def _candidate_paths():
@@ -26,15 +27,15 @@ def _candidate_paths():
     here = os.path.dirname(os.path.abspath(__file__))
     paths = []
 
-    # 打包態：可執行文件同目錄（便於用戶/更新器替換）
-    if getattr(sys, "frozen", False):
-        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
-        paths.append(os.path.join(exe_dir, "config", "version.json"))
-
-    # 打包態：onefile 解包目錄
+    # 打包態：onefile 解包目錄（權威發布版本，隨 exe 更新，優先級最高）
     meipass = getattr(sys, "_MEIPASS", None)
     if meipass:
         paths.append(os.path.join(meipass, "config", "version.json"))
+
+    # 打包態：可執行文件同目錄（綠色版外部覆蓋/釘選版本）
+    if getattr(sys, "frozen", False):
+        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+        paths.append(os.path.join(exe_dir, "config", "version.json"))
 
     # 開發態：項目根目錄（src/core/version.py 向上三级）
     paths.append(os.path.join(here, "..", "..", "..", "config", "version.json"))

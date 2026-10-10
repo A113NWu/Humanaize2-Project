@@ -251,7 +251,7 @@ class HumanaizeUI:
 
     def _get_tts_settings(self) -> dict:
         return {
-            "backend": self.settings.get("tts_backend", "pyttsx3"),
+            "backend": self.settings.get("tts_backend", "auto"),
             "model_path": self.settings.get("tts_model_path", ""),
             "voice": self.settings.get("tts_voice", ""),
             "speed": self.settings.get("tts_speed", 1.0),
