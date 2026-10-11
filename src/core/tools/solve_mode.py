@@ -142,16 +142,7 @@ class SolveModeStatusBar:
         self.width = self._get_terminal_width()
     
     def render(self):
-        """渲染状态栏"""
-        w = self.width
-        
-        # 顶部边框
-        if self.use_color:
-            top = f"{Colors.DIM}{'─' * w}{Colors.RESET}"
-        else:
-            top = f"{'─' * w}"
-        
-        # 构建状态信息
+        """渲染状态栏（Claude Code 风格：单行紧凑上下文条）"""
         total = self.stats.get("total", 0)
         completed = self.stats.get("completed", 0)
         failed = self.stats.get("failed", 0)
@@ -159,85 +150,32 @@ class SolveModeStatusBar:
         hsn_enabled = self.stats.get("hsn_enabled", False)
         hsn_peers = self.stats.get("hsn_peers", 0)
         elapsed = self.stats.get("elapsed_time", "00:00")
-        
-        # 计算进度条
-        bar_width = 20
+
+        # 进度条（10 格）
+        bar_width = 10
         filled = int(bar_width * progress)
         empty = bar_width - filled
-        
+
         if self.use_color:
-            # 状态标签
-            status_left = f"{Colors.BOLD}{Colors.INDIGO}Humanaize{Colors.RESET}"
-            status_left += f" {Colors.DIM}v{get_version()}{Colors.RESET}"
-            status_left += f" {Colors.BOLD}[{Colors.TEAL}SOLVE{Colors.RESET}{Colors.BOLD}]{Colors.RESET}"
-            
-            # 进度条
-            progress_bar = f"{Colors.CYAN}[{Colors.LIGHT_GREEN}{'█' * filled}{Colors.DIM}{'░' * empty}{Colors.CYAN}]{Colors.RESET}"
-            progress_text = f"{Colors.BOLD}{Colors.LIGHT_GREEN}{int(progress * 100)}%{Colors.RESET}"
-            
-            # 任务统计
-            task_stats = f"{Colors.DIM}Tasks:{Colors.RESET} "
-            task_stats += f"{Colors.LIGHT_GREEN}{completed}{Colors.RESET}"
-            task_stats += f"{Colors.DIM}/{Colors.RESET}"
-            task_stats += f"{Colors.INDIGO}{total}{Colors.RESET}"
+            bar = f"{Colors.LIGHT_GREEN}{'█' * filled}{Colors.DIM}{'░' * empty}{Colors.RESET}"
+            parts = [
+                f"{Colors.BOLD}{Colors.ORANGE}⏵⏵{Colors.RESET} {Colors.DIM}tasks{Colors.RESET} {Colors.BOLD}{completed}{Colors.DIM}/{total}{Colors.RESET}",
+                f"{bar} {Colors.BOLD}{int(progress * 100)}%{Colors.RESET}",
+                f"{Colors.DIM}⏱ {elapsed}{Colors.RESET}",
+            ]
             if failed > 0:
-                task_stats += f" {Colors.RED}({failed} failed){Colors.RESET}"
-            
-            # HSN状态
+                parts.append(f"{Colors.RED}{failed} failed{Colors.RESET}")
             if hsn_enabled:
-                hsn_status = f"{Colors.BOLD}{Colors.LIGHT_CYAN}HSN{Colors.RESET}"
-                hsn_status += f"{Colors.DIM}:{Colors.RESET}"
-                hsn_status += f"{Colors.LIGHT_CYAN}{hsn_peers} peers{Colors.RESET}"
-            else:
-                hsn_status = f"{Colors.DIM}HSN: Disabled{Colors.RESET}"
-            
-            # 时间
-            time_status = f"{Colors.DIM}Time:{Colors.RESET} {Colors.YELLOW}{elapsed}{Colors.RESET}"
-            
-            # 组装状态行
-            status_line = f"  {status_left}"
-            
-            # 填充使统计信息靠右
-            remaining = w - len(self._strip(status_line))
-            
-            # 右对齐统计信息
-            right_info = f"{task_stats}  {hsn_status}  {time_status}"
-            right_stripped = self._strip(right_info)
-            right_len = len(right_stripped)
-            
-            if remaining > right_len + 2:
-                status_line += " " * (remaining - right_len - 2)
-                status_line += f"{Colors.DIM}│{Colors.RESET} {right_info}"
-            else:
-                status_line = f"  {status_left}  {task_stats}"
-            
-            # 进度行
-            progress_line = f"  {progress_bar} {progress_text}"
-            progress_stripped = self._strip(progress_line)
-            if len(progress_stripped) < w:
-                progress_line += " " * (w - len(progress_stripped))
-            
+                parts.append(f"{Colors.LIGHT_CYAN}HSN×{hsn_peers}{Colors.RESET}")
+            return "  " + f"{Colors.DIM} · {Colors.RESET}".join(parts)
         else:
-            # 无颜色版本
-            status_line = f"  Humanaize v{get_version()} [SOLVE]"
-            progress_bar = f"[{'#' * filled}{'-' * empty}]"
-            progress_text = f"{int(progress * 100)}%"
-            task_stats = f"Tasks: {completed}/{total}"
-            hsn_status = f"HSN: {hsn_peers} peers" if hsn_enabled else "HSN: Disabled"
-            time_status = f"Time: {elapsed}"
-            
-            progress_line = f"  {progress_bar} {progress_text}"
-            progress_stripped = self._strip(progress_line)
-            if len(progress_stripped) < w:
-                progress_line += " " * (w - len(progress_stripped))
-        
-        # 底部边框
-        if self.use_color:
-            bottom = f"{Colors.DIM}{'─' * w}{Colors.RESET}"
-        else:
-            bottom = f"{'─' * w}"
-        
-        return f"{top}\n{status_line}\n{progress_line}\n{bottom}"
+            bar = f"[{'#' * filled}{'-' * empty}]"
+            parts = [f"⏵⏵ tasks {completed}/{total}", f"{bar} {int(progress * 100)}%", f"⏱ {elapsed}"]
+            if failed > 0:
+                parts.append(f"{failed} failed")
+            if hsn_enabled:
+                parts.append(f"HSN×{hsn_peers}")
+            return "  " + " · ".join(parts)
     
     def _strip(self, text: str) -> str:
         """移除ANSI颜色码"""
@@ -477,23 +415,23 @@ class SolveMode:
             self._requires_text_output = True
             self._problem_type = "code"
             if self._use_color:
-                print(f"{Colors.CYAN}[MODE]{Colors.RESET}  Problem type: CODE GENERATION (will generate complete project files)")
+                print(f"{Colors.CYAN}⏵{Colors.RESET}  Problem type: CODE GENERATION (will generate complete project files)")
             else:
-                print("[MODE]  Problem type: CODE GENERATION (will generate complete project files)")
+                print("⏵  Problem type: CODE GENERATION (will generate complete project files)")
         elif text_score > 0 and text_score > command_score:
             self._requires_text_output = True
             self._problem_type = "text"
             if self._use_color:
-                print(f"{Colors.CYAN}[MODE]{Colors.RESET}  Problem type: TEXT OUTPUT (will generate text content)")
+                print(f"{Colors.CYAN}⏵{Colors.RESET}  Problem type: TEXT OUTPUT (will generate text content)")
             else:
-                print("[MODE]  Problem type: TEXT OUTPUT (will generate text content)")
+                print("⏵  Problem type: TEXT OUTPUT (will generate text content)")
         else:
             self._requires_text_output = False
             self._problem_type = "command"
             if self._use_color:
-                print(f"{Colors.CYAN}[MODE]{Colors.RESET}  Problem type: COMMAND ONLY (efficient mode, no text generation)")
+                print(f"{Colors.CYAN}⏵{Colors.RESET}  Problem type: COMMAND ONLY (efficient mode, no text generation)")
             else:
-                print("[MODE]  Problem type: COMMAND ONLY (efficient mode, no text generation)")
+                print("⏵  Problem type: COMMAND ONLY (efficient mode, no text generation)")
         
         sys.stdout.flush()
         return self._problem_type
@@ -602,23 +540,23 @@ class SolveMode:
         disk_info = self._storage_manager.get_disk_usage()
         if disk_info.get("is_low_space"):
             if self._use_color:
-                print(f"{Colors.YELLOW}[WARN]{Colors.RESET} Low disk space detected: {disk_info.get('percent_used')}% used")
-                print(f"{Colors.YELLOW}[CLEANUP]{Colors.RESET} Running automatic cleanup...")
+                print(f"{Colors.YELLOW}⚠{Colors.RESET} Low disk space detected: {disk_info.get('percent_used')}% used")
+                print(f"{Colors.YELLOW}⏺{Colors.RESET} Running automatic cleanup...")
             else:
-                print(f"[WARN] Low disk space detected: {disk_info.get('percent_used')}% used")
-                print("[CLEANUP] Running automatic cleanup...")
+                print(f"⚠ Low disk space detected: {disk_info.get('percent_used')}% used")
+                print("⏺ Running automatic cleanup...")
             cleanup_result = self._storage_manager.cleanup_all(aggressive=True)
             if self._use_color:
-                print(f"{Colors.GREEN}[OK]{Colors.RESET} Cleanup completed: {cleanup_result.get('freed_total_mb', 0)} MB freed")
+                print(f"{Colors.GREEN}✓{Colors.RESET} Cleanup completed: {cleanup_result.get('freed_total_mb', 0)} MB freed")
             else:
-                print(f"[OK] Cleanup completed: {cleanup_result.get('freed_total_mb', 0)} MB freed")
+                print(f"✓ Cleanup completed: {cleanup_result.get('freed_total_mb', 0)} MB freed")
             print()
         
         # Step 1: 規劃項目結構
         if self._use_color:
-            print(f"{Colors.BLUE}[INFO]{Colors.RESET} Step 1: Planning project structure...")
+            print(f"{Colors.BLUE}·{Colors.RESET} Step 1: Planning project structure...")
         else:
-            print("[INFO] Step 1: Planning project structure...")
+            print("· Step 1: Planning project structure...")
         sys.stdout.flush()
         
         project_plan = self._plan_project_structure()
@@ -628,15 +566,15 @@ class SolveMode:
         # Step 2: 創建項目目錄
         self._project_output_dir = self._create_project_directory(project_plan)
         if self._use_color:
-            print(f"{Colors.GREEN}[OK]{Colors.RESET} Project directory created: {self._project_output_dir}")
+            print(f"{Colors.GREEN}✓{Colors.RESET} Project directory created: {self._project_output_dir}")
         else:
-            print(f"[OK] Project directory created: {self._project_output_dir}")
+            print(f"✓ Project directory created: {self._project_output_dir}")
         
         # Step 3: 逐文件生成代碼
         if self._use_color:
-            print(f"\n{Colors.BLUE}[INFO]{Colors.RESET} Step 2: Generating project files...")
+            print(f"\n{Colors.BLUE}·{Colors.RESET} Step 2: Generating project files...")
         else:
-            print("\n[INFO] Step 2: Generating project files...")
+            print("\n· Step 2: Generating project files...")
         sys.stdout.flush()
         
         total_files = len(project_plan.get("files", []))
@@ -696,9 +634,9 @@ class SolveMode:
                 })
                 
                 if self._use_color:
-                    print(f"{Colors.GREEN}[OK]{Colors.RESET}  Generated: {filename} ({len(code_content)} chars)")
+                    print(f"{Colors.GREEN}✓{Colors.RESET}  Generated: {filename} ({len(code_content)} chars)")
                 else:
-                    print(f"[OK]  Generated: {filename} ({len(code_content)} chars)")
+                    print(f"✓  Generated: {filename} ({len(code_content)} chars)")
             else:
                 if self._use_color:
                     print(f"{Colors.RED}[FAIL]{Colors.RESET}  Failed to generate: {filename}")
@@ -709,9 +647,9 @@ class SolveMode:
         self._code_generation_phase = "verifying"
         
         if self._use_color:
-            print(f"\n{Colors.BLUE}[INFO]{Colors.RESET} Step 3: Verifying generated project...")
+            print(f"\n{Colors.BLUE}·{Colors.RESET} Step 3: Verifying generated project...")
         else:
-            print("\n[INFO] Step 3: Verifying generated project...")
+            print("\n· Step 3: Verifying generated project...")
         sys.stdout.flush()
         
         verification = self._verify_generated_project(generated_files, project_plan)
@@ -753,9 +691,9 @@ class SolveMode:
     def _plan_project_structure(self) -> Dict:
         """規劃項目結構，返回文件列表"""
         if self._use_color:
-            print(f"{Colors.YELLOW}[WAIT]{Colors.RESET}  AI is planning project structure...")
+            print(f"{Colors.YELLOW}✻{Colors.RESET}  AI is planning project structure...")
         else:
-            print("[WAIT]  AI is planning project structure...")
+            print("✻  AI is planning project structure...")
         sys.stdout.flush()
         
         system_info = f"OS: {platform.system()} | Python: {platform.python_version()}"
@@ -799,9 +737,9 @@ All files MUST be text-based source code or configuration files.
             
             if not response:
                 if self._use_color:
-                    print(f"{Colors.YELLOW}[WARN]{Colors.RESET} Empty response from AI, using default structure")
+                    print(f"{Colors.YELLOW}⚠{Colors.RESET} Empty response from AI, using default structure")
                 else:
-                    print("[WARN] Empty response from AI, using default structure")
+                    print("⚠ Empty response from AI, using default structure")
                 return self._get_default_project_plan()
             
             # 解析響應為項目計劃
@@ -809,21 +747,21 @@ All files MUST be text-based source code or configuration files.
             
             if project_plan and project_plan.get("files"):
                 if self._use_color:
-                    print(f"{Colors.GREEN}[OK]{Colors.RESET}  Project plan generated: {len(project_plan['files'])} files")
+                    print(f"{Colors.GREEN}✓{Colors.RESET}  Project plan generated: {len(project_plan['files'])} files")
                 else:
-                    print(f"[OK]  Project plan generated: {len(project_plan['files'])} files")
+                    print(f"✓  Project plan generated: {len(project_plan['files'])} files")
                 return project_plan
             
         except Exception as e:
             if self._use_color:
-                print(f"{Colors.YELLOW}[WARN]{Colors.RESET} Planning error: {e}")
+                print(f"{Colors.YELLOW}⚠{Colors.RESET} Planning error: {e}")
             else:
-                print(f"[WARN] Planning error: {e}")
+                print(f"⚠ Planning error: {e}")
         
         if self._use_color:
-            print(f"{Colors.YELLOW}[WARN]{Colors.RESET} Using default project structure")
+            print(f"{Colors.YELLOW}⚠{Colors.RESET} Using default project structure")
         else:
-            print("[WARN] Using default project structure")
+            print("⚠ Using default project structure")
         return self._get_default_project_plan()
     
     def _parse_project_plan(self, response: str) -> Dict:
@@ -979,9 +917,9 @@ Start writing the file content now:
                     # 檢查是否被截斷
                     if self._is_truncated(content):
                         if self._use_color:
-                            print(f"{Colors.YELLOW}[WARN]{Colors.RESET}  Output appears truncated, continuing generation...")
+                            print(f"{Colors.YELLOW}⚠{Colors.RESET}  Output appears truncated, continuing generation...")
                         else:
-                            print("[WARN]  Output appears truncated, continuing generation...")
+                            print("⚠  Output appears truncated, continuing generation...")
                         # 繼續生成剩餘部分
                         content = self._continue_generation(
                             content, filename, description, problem, max_tokens
@@ -989,22 +927,22 @@ Start writing the file content now:
                     return content
                 else:
                     if self._use_color:
-                        print(f"{Colors.YELLOW}[WARN]{Colors.RESET}  Generated content too short")
+                        print(f"{Colors.YELLOW}⚠{Colors.RESET}  Generated content too short")
                     else:
-                        print("[WARN]  Generated content too short")
+                        print("⚠  Generated content too short")
                     return None
             else:
                 if self._use_color:
-                    print(f"{Colors.RED}[ERROR]{Colors.RESET}  Empty response from AI")
+                    print(f"{Colors.RED}✗{Colors.RESET}  Empty response from AI")
                 else:
-                    print("[ERROR]  Empty response from AI")
+                    print("✗  Empty response from AI")
                 return None
                 
         except Exception as e:
             if self._use_color:
-                print(f"{Colors.RED}[ERROR]{Colors.RESET}  Generation error: {e}")
+                print(f"{Colors.RED}✗{Colors.RESET}  Generation error: {e}")
             else:
-                print(f"[ERROR]  Generation error: {e}")
+                print(f"✗  Generation error: {e}")
             return None
     
     def _clean_generated_code(self, content: str, filename: str) -> str:
@@ -1128,9 +1066,9 @@ Continue the code now:
                 if self._is_truncated(combined):
                     # 最多再繼續一次
                     if self._use_color:
-                        print(f"{Colors.YELLOW}[WARN]{Colors.RESET}  Still truncated, one more continuation...")
+                        print(f"{Colors.YELLOW}⚠{Colors.RESET}  Still truncated, one more continuation...")
                     else:
-                        print("[WARN]  Still truncated, one more continuation...")
+                        print("⚠  Still truncated, one more continuation...")
                     combined = self._continue_generation(
                         combined, filename, description, problem, max_tokens
                     )
@@ -1141,9 +1079,9 @@ Continue the code now:
                 
         except Exception as e:
             if self._use_color:
-                print(f"{Colors.RED}[ERROR]{Colors.RESET}  Continuation error: {e}")
+                print(f"{Colors.RED}✗{Colors.RESET}  Continuation error: {e}")
             else:
-                print(f"[ERROR]  Continuation error: {e}")
+                print(f"✗  Continuation error: {e}")
             return existing_content
     
     def _write_generated_file(self, file_path: str, content: str):
@@ -1154,9 +1092,9 @@ Continue the code now:
                 f.write(content)
         except Exception as e:
             if self._use_color:
-                print(f"{Colors.RED}[ERROR]{Colors.RESET}  Failed to write {file_path}: {e}")
+                print(f"{Colors.RED}✗{Colors.RESET}  Failed to write {file_path}: {e}")
             else:
-                print(f"[ERROR]  Failed to write {file_path}: {e}")
+                print(f"✗  Failed to write {file_path}: {e}")
     
     def _verify_generated_project(self, generated_files: List[Dict], project_plan: Dict) -> Dict:
         """驗證生成的項目"""
@@ -1218,9 +1156,9 @@ Continue the code now:
     def _run_enhanced_gan_mode(self) -> Dict:
         """Execute solve mode with enhanced GAN two-phase execution"""
         if self._use_color:
-            print(f"{Colors.BLUE}[INFO]{Colors.RESET} Running in Enhanced GAN mode...")
+            print(f"{Colors.BLUE}·{Colors.RESET} Running in Enhanced GAN mode...")
         else:
-            print("[INFO] Running in Enhanced GAN mode...")
+            print("· Running in Enhanced GAN mode...")
         
         enhanced_gan = EnhancedGAN()
         enhanced_gan.set_color_mode(self._use_color)
@@ -1305,56 +1243,58 @@ Continue the code now:
         """Print the solve mode header"""
         print()
         if self._use_color:
-            print(f"{Colors.BOLD}{Colors.CYAN}" + "=" * 70 + f"{Colors.RESET}")
-            print(f"{Colors.BOLD}{Colors.CYAN}          Humanaize 2.0 Agent - SOLVE MODE{Colors.RESET}")
-            print(f"{Colors.BOLD}{Colors.CYAN}" + "=" * 70 + f"{Colors.RESET}")
+            print(f"{Colors.BOLD}{Colors.ORANGE}✻{Colors.RESET} {Colors.BOLD}Humanaize Solve{Colors.RESET} {Colors.DIM}v{get_version()}{Colors.RESET}")
         else:
-            print("=" * 70)
-            print("          Humanaize 2.0 Agent - SOLVE MODE")
-            print("=" * 70)
+            print(f"✻ Humanaize Solve v{get_version()}")
+        if self.problem:
+            prob = self.problem if len(self.problem) <= 66 else self.problem[:63] + "..."
+            if self._use_color:
+                print(f"{Colors.GRAY}  Problem: {prob}{Colors.RESET}")
+            else:
+                print(f"  Problem: {prob}")
         print()
     
     def _load_references(self):
         """Load reference files if specified"""
         if self.reference_files:
             if self._use_color:
-                print(f"{Colors.BLUE}[INFO]{Colors.RESET} Loading reference files...")
+                print(f"{Colors.BLUE}·{Colors.RESET} Loading reference files...")
             else:
-                print("[INFO] Loading reference files...")
+                print("· Loading reference files...")
             
             for ref_file in self.reference_files:
                 if os.path.exists(ref_file):
                     if self._use_color:
-                        print(f"{Colors.GREEN}[OK]{Colors.RESET}  Loaded: {ref_file}")
+                        print(f"{Colors.GREEN}✓{Colors.RESET}  Loaded: {ref_file}")
                     else:
-                        print(f"[OK]  Loaded: {ref_file}")
+                        print(f"✓  Loaded: {ref_file}")
                 else:
                     if self._use_color:
-                        print(f"{Colors.RED}[WARN]{Colors.RESET}  File not found: {ref_file}")
+                        print(f"{Colors.RED}⚠{Colors.RESET}  File not found: {ref_file}")
                     else:
-                        print(f"[WARN]  File not found: {ref_file}")
+                        print(f"⚠  File not found: {ref_file}")
             print()
     
     def _setup_hsn(self):
         """Setup HSN collaboration"""
         if self._use_color:
-            print(f"{Colors.BLUE}[INFO]{Colors.RESET} Enabling HSN collaboration...")
+            print(f"{Colors.BLUE}·{Colors.RESET} Enabling HSN collaboration...")
         else:
-            print("[INFO] Enabling HSN collaboration...")
+            print("· Enabling HSN collaboration...")
         
         self.hsn.enable()
         if self.hsn.connect():
             if self._use_color:
-                print(f"{Colors.GREEN}[OK]{Colors.RESET}  Connected to HSN network")
-                print(f"{Colors.GREEN}[OK]{Colors.RESET}  Discovered {len(self.hsn.peers)} peer(s)")
+                print(f"{Colors.GREEN}✓{Colors.RESET}  Connected to HSN network")
+                print(f"{Colors.GREEN}✓{Colors.RESET}  Discovered {len(self.hsn.peers)} peer(s)")
             else:
-                print(f"[OK]  Connected to HSN network")
-                print(f"[OK]  Discovered {len(self.hsn.peers)} peer(s)")
+                print(f"✓  Connected to HSN network")
+                print(f"✓  Discovered {len(self.hsn.peers)} peer(s)")
         else:
             if self._use_color:
-                print(f"{Colors.YELLOW}[WARN]{Colors.RESET}  HSN connection failed, continuing offline")
+                print(f"{Colors.YELLOW}⚠{Colors.RESET}  HSN connection failed, continuing offline")
             else:
-                print(f"[WARN]  HSN connection failed, continuing offline")
+                print(f"⚠  HSN connection failed, continuing offline")
         print()
     
     def _generate_todo_list(self):
@@ -1362,9 +1302,9 @@ Continue the code now:
         import time as time_module
         
         if self._use_color:
-            print(f"{Colors.BLUE}[INFO]{Colors.RESET} Analyzing problem and generating task list...")
+            print(f"{Colors.BLUE}·{Colors.RESET} Analyzing problem and generating task list...")
         else:
-            print("[INFO] Analyzing problem and generating task list...")
+            print("· Analyzing problem and generating task list...")
         sys.stdout.flush()
         
         # 精简的系统信息（仅保留关键部分）
@@ -1381,78 +1321,78 @@ Continue the code now:
         for attempt in range(max_retries + 1):
             try:
                 if self._use_color:
-                    print(f"{Colors.YELLOW}[WAIT]{Colors.RESET}  AI is generating task list... (attempt {attempt + 1}/{max_retries + 1})")
+                    print(f"{Colors.YELLOW}✻{Colors.RESET}  AI is generating task list... (attempt {attempt + 1}/{max_retries + 1})")
                 else:
-                    print(f"[WAIT]  AI is generating task list... (attempt {attempt + 1}/{max_retries + 1})")
+                    print(f"✻  AI is generating task list... (attempt {attempt + 1}/{max_retries + 1})")
                 sys.stdout.flush()
                 
-                # 根據問題類型調整 max_tokens
+                # 根據問題類型調整 max_tokens（JSON 任務列表 token 消耗大，太小會截斷導致解析失敗）
                 progress_start = time_module.time()
-                todo_max_tokens = 512 if self._problem_type == "code" else 256
+                todo_max_tokens = 900 if self._problem_type == "code" else 600
                 
                 response = chat(prompt, max_tokens=todo_max_tokens)
                 
                 elapsed = time_module.time() - progress_start
                 if self._use_color:
-                    print(f"{Colors.DIM}[TIME]{Colors.RESET}  Response received in {elapsed:.1f}s")
+                    print(f"{Colors.DIM}⏱{Colors.RESET}  Response received in {elapsed:.1f}s")
                 else:
-                    print(f"[TIME]  Response received in {elapsed:.1f}s")
+                    print(f"⏱  Response received in {elapsed:.1f}s")
                 sys.stdout.flush()
                 
                 if response and response.strip():
                     # 调试输出
                     if self._use_color:
-                        print(f"{Colors.DIM}[DEBUG]{Colors.RESET}  Response length: {len(response)} chars")
+                        print(f"{Colors.DIM}⋯{Colors.RESET}  Response length: {len(response)} chars")
                     else:
-                        print(f"[DEBUG]  Response length: {len(response)} chars")
+                        print(f"⋯  Response length: {len(response)} chars")
                     sys.stdout.flush()
                     
                     self.todo_list = self._parse_todo_list(response)
                     
                     if self.todo_list:
                         if self._use_color:
-                            print(f"{Colors.GREEN}[OK]{Colors.RESET}  Task list generated by AI successfully ({len(self.todo_list)} tasks)")
+                            print(f"{Colors.GREEN}✓{Colors.RESET}  Task list generated by AI successfully ({len(self.todo_list)} tasks)")
                         else:
-                            print(f"[OK]  Task list generated by AI successfully ({len(self.todo_list)} tasks)")
+                            print(f"✓  Task list generated by AI successfully ({len(self.todo_list)} tasks)")
                         sys.stdout.flush()
                         break
                     else:
                         if self._use_color:
-                            print(f"{Colors.YELLOW}[WARN]{Colors.RESET} AI generated empty task list, retrying...")
+                            print(f"{Colors.YELLOW}⚠{Colors.RESET} AI generated empty task list, retrying...")
                         else:
-                            print(f"[WARN] AI generated empty task list, retrying...")
+                            print(f"⚠ AI generated empty task list, retrying...")
                         sys.stdout.flush()
                         
                         # 如果还有重试机会，等待后重试
                         if attempt < max_retries:
                             delay = base_delay * (attempt + 1)
                             if self._use_color:
-                                print(f"{Colors.DIM}[WAIT]{Colors.RESET}  Waiting {delay}s before retry...")
+                                print(f"{Colors.DIM}✻{Colors.RESET}  Waiting {delay}s before retry...")
                             else:
-                                print(f"[WAIT]  Waiting {delay}s before retry...")
+                                print(f"✻  Waiting {delay}s before retry...")
                             sys.stdout.flush()
                             time_module.sleep(delay)
                             continue
                         else:
                             if self._use_color:
-                                print(f"{Colors.YELLOW}[WARN]{Colors.RESET} All retries exhausted, using default task list")
+                                print(f"{Colors.YELLOW}⚠{Colors.RESET} All retries exhausted, using default task list")
                             else:
-                                print(f"[WARN] All retries exhausted, using default task list")
+                                print(f"⚠ All retries exhausted, using default task list")
                             sys.stdout.flush()
                             self._generate_default_todo_list()
                 else:
                     if self._use_color:
-                        print(f"{Colors.YELLOW}[WARN]{Colors.RESET} AI returned empty response")
+                        print(f"{Colors.YELLOW}⚠{Colors.RESET} AI returned empty response")
                     else:
-                        print(f"[WARN] AI returned empty response")
+                        print(f"⚠ AI returned empty response")
                     sys.stdout.flush()
                     
                     if attempt < max_retries:
                         delay = base_delay * (attempt + 1)
                         if self._use_color:
-                            print(f"{Colors.DIM}[WAIT]{Colors.RESET}  Waiting {delay}s before retry...")
+                            print(f"{Colors.DIM}✻{Colors.RESET}  Waiting {delay}s before retry...")
                         else:
-                            print(f"[WAIT]  Waiting {delay}s before retry...")
+                            print(f"✻  Waiting {delay}s before retry...")
                         sys.stdout.flush()
                         time_module.sleep(delay)
                         continue
@@ -1461,32 +1401,32 @@ Continue the code now:
                         
             except Exception as e:
                 if self._use_color:
-                    print(f"{Colors.YELLOW}[WARN]{Colors.RESET} AI unavailable on attempt {attempt + 1}: {e}")
+                    print(f"{Colors.YELLOW}⚠{Colors.RESET} AI unavailable on attempt {attempt + 1}: {e}")
                 else:
-                    print(f"[WARN] AI unavailable on attempt {attempt + 1}: {e}")
+                    print(f"⚠ AI unavailable on attempt {attempt + 1}: {e}")
                 sys.stdout.flush()
                 
                 if attempt < max_retries:
                     delay = base_delay * (attempt + 1)
                     if self._use_color:
-                        print(f"{Colors.DIM}[WAIT]{Colors.RESET}  Waiting {delay}s before retry...")
+                        print(f"{Colors.DIM}✻{Colors.RESET}  Waiting {delay}s before retry...")
                     else:
-                        print(f"[WAIT]  Waiting {delay}s before retry...")
+                        print(f"✻  Waiting {delay}s before retry...")
                     sys.stdout.flush()
                     time_module.sleep(delay)
                 else:
                     if self._use_color:
-                        print(f"{Colors.YELLOW}[WARN]{Colors.RESET} All attempts failed, using default task list")
+                        print(f"{Colors.YELLOW}⚠{Colors.RESET} All attempts failed, using default task list")
                     else:
-                        print(f"[WARN] All attempts failed, using default task list")
+                        print(f"⚠ All attempts failed, using default task list")
                     sys.stdout.flush()
                     self._generate_default_todo_list()
         
         total_elapsed = time_module.time() - start_time
         if self._use_color:
-            print(f"{Colors.DIM}[TOTAL]{Colors.RESET}  Total time: {total_elapsed:.1f}s")
+            print(f"{Colors.DIM}⏱{Colors.RESET}  Total time: {total_elapsed:.1f}s")
         else:
-            print(f"[TOTAL]  Total time: {total_elapsed:.1f}s")
+            print(f"⏱  Total time: {total_elapsed:.1f}s")
         sys.stdout.flush()
         
         # Display todo list
@@ -1580,9 +1520,9 @@ Continue the code now:
                 ))
             if tasks:
                 if self._use_color:
-                    print(f"{Colors.DIM}[DEBUG]{Colors.RESET}  Extracted {len(tasks)} tasks from truncated JSON")
+                    print(f"{Colors.DIM}⋯{Colors.RESET}  Extracted {len(tasks)} tasks from truncated JSON")
                 else:
-                    print(f"[DEBUG]  Extracted {len(tasks)} tasks from truncated JSON")
+                    print(f"⋯  Extracted {len(tasks)} tasks from truncated JSON")
                 return tasks
             
             # 方法5: 更宽松的 JSON 对象提取
@@ -1599,9 +1539,9 @@ Continue the code now:
                 ))
             if tasks:
                 if self._use_color:
-                    print(f"{Colors.DIM}[DEBUG]{Colors.RESET}  Extracted {len(tasks)} tasks using loose pattern")
+                    print(f"{Colors.DIM}⋯{Colors.RESET}  Extracted {len(tasks)} tasks using loose pattern")
                 else:
-                    print(f"[DEBUG]  Extracted {len(tasks)} tasks using loose pattern")
+                    print(f"⋯  Extracted {len(tasks)} tasks using loose pattern")
                 return tasks
             
             # 方法6: 解析为编号列表 (Markdown 格式)
@@ -1625,9 +1565,9 @@ Continue the code now:
                 
         except Exception as e:
             if self._use_color:
-                print(f"{Colors.YELLOW}[DEBUG]{Colors.RESET} Parse error: {e}")
+                print(f"{Colors.YELLOW}⋯{Colors.RESET} Parse error: {e}")
             else:
-                print(f"[DEBUG] Parse error: {e}")
+                print(f"⋯ Parse error: {e}")
         
         return tasks
     
@@ -1672,20 +1612,27 @@ Continue the code now:
     def _display_todo_list(self):
         """Display the generated todo list"""
         if self._use_color:
-            print(f"{Colors.BOLD}{Colors.MAGENTA}Generated Task List:{Colors.RESET}")
+            print(f"{Colors.BOLD}{Colors.ORANGE}☑{Colors.RESET} {Colors.BOLD}Task Plan{Colors.RESET} {Colors.DIM}({len(self.todo_list)} tasks){Colors.RESET}")
         else:
-            print("Generated Task List:")
-        
+            print(f"☑ Task Plan ({len(self.todo_list)} tasks)")
+
         for task in self.todo_list:
-            status_icon = "○" if task.status == Task.STATUS_PENDING else "●"
-            if self._use_color:
-                print(f"{Colors.DIM}[{status_icon}]{Colors.RESET} {task.id}. {task.title}")
-                if task.description:
-                    print(f"{Colors.GRAY}      {task.description}{Colors.RESET}")
+            if task.status == Task.STATUS_COMPLETED:
+                icon, icon_color = "☑", Colors.GREEN
+            elif task.status == Task.STATUS_IN_PROGRESS:
+                icon, icon_color = "◐", Colors.YELLOW
+            elif task.status == Task.STATUS_FAILED:
+                icon, icon_color = "☒", Colors.RED
             else:
-                print(f"[{status_icon}] {task.id}. {task.title}")
+                icon, icon_color = "☐", Colors.GRAY
+            if self._use_color:
+                print(f"  {icon_color}{icon}{Colors.RESET} {Colors.BOLD}{task.id}.{Colors.RESET} {task.title}")
                 if task.description:
-                    print(f"      {task.description}")
+                    print(f"{Colors.GRAY}      ⎿ {task.description}{Colors.RESET}")
+            else:
+                print(f"  {icon} {task.id}. {task.title}")
+                if task.description:
+                    print(f"      ⎿ {task.description}")
         
         print()
         # 初始化并显示状态栏
@@ -1719,9 +1666,9 @@ Continue the code now:
             # Validate task completion
             if task.status != Task.STATUS_COMPLETED:
                 if self._use_color:
-                    print(f"{Colors.YELLOW}[WARN]{Colors.RESET} Task {task.id} did not complete successfully")
+                    print(f"{Colors.YELLOW}⚠{Colors.RESET} Task {task.id} did not complete successfully")
                 else:
-                    print(f"[WARN] Task {task.id} did not complete successfully")
+                    print(f"⚠ Task {task.id} did not complete successfully")
             
             # 添加分隔线，为下一个任务做准备（不是最后一个任务时）
             if idx < len(self.todo_list) - 1:
@@ -1735,43 +1682,35 @@ Continue the code now:
     def _execute_task(self, task: Task) -> Dict:
         """Execute a single task"""
         task.status = Task.STATUS_IN_PROGRESS
-        
+
         if self._use_color:
-            print(f"{Colors.BOLD}{Colors.BLUE}--- Executing Task {task.id}: {task.title} ---{Colors.RESET}")
+            print(f"\n{Colors.BOLD}{Colors.ORANGE}●{Colors.RESET} {Colors.BOLD}Task {task.id}{Colors.RESET} {Colors.DIM}{task.title}{Colors.RESET}")
         else:
-            print(f"--- Executing Task {task.id}: {task.title} ---")
-        
-        if self._use_color:
-            print(f"{Colors.YELLOW}[WAIT]{Colors.RESET}  AI is thinking...")
-        else:
-            print("[WAIT]  AI is thinking...")
-        
+            print(f"\n● Task {task.id}: {task.title}")
+
         task.result = self._process_task(task)
-        
+
         # Validate task
         self._validate_task(task)
-        
+
         if task.status == Task.STATUS_COMPLETED:
             if self._use_color:
-                print(f"{Colors.GREEN}[DONE]{Colors.RESET}  Task {task.id} completed successfully")
-                if task.validation_score > 0:
-                    print(f"{Colors.GREEN}[VALID]{Colors.RESET}  Validation score: {task.validation_score}/1.0")
+                print(f"{Colors.GREEN}  ☑ Completed{Colors.RESET}{f'{Colors.DIM} · validation {task.validation_score:.1f}/1.0{Colors.RESET}' if task.validation_score > 0 else ''}")
             else:
-                print(f"[DONE]  Task {task.id} completed successfully")
-                if task.validation_score > 0:
-                    print(f"[VALID]  Validation score: {task.validation_score}/1.0")
+                print(f"  ☑ Completed")
         else:
             if self._use_color:
-                print(f"{Colors.RED}[FAIL]{Colors.RESET}  Task {task.id} failed")
+                print(f"{Colors.RED}  ☒ Failed{Colors.RESET}")
             else:
-                print(f"[FAIL]  Task {task.id} failed")
-        
+                print(f"  ☒ Failed")
+
         if task.result:
+            result_text = str(task.result)
             if self._use_color:
-                print(f"{Colors.DIM}Result: {task.result}{Colors.RESET}")
+                print(f"{Colors.GRAY}  ⎿ {result_text}{Colors.RESET}")
             else:
-                print(f"Result: {task.result}")
-        
+                print(f"  ⎿ {result_text}")
+
         print()
         return task.to_dict()
     
@@ -1817,11 +1756,11 @@ Continue the code now:
                 max_tokens = 2048
             elif self._requires_text_output:
                 # 文本模式：中等參數
-                max_skill_calls = 2
+                max_skill_calls = 3
                 max_tokens = 1024
             else:
-                # 命令模式：最小參數
-                max_skill_calls = 2
+                # 命令模式：需要多次執行命令才能完成真實任務
+                max_skill_calls = 6
                 max_tokens = 512
             
             max_retries_without_skill = 1
@@ -1838,34 +1777,35 @@ Continue the code now:
                     prompt_with_history += f"\n\nIMPORTANT: You MUST output a command or skill invocation now."
                 
                 if self._use_color:
-                    print(f"\n{Colors.BOLD}{Colors.GREEN}[AI OUTPUT]{Colors.RESET}")
+                    print(f"\n{Colors.BOLD}{Colors.ORANGE}✻{Colors.RESET} {Colors.DIM}Thinking...{Colors.RESET}")
                 else:
-                    print("\n[AI OUTPUT]")
-                
+                    print("\n✻ Thinking...")
+
                 response = ""
                 sys.stdout.flush()
-                
+
                 try:
                     # 使用調整後的 max_tokens
                     response = chat(prompt_with_history, max_tokens=max_tokens)
-                    if self._use_color:
-                        print(f"{Colors.GREEN}{response}{Colors.RESET}")
-                    else:
-                        print(response)
+                    if response:
+                        if self._use_color:
+                            print(f"{Colors.ORANGE}  ⏺{Colors.RESET} {response}")
+                        else:
+                            print(f"  ⏺ {response}")
                 except Exception as e:
                     if self._use_color:
-                        print(f"\n{Colors.YELLOW}[CHAT ERROR]{Colors.RESET} {str(e)}")
+                        print(f"{Colors.RED}  ⎿ Chat error: {str(e)}{Colors.RESET}")
                     else:
-                        print(f"\n[CHAT ERROR] {str(e)}")
+                        print(f"  ⎿ Chat error: {str(e)}")
                 
                 print()
                 sys.stdout.flush()
                 
                 if not response:
                     if self._use_color:
-                        print(f"{Colors.RED}[WARN]{Colors.RESET} AI returned empty response")
+                        print(f"{Colors.RED}⚠{Colors.RESET} AI returned empty response")
                     else:
-                        print("[WARN] AI returned empty response")
+                        print("⚠ AI returned empty response")
                     task.status = Task.STATUS_COMPLETED
                     return self._generate_fallback_result(task)
                 
@@ -1875,77 +1815,159 @@ Continue the code now:
                 if skill_call:
                     skill_name = skill_call.get('skill', '')
                     skill_input = skill_call.get('input', '')
-                    
+
                     if self._use_color:
-                        print(f"\n{Colors.BOLD}{Colors.MAGENTA}[SKILL CALL]{Colors.RESET} Invoking skill: {skill_name}")
+                        print(f"{Colors.BOLD}{Colors.MAGENTA}  ⏺ Skill: {skill_name}{Colors.RESET}")
                     else:
-                        print(f"\n[SKILL CALL] Invoking skill: {skill_name}")
-                    
+                        print(f"  ⏺ Skill: {skill_name}")
+
                     try:
                         skill_result = self.skills_manager.execute_skill(skill_name, skill_input)
-                        
+
                         if self._use_color:
-                            print(f"{Colors.GREEN}[SKILL RESULT]{Colors.RESET} Status: {skill_result.get('status', 'unknown')}")
+                            print(f"{Colors.DIM}  ⎿ status: {skill_result.get('status', 'unknown')}{Colors.RESET}")
                         else:
-                            print(f"[SKILL RESULT] Status: {skill_result.get('status', 'unknown')}")
+                            print(f"  ⎿ status: {skill_result.get('status', 'unknown')}")
                         
                         previous_results += f"\nSkill '{skill_name}' executed:\n"
-                        previous_results += f"Input: {json.dumps(skill_input)[:150]}\n"
-                        previous_results += f"Result: {json.dumps(skill_result)[:300]}\n"
+                        previous_results += f"Input: {json.dumps(skill_input, ensure_ascii=False)[:200]}\n"
+                        previous_results += f"Result: {json.dumps(skill_result, ensure_ascii=False)[:2000]}\n"
                         
                         # 简化 supervisor 检查 - 跳过不必要的重复检查
                         if self.skills_enabled and self._should_skip_supervisor():
                             skill_calls_made += 1
                             retries_without_skill = 0
                             continue
-                        
+
                         supervisor_feedback = self._supervisor_check(task, response, skill_result)
                         if supervisor_feedback == "REDO":
                             if self._use_color:
-                                print(f"\n{Colors.BOLD}{Colors.RED}[SUPERVISOR]{Colors.RESET} REDO - Result rejected, regenerating...")
+                                print(f"{Colors.BOLD}{Colors.RED}  ⎿ Supervisor: REDO — regenerating{Colors.RESET}")
                             else:
-                                print("\n[SUPERVISOR] REDO - Result rejected, regenerating...")
+                                print("  ⎿ Supervisor: REDO — regenerating")
                             continue
-                        
+
                         skill_calls_made += 1
                         retries_without_skill = 0
                         continue
                     except Exception as e:
                         if self._use_color:
-                            print(f"{Colors.RED}[SKILL ERROR]{Colors.RESET} {str(e)}")
+                            print(f"{Colors.RED}  ⎿ Skill error: {str(e)}{Colors.RESET}")
                         else:
-                            print(f"[SKILL ERROR] {str(e)}")
+                            print(f"  ⎿ Skill error: {str(e)}")
                         previous_results += f"\nSkill '{skill_name}' failed: {str(e)}\n"
                         skill_calls_made += 1
                         continue
-                
+
+                # No skill call - 嘗試從回覆中提取命令並自動執行（防止 AI 只描述不執行）
+                if self._problem_type != "text":
+                    extracted_cmd = self._extract_command_from_response(response)
+                    if extracted_cmd:
+                        if self._use_color:
+                            print(f"{Colors.BOLD}{Colors.CYAN}  ⏺ Run:{Colors.RESET} {extracted_cmd}")
+                        else:
+                            print(f"  ⏺ Run: {extracted_cmd}")
+                        try:
+                            auto_result = self.skills_manager.execute_skill("shell", {"command": extracted_cmd})
+                            output_text = str(auto_result.get("output", auto_result))[:2000] if isinstance(auto_result, dict) else str(auto_result)[:2000]
+                            if output_text:
+                                if self._use_color:
+                                    print(f"{Colors.DIM}  ⎿ {output_text}{Colors.RESET}")
+                                else:
+                                    print(f"  ⎿ {output_text}")
+                            previous_results += f"\nCommand executed: {extracted_cmd}\nOutput: {output_text}\n"
+                            skill_calls_made += 1
+                            retries_without_skill = 0
+                            continue
+                        except Exception as e:
+                            previous_results += f"\nCommand '{extracted_cmd}' failed: {str(e)}\n"
+                            skill_calls_made += 1
+                            continue
+
                 # No skill call - 简化流程
                 if self.skills_enabled and retries_without_skill < max_retries_without_skill:
                     retries_without_skill += 1
                     continue
-                
+
                 # 直接返回結果 - 不再截斷
-                if self._use_color:
-                    print(f"\n{Colors.YELLOW}[INFO]{Colors.RESET} Using direct response")
-                else:
-                    print(f"\n[INFO] Using direct response")
-                
                 task.status = Task.STATUS_COMPLETED
                 # 返回完整內容，不截斷
                 return response
-            
-            # Max skill calls reached
+
+            # Max skill calls reached - 有執行結果時讓 AI 生成最終報告
             task.status = Task.STATUS_COMPLETED
+            if previous_results:
+                try:
+                    if self._use_color:
+                        print(f"\n{Colors.BOLD}{Colors.ORANGE}✻{Colors.RESET} {Colors.DIM}Writing final report...{Colors.RESET}")
+                    else:
+                        print("\n✻ Writing final report...")
+                    final_prompt = (
+                        prompt + "\n\nPrevious Results (already executed, do NOT run again):\n"
+                        + previous_results
+                        + "\n\nBased on the results above, write the final report for this task now. "
+                          "Plain text only, no more commands, no JSON. "
+                          "Include the key results/numbers. Answer in the same language as the problem."
+                    )
+                    final_response = chat(final_prompt, max_tokens=max_tokens)
+                    if final_response and final_response.strip():
+                        if self._use_color:
+                            print(f"\n{Colors.GREEN}{final_response}{Colors.RESET}")
+                        return final_response
+                except Exception as e:
+                    if self._use_color:
+                        print(f"{Colors.YELLOW}⚠{Colors.RESET} Final report failed: {str(e)}")
             return f"Task completed with {skill_calls_made} skill invocations.\n\nFinal: {response}"
         
         except Exception as e:
             if self._use_color:
-                print(f"\n{Colors.RED}[ERROR]{Colors.RESET} Exception in _process_task: {str(e)}")
+                print(f"\n{Colors.RED}✗{Colors.RESET} Exception in _process_task: {str(e)}")
             else:
-                print(f"\n[ERROR] Exception in _process_task: {str(e)}")
+                print(f"\n✗ Exception in _process_task: {str(e)}")
             task.status = Task.STATUS_COMPLETED
             return self._generate_fallback_result(task)
     
+    def _extract_command_from_response(self, response: str) -> Optional[str]:
+        """從 AI 回覆中提取可執行命令（代碼塊或 $ 前綴行），用於自動執行兜底
+
+        AI 有時不輸出技能 JSON 而只把命令寫在 markdown 代碼塊裡，
+        此時提取第一條命令代為執行，避免任務只停留在「描述」層面。
+        """
+        if not response:
+            return None
+
+        # 跳過已含技能 JSON 的回覆（由 _parse_skill_call 處理）
+        if '{"skill"' in response:
+            return None
+
+        text = response
+
+        # 1) markdown 代碼塊 ```...``` / ```powershell ... ```
+        fence_match = re.search(r'```[a-zA-Z0-9_+\-]*\s*\n([\s\S]*?)```', text)
+        if fence_match:
+            block = fence_match.group(1).strip()
+            first_line = next((ln.strip() for ln in block.splitlines() if ln.strip()), "")
+            if first_line:
+                return first_line
+
+        # 2) "$ command" 或 "PS> command" 前綴行
+        for line in text.splitlines():
+            ln = line.strip()
+            m = re.match(r'^(?:\$|PS>|C:\\>)\s*(.+)$', ln)
+            if m and len(m.group(1)) > 3:
+                return m.group(1).strip()
+
+        # 3) 整段回覆本身就是一條短命令（無標點結尾、含典型命令特徵）
+        stripped = text.strip()
+        if 0 < len(stripped) <= 200 and '\n' not in stripped and not stripped.endswith(('。', '.', '？', '?', '！', '!')):
+            cmd_heads = ('wmic', 'powershell', 'cmd', 'systeminfo', 'ipconfig', 'ping',
+                         'net ', 'get-', 'dir ', 'tasklist', 'whoami', 'ver', 'reg ')
+            low = stripped.lower()
+            if low.startswith(cmd_heads):
+                return stripped
+
+        return None
+
     def _build_skills_context(self) -> str:
         """Build context string with available skills"""
         enabled_skills = self.skills_manager.get_enabled_skills()
@@ -2009,42 +2031,42 @@ Continue the code now:
             
             if check_llm_server():
                 if self._use_color:
-                    print(f"{Colors.GREEN}[OK]{Colors.RESET} LLM server is available")
+                    print(f"{Colors.GREEN}✓{Colors.RESET} LLM server is available")
                 else:
-                    print("[OK] LLM server is available")
+                    print("✓ LLM server is available")
                 return True
             
             if self._use_color:
-                print(f"{Colors.YELLOW}[WAIT]{Colors.RESET} LLM server not available, waiting...")
+                print(f"{Colors.YELLOW}✻{Colors.RESET} LLM server not available, waiting...")
             else:
-                print("[WAIT] LLM server not available, waiting...")
+                print("✻ LLM server not available, waiting...")
             
             for attempt in range(max_wait):
                 time.sleep(1)
                 if check_llm_server():
                     if self._use_color:
-                        print(f"{Colors.GREEN}[OK]{Colors.RESET} LLM server started successfully")
+                        print(f"{Colors.GREEN}✓{Colors.RESET} LLM server started successfully")
                     else:
-                        print("[OK] LLM server started successfully")
+                        print("✓ LLM server started successfully")
                     return True
                 
                 if (attempt + 1) % 10 == 0:
                     if self._use_color:
-                        print(f"{Colors.YELLOW}[WAIT]{Colors.RESET} Waiting for LLM server... ({attempt + 1}/{max_wait}s)")
+                        print(f"{Colors.YELLOW}✻{Colors.RESET} Waiting for LLM server... ({attempt + 1}/{max_wait}s)")
                     else:
-                        print(f"[WAIT] Waiting for LLM server... ({attempt + 1}/{max_wait}s)")
+                        print(f"✻ Waiting for LLM server... ({attempt + 1}/{max_wait}s)")
             
             if self._use_color:
-                print(f"{Colors.RED}[ERROR]{Colors.RESET} LLM server failed to start within {max_wait} seconds")
+                print(f"{Colors.RED}✗{Colors.RESET} LLM server failed to start within {max_wait} seconds")
             else:
-                print(f"[ERROR] LLM server failed to start within {max_wait} seconds")
+                print(f"✗ LLM server failed to start within {max_wait} seconds")
             return False
             
         except Exception as e:
             if self._use_color:
-                print(f"{Colors.RED}[ERROR]{Colors.RESET} Failed to check LLM server: {str(e)}")
+                print(f"{Colors.RED}✗{Colors.RESET} Failed to check LLM server: {str(e)}")
             else:
-                print(f"[ERROR] Failed to check LLM server: {str(e)}")
+                print(f"✗ Failed to check LLM server: {str(e)}")
             return False
     
     def _parse_skill_call(self, response: str) -> Optional[Dict]:
@@ -2209,9 +2231,9 @@ Is it acceptable? Answer ONLY with ACCEPT or REDO.
         
         # Generate final solution using LLM
         if self._use_color:
-            print(f"\n{Colors.BLUE}[INFO]{Colors.RESET} Generating final solution summary...")
+            print(f"\n{Colors.BLUE}·{Colors.RESET} Generating final solution summary...")
         else:
-            print(f"\n[INFO] Generating final solution summary...")
+            print(f"\n· Generating final solution summary...")
         
         results_text = "\n".join(f"Task {r['id']}: {r['title']} - {r.get('result', '')[:100]}..." for r in results)
         
@@ -2230,9 +2252,9 @@ Is it acceptable? Answer ONLY with ACCEPT or REDO.
                 print("-" * 70)
         except Exception as e:
             if self._use_color:
-                print(f"{Colors.RED}[ERROR]{Colors.RESET} Failed to generate summary: {e}")
+                print(f"{Colors.RED}✗{Colors.RESET} Failed to generate summary: {e}")
             else:
-                print(f"[ERROR] Failed to generate summary: {e}")
+                print(f"✗ Failed to generate summary: {e}")
         
         print()
         if self._use_color:

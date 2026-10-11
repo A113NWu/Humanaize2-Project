@@ -83,9 +83,10 @@ button,input,select,textarea{font:inherit}
   display:flex;align-items:center;gap:13px;width:100%;height:44px;padding:0 12px;
   border:1px solid transparent;border-radius:13px;color:var(--muted);
   background:transparent;text-align:left;cursor:pointer;
-  transition:background .18s,color .18s,box-shadow .18s,border-color .18s;
+  transition:background .18s,color .18s,box-shadow .18s,border-color .18s,transform .15s;
 }
 .nav-item:hover{background:rgba(255,255,255,.08);color:var(--text)}
+.nav-item:active{transform:scale(.97)}
 .nav-item.active{
   color:var(--text);
   background:var(--glass-highlight),rgba(146,228,210,.16);
@@ -109,7 +110,9 @@ button,input,select,textarea{font:inherit}
 .mobile-menu{display:none;margin:0}
 
 .view{display:none;max-width:1080px;margin:auto}
-.view.active{display:block}
+.view.active{display:block;animation:viewIn .3s cubic-bezier(.22,.8,.36,1)}
+@keyframes viewIn{from{opacity:0;transform:translateY(10px) scale(.995)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.view.active{animation:none}}
 
 /* ---------- 玻璃面板 ---------- */
 .panel{
@@ -134,7 +137,10 @@ button,input,select,textarea{font:inherit}
 .message{
   max-width:80%;padding:12px 16px;border-radius:16px;white-space:pre-wrap;
   text-shadow:0 1px 2px rgba(0,0,0,.28);
+  animation:msgIn .25s cubic-bezier(.22,.8,.36,1);
 }
+@keyframes msgIn{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.message{animation:none}}
 .assistant{
   align-self:flex-start;
   background:linear-gradient(150deg,rgba(255,171,138,.30),rgba(255,157,131,.10));

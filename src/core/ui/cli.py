@@ -1,5 +1,8 @@
 """
-Humanaize v2.0 - CLI 聊天介面
+Humanaize v2.0 - CLI 聊天介面（Claude Code 風格）
+
+滾動式輸出 + 底部圓角輸入框，不整屏重繪，
+支持背景線程安全輸出（主線程統一打印）。
 """
 
 import os
@@ -7,6 +10,8 @@ import sys
 import re
 import shutil
 import threading
+import time
+import queue as queue_mod
 
 from core.thinking_engine import ThinkingEngine
 from memory import load_memory, save_memory, add
@@ -50,38 +55,41 @@ class Colors:
     CYAN = '\033[38;5;51m'
     WHITE = '\033[37m'
     GRAY = '\033[90m'
-    
+
     PURPLE = '\033[38;5;147m'
     GOLD = '\033[38;5;220m'
     PINK = '\033[38;5;213m'
     LIGHT_PURPLE = '\033[38;5;183m'
-    
+
     @classmethod
     def support_color(cls) -> bool:
         if sys.platform == "win32":
             try:
-                import subprocess
-                result = subprocess.run(
-                    ["reg", "query", "HKCU\\Console", "/v", "VirtualTerminalLevel"],
-                    capture_output=True,
-                    text=True
-                )
-                if result.returncode == 0 and "0x1" in result.stdout:
-                    return True
-                try:
-                    import ctypes
-                    kernel32 = ctypes.windll.kernel32
-                    hStdOut = kernel32.GetStdHandle(-11)
-                    mode = ctypes.c_ulong()
-                    kernel32.GetConsoleMode(hStdOut, ctypes.byref(mode))
-                    mode.value |= 4
-                    kernel32.SetConsoleMode(hStdOut, mode)
-                    return True
-                except:
-                    return False
+                import ctypes
+                kernel32 = ctypes.windll.kernel32
+                hStdOut = kernel32.GetStdHandle(-11)
+                mode = ctypes.c_ulong()
+                kernel32.GetConsoleMode(hStdOut, ctypes.byref(mode))
+                mode.value |= 4
+                kernel32.SetConsoleMode(hStdOut, mode)
+                return True
             except:
                 return False
         return True
+
+
+# 思考類型 → (前綴, 顏色)
+THOUGHT_STYLES = {
+    "gan_decision": ("GAN", Colors.PURPLE),
+    "gan_topic": ("Topic", Colors.GOLD),
+    "gan_argument": ("Arg A", Colors.BLUE),
+    "gan_counter_argument": ("Arg B", Colors.PINK),
+    "gan_synthesis": ("Syn", Colors.GREEN),
+    "web_search": ("Search", Colors.CYAN),
+    "break_silence": ("Silence", Colors.ORANGE),
+    "reflection": ("Reflect", Colors.LIGHT_PURPLE),
+    "internal": ("Think", Colors.YELLOW),
+}
 
 
 class HumanaizeCLI:
@@ -92,11 +100,16 @@ class HumanaizeCLI:
         self.gan_enabled = self.settings.get("gan_enabled", True)
         self.auto_break_silence = self.settings.get("auto_break_silence", True)
         self.language = self.settings.get("language", "Chinese")
-        
+
         self.running = True
         self.thinking_paused = False
-        self.render_lock = threading.Lock()
-        
+        self.show_commands = False  # 是否顯示命令提示
+
+        # Claude Code 風格：滾動輸出。所有打印集中在主線程，
+        # 背景線程只把 (kind, text) 放進隊列。
+        self._queue = queue_mod.Queue()
+        self._response_done = threading.Event()
+
         self.thinking_engine = ThinkingEngine(on_response_callback=self._on_response)
 
         try:
@@ -106,17 +119,17 @@ class HumanaizeCLI:
             state.set_memory(self.memory)
             state.set_personality(self.personality)
             start_api_server(host='127.0.0.1', port=8082)
-            print(f"[INFO] ThinkingEngine API server started on port 8082")
+            self._emit("sys", "ThinkingEngine API server started on port 8082")
         except Exception as e:
-            print(f"[WARN] Failed to start ThinkingEngine API server: {e}")
+            self._emit("sys", f"Failed to start ThinkingEngine API server: {e}")
 
         if QQ_SKILL_AVAILABLE:
             _qq_skill.set_thinking_engine(self.thinking_engine)
             _qq_skill.set_memory(self.memory)
             _qq_skill.set_ui_callback(self._handle_qq_message)
             _qq_skill.start_listener()
-            print(f"[INFO] QQ skill initialized and listener started")
-        
+            self._emit("sys", "QQ skill initialized and listener started")
+
         self.idle_engine = None
         if self.gan_enabled:
             self.idle_engine = IdleEngine(
@@ -125,110 +138,42 @@ class HumanaizeCLI:
                 idle_interval=300,
                 gan_enabled=True
             )
-        
-        self.chat_history = []
-        self.thought_history = []
-        self.system_logs = []
-        
-        self.width = 80
-        self.height = 24
-        self._detect_size()
-        
+
         self._use_color = Colors.support_color()
-        
-        self._init_welcome_message()
+
+    # ==================== 基礎工具 ====================
 
     def _t(self, key):
         translations = {
             "English": {
                 "cli_start": "Humanaize v{version} CLI started",
-                "gan_enabled": "GAN: ON",
-                "gan_disabled": "GAN: OFF",
-                "chat": "Chat",
-                "thought": "Thought",
-                "you": "You",
-                "ai": "Aize",
-                "thinking": "Thinking",
-                "response_generated": "Response generated",
-                "internal_thinking": "Internal thinking",
-                "gan_thinking_complete": "GAN thinking complete",
-                "error": "Error",
-                "info": "Info",
-                "success": "Success",
-                "warning": "Warning",
-                "thought_count": "Thoughts",
-                "message_count": "Messages",
-                "status": "Status",
-                "memory": "Memory",
-                "personality": "Personality",
-                "curiosity": "Curiosity",
-                "empathy": "Empathy",
-                "creativity": "Creativity",
-                "gan_mode": "GAN Mode",
-                "gan_enabled_short": "●",
-                "gan_disabled_short": "○",
-                "available_commands": "Commands:",
-                "show_help": "Show help",
-                "show_memory": "Show memories",
-                "show_status": "Show status",
-                "toggle_gan": "Toggle GAN",
-                "clear_screen": "Clear screen",
-                "quit_program": "Quit",
+                "you": "You", "ai": "Aize", "error": "Error",
+                "no_reply": "Aize chose not to respond",
+                "available_commands": "Commands",
+                "show_help": "Show help", "show_memory": "Show memories",
+                "show_status": "Show status", "toggle_gan": "Toggle GAN",
+                "clear_screen": "Clear screen", "quit_program": "Quit",
                 "no_memory_data": "No memory data",
                 "system_status": "System Status",
-                "enabled": "ON",
-                "disabled": "OFF",
-                "trait_info": "Traits: C={}, E={}, Cr={}",
+                "enabled": "ON", "disabled": "OFF",
+                "message_count": "Messages", "thought_count": "Thoughts",
                 "gan_toggled": "GAN mode {}",
-                "topic": "Topic",
-                "argument": "Arg",
-                "counter_argument": "Counter",
-                "rebuttal": "Rebuttal",
+                "shutdown": "Aize shut down. Chat history saved. Bye!",
             },
             "Chinese": {
                 "cli_start": "Humanaize v{version} CLI 已启动",
-                "gan_enabled": "GAN: 开启",
-                "gan_disabled": "GAN: 关闭",
-                "chat": "对话",
-                "thought": "思考",
-                "you": "你",
-                "ai": "Aize",
-                "thinking": "思考中",
-                "response_generated": "回复已生成",
-                "internal_thinking": "内部思考",
-                "gan_thinking_complete": "GAN思考完成",
-                "error": "错误",
-                "info": "信息",
-                "success": "成功",
-                "warning": "警告",
-                "thought_count": "思考",
-                "message_count": "消息",
-                "status": "状态",
-                "memory": "记忆",
-                "personality": "人格",
-                "curiosity": "好奇心",
-                "empathy": "同理心",
-                "creativity": "创造力",
-                "gan_mode": "GAN模式",
-                "gan_enabled_short": "●",
-                "gan_disabled_short": "○",
-                "available_commands": "可用命令:",
-                "show_help": "显示帮助",
-                "show_memory": "显示记忆",
-                "show_status": "显示状态",
-                "toggle_gan": "切换GAN",
-                "clear_screen": "清屏",
-                "quit_program": "退出",
+                "you": "你", "ai": "Aize", "error": "错误",
+                "no_reply": "Aize 選擇不回應這次輸入",
+                "available_commands": "可用命令",
+                "show_help": "显示帮助", "show_memory": "显示记忆",
+                "show_status": "显示状态", "toggle_gan": "切换GAN",
+                "clear_screen": "清屏", "quit_program": "退出",
                 "no_memory_data": "无记忆数据",
                 "system_status": "系统状态",
-                "enabled": "开启",
-                "disabled": "关闭",
-                "trait_info": "特质: 好奇={}, 同理={}, 创造={}",
+                "enabled": "开启", "disabled": "关闭",
+                "message_count": "消息", "thought_count": "思考",
                 "gan_toggled": "GAN模式已{}",
-                "topic": "主题",
-                "argument": "论点",
-                "counter_argument": "反论",
-                "rebuttal": "反驳",
+                "shutdown": "Aize 已關閉，對話歷史已保存，再見！",
             }
         }
         lang = self.language if self.language in translations else "English"
@@ -236,34 +181,6 @@ class HumanaizeCLI:
         if "{version}" in text:
             text = text.replace("{version}", get_version())
         return text
-
-    def _init_welcome_message(self):
-        self.system_logs.append({
-            "type": "info",
-            "message": self._t("cli_start"),
-            "time": self._get_time_str()
-        })
-
-    def _get_time_str(self):
-        from datetime import datetime
-        return datetime.now().strftime("%H:%M:%S")
-
-    def _detect_size(self):
-        w, h = 80, 24
-        try:
-            size = shutil.get_terminal_size((w, h))
-            w = size.columns
-            h = size.lines
-        except Exception:
-            pass
-        if h > 40:
-            h = 25
-        if h < 15:
-            h = 15
-        if w < 60:
-            w = 60
-        self.width = w
-        self.height = h
 
     def _load_settings(self):
         try:
@@ -274,390 +191,280 @@ class HumanaizeCLI:
         except:
             return {"gan_enabled": True, "auto_break_silence": True}
 
-    def _strip(self, text):
-        return re.sub(r'\x1b\[[0-9;]*m', '', text)
+    def _c(self, code, text):
+        if not self._use_color:
+            return text
+        return f"{code}{text}{Colors.RESET}"
 
-    def _clear_screen(self):
-        if sys.platform == "win32":
-            os.system('cls')
-        else:
-            sys.stdout.write('\033[2J\033[H')
-            sys.stdout.flush()
+    def _term_width(self):
+        try:
+            return shutil.get_terminal_size().columns
+        except Exception:
+            return 80
 
-    def _wrap_text(self, text, max_width):
-        lines = text.split('\n')
-        wrapped_lines = []
-        for line in lines:
-            if not line:
-                wrapped_lines.append("")
-                continue
-            current_line = ""
-            current_length = 0
-            words = line.split(' ')
-            for word in words:
-                word_length = len(self._strip(word))
-                if current_line:
-                    if current_length + 1 + word_length <= max_width:
-                        current_line += " " + word
-                        current_length += 1 + word_length
+    # ==================== 事件入隊（任意線程可調用） ====================
+
+    def _emit(self, kind, text, prefix="", color=None):
+        if text:
+            self._queue.put((kind, str(text), prefix, color))
+
+    # ==================== 打印（僅主線程） ====================
+
+    def _flush(self):
+        """Claude Code 風格的輸出顯示"""
+        printed = False
+        while True:
+            try:
+                kind, text, prefix, color = self._queue.get_nowait()
+            except queue_mod.Empty:
+                break
+            printed = True
+
+            if kind == "user":
+                # 用戶輸入 - Claude Code 風格
+                print(f"{self._c(Colors.WHITE, '┌' + '─' * (min(self._term_width() - 2, 100)) + '┐')}")
+                print(f"{self._c(Colors.CYAN, '│')} {self._c(Colors.BOLD, 'You:')} {text}")
+                print(f"{self._c(Colors.WHITE, '└' + '─' * (min(self._term_width() - 2, 100)) + '┘')}")
+                print()
+
+            elif kind == "ai":
+                # AI 回覆 - Claude Code 風格
+                lines = text.split('\n')
+                print(f"{self._c(Colors.ORANGE, '┌' + '─' * (min(self._term_width() - 2, 100)) + '┐')}")
+                for i, line in enumerate(lines):
+                    if i == 0:
+                        print(f"{self._c(Colors.ORANGE, '│')} {self._c(Colors.BOLD, 'Aize:')} {line}")
                     else:
-                        wrapped_lines.append(current_line)
-                        current_line = word
-                        current_length = word_length
-                else:
-                    current_line = word
-                    current_length = word_length
-            if current_line:
-                wrapped_lines.append(current_line)
-        return wrapped_lines
+                        print(f"{self._c(Colors.ORANGE, '│')}    {line}")
+                print(f"{self._c(Colors.ORANGE, '└' + '─' * (min(self._term_width() - 2, 100)) + '┘')}")
+                print()
 
-    def _build_status_line(self):
-        msgs = len(self.memory.get('messages', []))
-        thoughts = len(self.memory.get('thoughts', []))
-        gan_status = "●" if self.gan_enabled else "○"
-        personality = self.personality.get("name", "Aize")
-        
-        if self._use_color:
-            gan_color = Colors.GREEN if self.gan_enabled else Colors.RED
-            status = f" {Colors.BOLD}{Colors.ORANGE}{personality}{Colors.RESET}"
-            status += f" {Colors.DIM}v{get_version()}{Colors.RESET}"
-            status += f"  {gan_color}{gan_status}{Colors.RESET} GAN"
-            status += f"  {Colors.BLUE}{msgs}{Colors.RESET} {self._t('message_count')}"
-            status += f"  {Colors.MAGENTA}{thoughts}{Colors.RESET} {self._t('thought_count')}"
-        else:
-            status = f" {personality} v{get_version()}  {gan_status} GAN  {msgs} Messages  {thoughts} Thoughts"
-        
-        return status
+            elif kind == "ai_auto":
+                # AI 自動消息 - 較小的框架
+                print(f"{self._c(Colors.CYAN, '┌──────────────────────────────────────────────┐')}")
+                print(f"{self._c(Colors.CYAN, '│')} {self._c(Colors.BOLD, 'Auto:')} {text}")
+                print(f"{self._c(Colors.CYAN, '└──────────────────────────────────────────────┘')}")
+                print()
 
-    def _build_system_log_line(self):
-        if not self.system_logs:
-            return ("", "")
-        
-        recent_log = self.system_logs[-1]
-        log_time = recent_log.get("time", "")
-        log_type = recent_log.get("type", "")
-        log_msg = recent_log.get("message", "")[:60]
-        
-        prefix = ""
-        if log_type == "success":
-            prefix = "✓"
-        elif log_type == "warning":
-            prefix = "⚠"
-        elif log_type == "error":
-            prefix = "✗"
-        
-        if prefix:
-            content = f"[{log_time}] {prefix} {log_msg}"
-        else:
-            content = f"[{log_time}] {log_msg}"
-        
-        return (content, log_type)
+            elif kind == "thought":
+                # 思考過程 - Claude Code 思考風格
+                style = THOUGHT_STYLES.get(prefix, ("Think", Colors.YELLOW))
+                col = color or style[1]
+                icon = "🤔" if prefix == "gan_synthesis" else "💭"
 
-    def _render(self):
-        with self.render_lock:
-            self._clear_screen()
-            
-            w = self.width
-            h = self.height
-            
-            lines_to_render = []
-            
-            lines_to_render.append(self._build_status_line())
-            
-            lines_to_render.append("─" * w)
-            
-            header_rows = 2
-            footer_rows = 1
-            content_rows = h - header_rows - footer_rows - 2
-            if content_rows < 3:
-                content_rows = 3
-            
-            all_lines = []
-            chat_w = w - 4
-            
-            for i in range(max(len(self.chat_history), len(self.thought_history))):
-                if i < len(self.chat_history):
-                    wrapped = self._wrap_text(self.chat_history[i], chat_w)
-                    all_lines.extend(wrapped)
-                if i < len(self.thought_history):
-                    wrapped = self._wrap_text(self.thought_history[i], chat_w)
-                    all_lines.extend(wrapped)
-            
-            display_lines = all_lines[-content_rows:]
-            
-            for line in display_lines:
-                line_clean = self._strip(line)[:chat_w]
-                lines_to_render.append(f" {line_clean}")
-            
-            lines_to_render.append("─" * w)
-            
-            sys_log_content, log_type = self._build_system_log_line()
-            if sys_log_content:
-                content_w = w - 4
-                if len(sys_log_content) > content_w:
-                    sys_log_content = sys_log_content[:content_w]
-                
-                if self._use_color:
-                    color_map = {
-                        "success": Colors.GREEN,
-                        "warning": Colors.YELLOW,
-                        "error": Colors.RED,
-                        "info": Colors.GRAY
-                    }
-                    log_color = color_map.get(log_type, Colors.GRAY)
-                    lines_to_render.append(f" {log_color}{sys_log_content}{Colors.RESET}")
-                else:
-                    lines_to_render.append(f" {sys_log_content}")
-            
-            for line in lines_to_render:
-                line_stripped = self._strip(line)
-                if len(line_stripped) < w:
-                    line += " " * (w - len(line_stripped))
-                print(line)
-            
-            if self._use_color:
-                sys.stdout.write(f"\n{Colors.BOLD}{Colors.PRIMARY}> {Colors.RESET}")
-            else:
-                sys.stdout.write("\n> ")
-            sys.stdout.flush()
+                print(f"{self._c(col, '┌─────────────────────────────────────────────┐')}")
+                print(f"{self._c(col, '│')} {icon} {style[0]}: {text}")
+                print(f"{self._c(col, '└─────────────────────────────────────────────┘')}")
+                print()
 
-    def _add_chat(self, msg):
-        self.chat_history.append(msg)
-        if len(self.chat_history) > 100:
-            self.chat_history = self.chat_history[-100:]
+            elif kind == "command":
+                # 命令執行
+                print(f"{self._c(Colors.YELLOW, '┌─────────────────────────────────────────────┐')}")
+                print(f"{self._c(Colors.YELLOW, '│')} {self._c(Colors.BOLD, 'Command:')} {text}")
+                print(f"{self._c(Colors.YELLOW, '└─────────────────────────────────────────────┘')}")
+                print()
 
-    def _add_thought(self, msg):
-        self.thought_history.append(msg)
-        if len(self.thought_history) > 100:
-            self.thought_history = self.thought_history[-100:]
+            elif kind == "output":
+                # 輸出結果 - Claude Code 輸出風格
+                lines = text.splitlines() or [text]
+                print(f"{self._c(Colors.DIM, '┌' + '─' * (min(self._term_width() - 2, 100)) + '┐')}")
+                for i, ln in enumerate(lines, 1):
+                    print(f"{self._c(Colors.DIM, '│')} {self._c(Colors.BLUE, f'$ {i:02d}')}: {ln}")
+                print(f"{self._c(Colors.DIM, '└' + '─' * (min(self._term_width() - 2, 100)) + '┘')}")
+                print()
 
-    def _add_system_log(self, type, message):
-        self.system_logs.append({
-            "type": type,
-            "message": message,
-            "time": self._get_time_str()
-        })
-        if len(self.system_logs) > 20:
-            self.system_logs = self.system_logs[-20:]
+            elif kind == "error":
+                # 錯誤信息 - Claude Code 錯誤風格
+                print(f"{self._c(Colors.RED, '┌─────────────────────────────────────────────┐')}")
+                print(f"{self._c(Colors.RED, '│')} {self._c(Colors.BOLD, 'Error:')} {text}")
+                print(f"{self._c(Colors.RED, '└─────────────────────────────────────────────┘')}")
+                print()
+
+            elif kind == "sys":
+                # 系統信息 - Claude Code 系統風格
+                print(f"{self._c(Colors.GRAY, '┌─────────────────────────────────────────────┐')}")
+                print(f"{self._c(Colors.GRAY, '│')} {self._c(Colors.BLUE, '•')} {text}")
+                print(f"{self._c(Colors.GRAY, '└─────────────────────────────────────────────┘')}")
+                print()
+
+        return printed
+
+    def _print_banner(self):
+        """Claude Code 風格的標題欄"""
+        w = min(self._term_width() - 2, 100)
+        print()
+        print("╭" + "─" * w + "╮")
+        print(f"│{self._c(Colors.BOLD + Colors.BLUE, '  Humanaize')} {self._c(Colors.DIM, f'v{get_version()} CLI')}{' ' * (w - 14 - len(get_version()))}│")
+        print("├" + "─" * w + "┤")
+
+        name = self.personality.get("name", "Aize")
+        gan_status = "GAN" if self.gan_enabled else "OFF"
+        gan_color = Colors.GREEN if self.gan_enabled else Colors.GRAY
+
+        status_line = f"│{self._c(Colors.CYAN, f'  > {name}')}{self._c(Colors.DIM, ' | ')}{self._c(gan_color, f'GAN: {gan_status}')}{' ' * (w - 16 - len(name) - 9 - len(gan_status))}│"
+        print(status_line)
+
+        # 顯示提示
+        hint = "Type /help for commands or start chatting"
+        print(f"│{self._c(Colors.DIM, f'  {hint}')}{' ' * (w - 5 - len(hint))}│")
+
+        print("╰" + "─" * w + "╯")
+        print()
+
+    def _draw_input_box(self):
+        """Claude Code 風格的輸入框"""
+        w = min(self._term_width() - 2, 100)
+
+        if self.show_commands:
+            # Claude Code 風格的命令提示
+            print(self._c(Colors.DIM, "┌" + "─" * w + "┐"))
+            print(self._c(Colors.DIM, "│") + " Commands: " +
+                  self._c(Colors.BLUE, "/help") + " " +
+                  self._c(Colors.CYAN, "/mem") + " " +
+                  self._c(Colors.GREEN, "/status") + " " +
+                  self._c(Colors.YELLOW, "/gan") + " " +
+                  self._c(Colors.MAGENTA, "/clear") + " " +
+                  self._c(Colors.RED, "/quit"))
+            print(self._c(Colors.DIM, "└" + "─" * w + "┘"))
+            print()
+
+        # Claude Code 風格的輸入提示
+        if self.thinking_paused:
+            # 顯示 AI 思考狀態
+            print(f"{self._c(Colors.YELLOW, '┌─────────────────────────────────────────────────────────────┐')}")
+            print(f"{self._c(Colors.YELLOW, '│')} 🤖 AI is thinking... {' ' * (65 - 20)} {self._c(Colors.YELLOW, '│')}")
+            print(f"{self._c(Colors.YELLOW, '└─────────────────────────────────────────────────────────────┘')}")
+            print()
+
+        # 輸入框
+        print(f"{self._c(Colors.DIM, '┌' + '─' * w + '┐')}")
+        print(f"{self._c(Colors.DIM, '│')} {self._c(Colors.ORANGE, '❯')} ", end="")
+        sys.stdout.flush()
+
+    def _finish_input_box(self):
+        """完成輸入框顯示"""
+        print()  # 換行
+        print(f"{self._c(Colors.DIM, f'└{'─' * (min(self._term_width() - 2, 100))}┘')}")
+
+    # ==================== 背景事件 → 隊列 ====================
 
     def _handle_qq_message(self, msg):
         try:
             sender = msg.get('from', 'Unknown')
             message = msg.get('message', '')
             msg_type = msg.get('type', 'received')
-            if msg_type == 'sent':
-                print(f"{Colors.CYAN}[QQ→] {sender}: {message}{Colors.RESET}")
-            else:
-                print(f"{Colors.GREEN}[QQ←] {sender}: {message}{Colors.RESET}")
+            arrow = "QQ→" if msg_type == 'sent' else "QQ←"
+            self._emit("output", f"[{arrow}] {sender}: {message}")
         except Exception:
             pass
 
     def _on_response(self, response):
         rtype = response.get("type", "")
-        
-        if rtype == "chat_response":
-            r = response.get("reply", "")
+
+        if rtype in ("chat_response", "chat"):
+            r = response.get("reply", "") if rtype == "chat_response" else response.get("response", "")
             r = " ".join(r.split())
             if r:
-                if self._use_color:
-                    self._add_chat(f"{Colors.GREEN}{self._t('ai')}:{Colors.RESET} {r}")
-                else:
-                    self._add_chat(f"{self._t('ai')}: {r}")
+                self._emit("ai", r)
             self._resume()
-            self._add_system_log("success", self._t("response_generated"))
+            self._response_done.set()
 
         elif rtype == "bug_repair":
             status = response.get("status", "reported")
             message = response.get("message", "已记录问题。")
-            self._add_chat(f"{self._t('system')}: bug 状态={status}，{message}")
-            self._add_system_log("info", f"bug report handled: {status}")
-        
-        elif rtype == "chat":
-            r = response.get("response", "")
-            r = " ".join(r.split())
-            if r:
-                if self._use_color:
-                    self._add_chat(f"{Colors.GREEN}{self._t('ai')}:{Colors.RESET} {r}")
-                else:
-                    self._add_chat(f"AI: {r}")
-            self._resume()
-            self._add_system_log("success", self._t("response_generated"))
-        
+            self._emit("output", f"bug 狀態={status}，{message}")
+            self._response_done.set()
+
         elif rtype == "error":
             err = response.get("error", "")
             if err:
-                if self._use_color:
-                    self._add_chat(f"{Colors.RED}{self._t('error')}:{Colors.RESET} {err}")
-                else:
-                    self._add_chat(f"{self._t('error')}: {err}")
+                self._emit("error", err)
             self._resume()
-            self._add_system_log("error", f"{self._t('error')}: {err}")
-        
+            self._response_done.set()
+
         elif rtype == "internal_thought":
             t = response.get("thought", "")
             thought_type = response.get("thought_type", "internal")
-            
             if t:
-                type_config = {
-                    "gan_decision": {"prefix": "GAN", "color": Colors.PURPLE},
-                    "gan_topic": {"prefix": "Topic", "color": Colors.GOLD},
-                    "gan_argument": {"prefix": "Arg A", "color": Colors.BLUE},
-                    "gan_counter_argument": {"prefix": "Arg B", "color": Colors.PINK},
-                    "gan_synthesis": {"prefix": "Syn", "color": Colors.GREEN},
-                    "web_search": {"prefix": "Search", "color": Colors.CYAN},
-                    "break_silence": {"prefix": "Silence", "color": Colors.ORANGE},
-                    "reflection": {"prefix": "Reflect", "color": Colors.LIGHT_PURPLE},
-                    "internal": {"prefix": "Think", "color": Colors.YELLOW}
-                }
-                
-                config = type_config.get(thought_type, type_config["internal"])
-                
-                if self._use_color:
-                    self._add_thought(f"{config['color']}[{config['prefix']}]{Colors.RESET} {t}")
-                else:
-                    self._add_thought(f"[{config['prefix']}] {t}")
-            self._add_system_log("info", self._t("internal_thinking"))
-        
+                self._emit("thought", t, prefix=thought_type)
+
         elif rtype == "autonomous_message":
             msg = response.get("message", "")
             if msg:
-                if self._use_color:
-                    self._add_chat(f"{Colors.CYAN}{self._t('ai')}:{Colors.RESET} {msg}")
-                else:
-                    self._add_chat(f"{self._t('ai')}: {msg}")
-            self._add_system_log("info", "Autonomous message")
-        
+                self._emit("ai_auto", msg)
+
         elif rtype == "gan_complete":
             gan_result = response.get("gan_result", {})
             should, msg = self.thinking_engine.should_proactively_speak(self.memory, gan_result)
             if should and msg:
-                if self._use_color:
-                    self._add_chat(f"{Colors.CYAN}{self._t('ai')}:{Colors.RESET} {msg}")
-                else:
-                    self._add_chat(f"{self._t('ai')}: {msg}")
-            self._add_system_log("success", self._t("gan_thinking_complete"))
-        
+                self._emit("ai_auto", msg)
+
         elif rtype == "gan_topic":
             topic = response.get("gan_topic", response.get("topic", ""))
             if topic:
-                if self._use_color:
-                    self._add_thought(f"{Colors.GOLD}[{self._t('topic')}]{Colors.RESET} {topic}")
-                else:
-                    self._add_thought(f"[{self._t('topic')}] {topic}")
-            self._add_system_log("info", f"GAN Topic: {topic[:30]}...")
-        
+                self._emit("thought", topic, prefix="gan_topic")
+
         elif rtype == "gan_argument":
             arg = response.get("gan_argument", response.get("argument", ""))
             if arg:
-                if self._use_color:
-                    self._add_thought(f"{Colors.BLUE}[{self._t('argument')}]{Colors.RESET} {arg}")
-                else:
-                    self._add_thought(f"[{self._t('argument')}] {arg}")
-        
+                self._emit("thought", arg, prefix="gan_argument")
+
         elif rtype == "gan_counter_argument":
             counter = response.get("gan_counter_argument", response.get("counter", ""))
             if counter:
-                if self._use_color:
-                    self._add_thought(f"{Colors.PINK}[{self._t('counter_argument')}]{Colors.RESET} {counter}")
-                else:
-                    self._add_thought(f"[{self._t('counter_argument')}] {counter}")
-        
+                self._emit("thought", counter, prefix="gan_counter_argument")
+
         elif rtype == "gan_synthesis":
             synthesis = response.get("gan_synthesis", "")
             if synthesis:
-                if self._use_color:
-                    self._add_thought(f"{Colors.GREEN}[Syn]{Colors.RESET} {synthesis}")
-                else:
-                    self._add_thought(f"[Syn] {synthesis}")
-        
+                self._emit("thought", synthesis, prefix="gan_synthesis")
+
         elif rtype == "command_start":
             msg = response.get("message", "")
             if msg:
-                if self._use_color:
-                    self._add_chat(f"{Colors.YELLOW}[Command]{Colors.RESET} {msg}")
-                else:
-                    self._add_chat(f"[Command] {msg}")
-        
+                self._emit("command", msg)
+
         elif rtype == "command_result":
             output = response.get("output", "")
             if output:
-                if self._use_color:
-                    self._add_chat(f"{Colors.CYAN}[Output]{Colors.RESET}\n{output}")
-                else:
-                    self._add_chat(f"[Output]\n{output}")
-        
-        self._render()
+                self._emit("output", output)
 
     def _on_idle_callback(self, response):
         rtype = response.get("type", "")
-        
+
         if rtype == "internal_thought":
             t = response.get("thought", "")
             thought_type = response.get("thought_type", "internal")
-            
             if t:
-                type_config = {
-                    "gan_decision": {"prefix": "GAN", "color": Colors.PURPLE},
-                    "gan_topic": {"prefix": "Topic", "color": Colors.GOLD},
-                    "gan_argument": {"prefix": "Arg A", "color": Colors.BLUE},
-                    "gan_counter_argument": {"prefix": "Arg B", "color": Colors.PINK},
-                    "gan_synthesis": {"prefix": "Syn", "color": Colors.GREEN},
-                    "web_search": {"prefix": "Search", "color": Colors.CYAN},
-                    "break_silence": {"prefix": "Silence", "color": Colors.ORANGE},
-                    "reflection": {"prefix": "Reflect", "color": Colors.LIGHT_PURPLE},
-                    "internal": {"prefix": "Think", "color": Colors.YELLOW}
-                }
-                
-                config = type_config.get(thought_type, type_config["internal"])
-                
-                if self._use_color:
-                    self._add_thought(f"{config['color']}[{config['prefix']}]{Colors.RESET} {t}")
-                else:
-                    self._add_thought(f"[{config['prefix']}] {t}")
-        
+                self._emit("thought", t, prefix=thought_type)
+
         elif rtype == "gan_topic":
             topic = response.get("gan_topic", response.get("topic", ""))
             if topic:
-                if self._use_color:
-                    self._add_thought(f"{Colors.GOLD}[{self._t('topic')}]{Colors.RESET} {topic}")
-                else:
-                    self._add_thought(f"[{self._t('topic')}] {topic}")
-            self._add_system_log("info", f"GAN Topic: {topic[:30]}...")
-        
+                self._emit("thought", topic, prefix="gan_topic")
+
         elif rtype == "gan_argument":
             arg = response.get("gan_argument", response.get("argument", ""))
             if arg:
-                if self._use_color:
-                    self._add_thought(f"{Colors.BLUE}[{self._t('argument')}]{Colors.RESET} {arg}")
-                else:
-                    self._add_thought(f"[{self._t('argument')}] {arg}")
-        
+                self._emit("thought", arg, prefix="gan_argument")
+
         elif rtype == "gan_counter":
             counter = response.get("gan_counter", response.get("counter", ""))
             if counter:
-                if self._use_color:
-                    self._add_thought(f"{Colors.PINK}[{self._t('counter_argument')}]{Colors.RESET} {counter}")
-                else:
-                    self._add_thought(f"[{self._t('counter_argument')}] {counter}")
-        
+                self._emit("thought", counter, prefix="gan_counter_argument")
+
         elif rtype == "gan_rebuttal":
             rebuttal = response.get("gan_rebuttal", response.get("rebuttal", ""))
             if rebuttal:
-                if self._use_color:
-                    self._add_thought(f"{Colors.MAGENTA}[{self._t('rebuttal')}]{Colors.RESET} {rebuttal}")
-                else:
-                    self._add_thought(f"[{self._t('rebuttal')}] {rebuttal}")
-        
+                self._emit("thought", rebuttal, prefix="gan_counter_argument")
+
         elif rtype == "gan_complete":
             gan_result = response.get("gan_result", {})
             should, msg = self.thinking_engine.should_proactively_speak(self.memory, gan_result)
             if should and msg:
-                if self._use_color:
-                    self._add_chat(f"{Colors.CYAN}{self._t('ai')}:{Colors.RESET} {msg}")
-                else:
-                    self._add_chat(f"{self._t('ai')}: {msg}")
-        
-        self._render()
+                self._emit("ai_auto", msg)
+
+    # ==================== 主流程 ====================
 
     def _pause(self):
         self.thinking_paused = True
@@ -670,26 +477,17 @@ class HumanaizeCLI:
             self.idle_engine.resume()
 
     def send(self, text):
-        if not text.strip():
-            return
-
-        if self._use_color:
-            self._add_chat(f"{Colors.BLUE}{self._t('you')}:{Colors.RESET} {text}")
-        else:
-            self._add_chat(f"{self._t('you')}: {text}")
-        
-        add(self.memory, "user", text)
-        save_memory(self.memory)
-        self._add_system_log("info", f"Message sent: {text[:30]}...")
-        
-        self._render()
         self._pause()
 
         should, _ = self.thinking_engine.should_answer_user(text)
         if not should:
+            self._emit("sys", self._t("no_reply"))
             self._resume()
-            self._render()
+            self._response_done.set()
             return
+
+        add(self.memory, "user", text)
+        save_memory(self.memory)
 
         prompt = f"\n\nUser: {text}\nAssistant:"
         try:
@@ -700,134 +498,254 @@ class HumanaizeCLI:
         except TypeError:
             self.thinking_engine.queue_chat_task(prompt)
 
-    def run(self):
-        if sys.stdin is None:
-            print("無法取得控制台輸入。請在命令提示符（cmd）中執行：humanaize2 boot -m cli")
-            return
-        self._render()
+    def _wait_response(self):
+        """等待 AI 回覆完成，期間持續打印隊列內容"""
+        self._response_done.clear()
+        while not self._response_done.wait(timeout=0.12):
+            self._flush()
+        self._flush()
+        time.sleep(0.05)
+        self._flush()
 
-        while self.running:
-            try:
-                user_input = input()
+    def _cmd(self, raw):
+        """Claude Code 風格的命令處理"""
+        cmd = raw.lower().strip()
 
-                if not user_input.strip():
-                    self._render()
-                    continue
-
-                if user_input.startswith("/"):
-                    self._cmd(user_input)
-                    self._render()
-                else:
-                    self.send(user_input)
-
-            except (KeyboardInterrupt, EOFError):
-                break
-            except RuntimeError:
-                # input(): lost sys.stdin — 控制台句柄不可用
-                print("控制台輸入已斷開，請在命令提示符（cmd）中重新執行：humanaize2 boot -m cli")
-                break
-
-        self._shutdown()
-
-    def _cmd(self, cmd):
-        cmd = cmd.lower().strip()
-        
         if cmd == "/help":
-            if self._use_color:
-                help_text = f"{Colors.ORANGE}{self._t('available_commands')}{Colors.RESET}\n"
-                help_text += f"  {Colors.BLUE}/help{Colors.RESET}    - {self._t('show_help')}\n"
-                help_text += f"  {Colors.BLUE}/mem{Colors.RESET}     - {self._t('show_memory')}\n"
-                help_text += f"  {Colors.BLUE}/status{Colors.RESET}  - {self._t('show_status')}\n"
-                help_text += f"  {Colors.BLUE}/gan{Colors.RESET}     - {self._t('toggle_gan')}\n"
-                help_text += f"  {Colors.BLUE}/clear{Colors.RESET}   - {self._t('clear_screen')}\n"
-                help_text += f"  {Colors.BLUE}/quit{Colors.RESET}    - {self._t('quit_program')}"
-                self._add_chat(help_text)
-            else:
-                help_text = f"{self._t('available_commands')}\n"
-                help_text += f"  /help    - {self._t('show_help')}\n"
-                help_text += f"  /mem     - {self._t('show_memory')}\n"
-                help_text += f"  /status  - {self._t('show_status')}\n"
-                help_text += f"  /gan     - {self._t('toggle_gan')}\n"
-                help_text += f"  /clear   - {self._t('clear_screen')}\n"
-                help_text += f"  /quit    - {self._t('quit_program')}"
-                self._add_chat(help_text)
-        
+            # Claude Code 風格的幫助界面
+            w = min(self._term_width() - 4, 90)
+            print(f"{self._c(Colors.BLUE, '┌' + '─' * w + '┐')}")
+            print(f"{self._c(Colors.BLUE, '│')} {self._c(Colors.BOLD + Colors.WHITE, ' Commands ').center(w)} {self._c(Colors.BLUE, '│')}")
+            print(f"{self._c(Colors.BLUE, '├' + '─' * w + '┤')}")
+
+            commands = [
+                ("/help", "Show available commands", "List all CLI commands"),
+                ("/mem", "Show conversation history", "Display recent messages"),
+                ("/status", "Show system status", "View current system state"),
+                ("/gan", "Toggle GAN mode", "Switch thinking mode on/off"),
+                ("/clear", "Clear screen", "Clear the terminal display"),
+                ("/quit", "Exit program", "Close Humanaize CLI")
+            ]
+
+            for c, d, desc in commands:
+                cmd_line = f"│ {self._c(Colors.CYAN, c.ljust(12))} {self._c(Colors.WHITE, d)} - {self._c(Colors.GRAY, desc)}"
+                padding = w - len(cmd_line.rstrip()) + 1
+                print(f"{cmd_line}{' ' * padding}{self._c(Colors.BLUE, '│')}")
+
+            print(f"{self._c(Colors.BLUE, '└' + '─' * w + '┘')}")
+            print()
+
         elif cmd == "/mem":
-            msgs = self.memory.get("messages", [])[-3:]
+            # Claude Code 風格的記憶顯示
+            w = min(self._term_width() - 4, 90)
+            print(f"{self._c(Colors.CYAN, '┌' + '─' * w + '┐')}")
+            print(f"{self._c(Colors.CYAN, '│')} {self._c(Colors.BOLD + Colors.WHITE, ' Recent Conversations ').center(w)} {self._c(Colors.CYAN, '│')}")
+            print(f"{self._c(Colors.CYAN, '├' + '─' * w + '┤')}")
+
+            msgs = self.memory.get("messages", [])[-5:]
             if msgs:
-                for m in msgs:
+                for i, m in enumerate(msgs, 1):
                     role = m.get('role', 'unknown')
-                    content = m.get('content', '')[:50]
-                    time = m.get('time', '')[:19]
-                    if self._use_color:
-                        self._add_chat(f"{Colors.GRAY}[{time}] {role}: {content}{Colors.RESET}")
-                    else:
-                        self._add_chat(f"[{time}] {role}: {content}")
+                    content = m.get('content', '')[:80]
+                    t = m.get('time', '')[:16] if m.get('time') else ''
+                    role_icon = "👤" if role == "user" else "🤖"
+                    role_color = Colors.GREEN if role == "user" else Colors.ORANGE
+
+                    print(f"{self._c(Colors.CYAN, '│')} {self._c(Colors.YELLOW, f'#{i:2d}')} "
+                          f"{role_icon} {self._c(role_color, role)} "
+                          f"{self._c(Colors.DIM, f'@{t}')}")
+                    # 縮排內容
+                    content_lines = self._wrap_text(content, w - 8)
+                    for j, line in enumerate(content_lines):
+                        if j == 0:
+                            print(f"{self._c(Colors.CYAN, '│')}    {line}")
+                        else:
+                            print(f"{self._c(Colors.CYAN, '│')}    {line}")
+                    if i < len(msgs):
+                        print(f"{self._c(Colors.CYAN, '├' + '─' * w + '┤')}")
             else:
-                if self._use_color:
-                    self._add_chat(f"{Colors.GRAY}{self._t('no_memory_data')}{Colors.RESET}")
-                else:
-                    self._add_chat(self._t('no_memory_data'))
-        
+                print(f"{self._c(Colors.CYAN, '│')}  {self._t('no_memory_data')}")
+
+            print(f"{self._c(Colors.CYAN, '└' + '─' * w + '┘')}")
+            print()
+
         elif cmd == "/status":
-            gan_status = self._t('enabled') if self.gan_enabled else self._t('disabled')
+            # Claude Code 風格的狀態顯示
+            w = min(self._term_width() - 4, 90)
+            print(f"{self._c(Colors.GREEN, '┌' + '─' * w + '┐')}")
+            print(f"{self._c(Colors.GREEN, '│')} {self._c(Colors.BOLD + Colors.WHITE, ' System Status ').center(w)} {self._c(Colors.GREEN, '│')}")
+            print(f"{self._c(Colors.GREEN, '├' + '─' * w + '┤')}")
+
+            gan_status = "Enabled" if self.gan_enabled else "Disabled"
             msg_count = len(self.memory.get('messages', []))
             thought_count = len(self.memory.get('thoughts', []))
             name = self.personality.get("name", "Aize")
 
-            if self._use_color:
-                status_text = f"{Colors.BLUE}{self._t('system_status')}{Colors.RESET}\n"
-                status_text += f"  GAN: {Colors.GREEN if self.gan_enabled else Colors.RED}{gan_status}{Colors.RESET}\n"
-                status_text += f"  {self._t('message_count')}: {Colors.BLUE}{msg_count}{Colors.RESET}\n"
-                status_text += f"  {self._t('thought_count')}: {Colors.MAGENTA}{thought_count}{Colors.RESET}\n"
-                status_text += f"  Name: {Colors.CYAN}{name}{Colors.RESET}"
-                self._add_chat(status_text)
-            else:
-                status_text = f"{self._t('system_status')}\n"
-                status_text += f"  GAN: {gan_status}\n"
-                status_text += f"  {self._t('message_count')}: {msg_count}\n"
-                status_text += f"  {self._t('thought_count')}: {thought_count}\n"
-                status_text += f"  Name: {name}"
-                self._add_chat(status_text)
-        
+            # 狀態項目 - Claude Code 風格
+            status_items = [
+                ("AI Name", name, Colors.CYAN),
+                ("GAN Mode", gan_status, Colors.GREEN if self.gan_enabled else Colors.RED),
+                ("Message Count", str(msg_count), Colors.BLUE),
+                ("Thought Count", str(thought_count), Colors.MAGENTA)
+            ]
+
+            for label, value, color in status_items:
+                print(f"{self._c(Colors.GREEN, '│')}  {self._c(Colors.WHITE, f'{label}:')} "
+                      f"{self._c(color, f'[{value}]')}")
+
+            print(f"{self._c(Colors.GREEN, '└' + '─' * w + '┘')}")
+            print()
+
         elif cmd == "/gan":
             self.gan_enabled = not self.gan_enabled
-            status = self._t('enabled') if self.gan_enabled else self._t('disabled')
-            if self._use_color:
-                self._add_chat(f"{Colors.ORANGE}{self._t('gan_toggled').format(status)}{Colors.RESET}")
-            else:
-                self._add_chat(self._t('gan_toggled').format(status))
-            self._add_system_log("info", f"GAN mode toggled to {status}")
-        
+            status = "Enabled" if self.gan_enabled else "Disabled"
+            # Claude Code 風格的狀態切換
+            w = min(self._term_width() - 4, 70)
+            color = Colors.GREEN if self.gan_enabled else Colors.YELLOW
+            print(f"{self._c(color, '┌' + '─' * w + '┐')}")
+            print(f"{self._c(color, '│')} {self._c(Colors.BOLD + Colors.WHITE, ' GAN Mode ')} "
+                  f"{self._c(color, status.upper())} {self._c(color, '│')}")
+            print(f"{self._c(color, '└' + '─' * w + '┘')}")
+            print()
+
         elif cmd == "/clear":
-            self.chat_history = []
-            self.thought_history = []
-            self._render()
-        
-        elif cmd == "/quit":
-            self.running = False
-        
-        else:
-            if self._use_color:
-                self._add_chat(f"{Colors.RED}Unknown command: {cmd}{Colors.RESET}")
+            if sys.platform == "win32":
+                os.system('cls')
             else:
-                self._add_chat(f"Unknown command: {cmd}")
+                sys.stdout.write('\033[2J\033[H')
+                sys.stdout.flush()
+            self._print_banner()
+
+        elif cmd == "/quit":
+            # Claude Code 風格的退出
+            w = min(self._term_width() - 4, 60)
+            print(f"{self._c(Colors.ORANGE, '┌' + '─' * w + '┐')}")
+            print(f"{self._c(Colors.ORANGE, '│')} {self._t('shutdown')} {self._c(Colors.ORANGE, '│')}")
+            print(f"{self._c(Colors.ORANGE, '└' + '─' * w + '┘')}")
+            self.running = False
+
+        else:
+            # Claude Code 風格的錯誤提示
+            w = min(self._term_width() - 4, 70)
+            print(f"{self._c(Colors.RED, '┌' + '─' * w + '┐')}")
+            print(f"{self._c(Colors.RED, '│')} {self._c(Colors.BOLD, 'Error:')} Unknown command '{cmd}'")
+            print(f"{self._c(Colors.RED, '│')} Type {self._c(Colors.CYAN, '/help')} for available commands")
+            print(f"{self._c(Colors.RED, '└' + '─' * w + '┘')}")
+
+    def _wrap_text(self, text, width):
+        """文本自動換行輔助函數"""
+        if len(text) <= width:
+            return [text]
+
+        words = text.split()
+        lines = []
+        current_line = []
+
+        for word in words:
+            if len(' '.join(current_line + [word])) <= width:
+                current_line.append(word)
+            else:
+                lines.append(' '.join(current_line))
+                current_line = [word]
+
+        if current_line:
+            lines.append(' '.join(current_line))
+
+        return lines
+
+    def run(self):
+        """運行 CLI 界面 - Claude Code 風格"""
+        if sys.stdin is None:
+            print("無法取得控制台輸入。請在命令提示符（cmd）中執行：humanaize2 boot -m cli")
+            return
+
+        # 顯示歡迎界面
+        self._print_welcome()
+        self._print_banner()
+
+        while self.running:
+            try:
+                self._flush()
+                self._draw_input_box()
+                user_input = input()
+                self._finish_input_box()
+
+                if not user_input.strip():
+                    # 空行時的友好提示
+                    self._show_empty_input_hint()
+                    continue
+
+                if user_input.startswith("/"):
+                    self.show_commands = False
+                    self._cmd(user_input)
+                    # /help 命令後暫時顯示命令提示
+                    if user_input == "/help":
+                        self.show_commands = True
+                else:
+                    # 處理用戶對話
+                    self._handle_user_input(user_input)
+
+            except (KeyboardInterrupt, EOFError):
+                self._handle_exit()
+                break
+            except RuntimeError:
+                self._show_runtime_error()
+                break
+
+        self._shutdown()
+
+    def _print_welcome(self):
+        """Claude Code 風格的歡迎界面"""
+        w = min(self._term_width() - 4, 80)
+        print(f"{self._c(Colors.BLUE, '┌' + '─' * w + '┐')}")
+        print(f"{self._c(Colors.BLUE, '│')} {self._c(Colors.BOLD + Colors.WHITE, ' Welcome to Humanaize CLI ').center(w)} {self._c(Colors.BLUE, '│')}")
+        print(f"{self._c(Colors.BLUE, '├' + '─' * w + '┤')}")
+        print(f"{self._c(Colors.BLUE, '│')} {self._c(Colors.DIM, '  Chat with AI, manage settings, and more.').center(w)} {self._c(Colors.BLUE, '│')}")
+        print(f"{self._c(Colors.BLUE, '│')} {self._c(Colors.DIM, '  Type your message or use commands below.').center(w)} {self._c(Colors.BLUE, '│')}")
+        print(f"{self._c(Colors.BLUE, '└' + '─' * w + '┘')}")
+        print()
+
+    def _show_empty_input_hint(self):
+        """空行時的提示"""
+        print(f"{self._c(Colors.DIM, '┌' + '─' * (min(self._term_width() - 2, 80)) + '┐')}")
+        print(f"{self._c(Colors.DIM, '│')} {self._c(Colors.YELLOW, '💡')} Tip: {self._c(Colors.CYAN, '/help')} for commands | {self._c(Colors.CYAN, '/quit')} to exit")
+        print(f"{self._c(Colors.DIM, '└' + '─' * (min(self._term_width() - 2, 80)) + '┘')}")
+        print()
+
+    def _handle_user_input(self, user_input):
+        """處理用戶輸入"""
+        self._queue.put(("user", user_input.strip(), "", None))
+        self.send(user_input)
+        self._wait_response()
+        # 對話後添加分隔線
+        print(f"{self._c(Colors.DIM, '─' * (min(self._term_width() - 2, 100)))}")
+        print()
+
+    def _handle_exit(self):
+        """處理退出"""
+        print()
+        print(self._c(Colors.YELLOW, '┌───────────────────────────────────────────────────────┐'))
+        print(self._c(Colors.YELLOW, '│') + ' Press ' + self._c(Colors.BOLD, 'Enter') + ' to exit Humanaize CLI ' + self._c(Colors.YELLOW, '│'))
+        print(self._c(Colors.YELLOW, '└───────────────────────────────────────────────────────┘'))
+        try:
+            input()
+        except:
+            pass
+
+    def _show_runtime_error(self):
+        """顯示運行時錯誤"""
+        print()
+        print(self._c(Colors.RED, '┌───────────────────────────────────────────────────────┐'))
+        print(self._c(Colors.RED, '│') + ' Console input lost. Please run in a new command prompt: ' + self._c(Colors.RED, '│'))
+        print(self._c(Colors.RED, '│') + '   humanaize2 boot -m cli ' + self._c(Colors.RED, '│'))
+        print(self._c(Colors.RED, '└───────────────────────────────────────────────────────┘'))
 
     def _shutdown(self):
         save_memory(self.memory)
-        
-        self._clear_screen()
-        
-        if self._use_color:
-            print(f"\n{'=' * self.width}")
-            print(f"  {Colors.BOLD}{Colors.GREEN}Aize 已关闭{Colors.RESET}")
-            print(f"  {Colors.GRAY}对话历史已保存，再见！👋{Colors.RESET}")
-            print(f"{'=' * self.width}")
-        else:
-            print(f"\n{'=' * self.width}")
-            print("  Aize 已关闭")
-            print("  对话历史已保存，再见！👋")
-            print(f"{'=' * self.width}")
+        print()
+        print(self._c(Colors.DIM, f"{'─' * min(self._term_width() - 2, 64)}"))
+        print(f"{self._c(Colors.GRAY, '✻')} {self._c(Colors.GRAY, self._t('shutdown'))}")
+        print(self._c(Colors.DIM, f"{'─' * min(self._term_width() - 2, 64)}"))
 
 
 if __name__ == "__main__":
