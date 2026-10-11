@@ -55,7 +55,7 @@ async function loadChatHistory(){
   try{const data=await (await fetch('/api/chat/history')).json();const list=data.messages||[];if(!list.length)return;for(const m of list){const item=document.createElement('div');item.className=`message ${m.role==='user'?'user':'assistant'}`;item.textContent=m.content;box.appendChild(item)}box.scrollTop=box.scrollHeight;state.messages=list.length;$('#message-count').textContent=list.length}catch(e){/* 歷史加載失敗不影響聊天 */}}
 async function refreshStatus(){try{const data=await (await fetch('/api/status')).json();$('#message-count').textContent=data.messages.length;$('#model-name').textContent=data.model||'本地模型';const av=$('#app-version');if(av)av.textContent=data.version?('v'+data.version):'—'}catch(error){/* 輪詢失敗保持安靜，健康檢查會更新離線狀態 */}}
 $('#collapse-sidebar').onclick=()=>$('#sidebar').classList.toggle('collapsed');$('#open-sidebar').onclick=()=>$('#sidebar').classList.add('open');$$('.nav-item[data-view]').forEach(item=>item.onclick=()=>showView(item.dataset.view));$$('.settings-tab').forEach(tab=>tab.onclick=()=>{$$('.settings-tab').forEach(item=>item.classList.remove('active'));$$('.settings-section').forEach(item=>item.classList.remove('active'));tab.classList.add('active');$(`[data-section-view="${tab.dataset.section}"]`).classList.add('active')});
-$('#chat-form').onsubmit=async event=>{event.preventDefault();const text=$('#prompt').value.trim();const atts=uploadUI.payload();if(!text&&!atts.length)return;if(uploadUI.files.some(f=>f.uploading)){window.alert('文件還在上傳中，請稍候再發送');return;}addMessage(atts.length?((text?text+'\n':'')+atts.map(a=>`📎 ${a.name}`).join('\n')):text,'user');$('#prompt').value='';uploadUI.clear();voice.resetTurn();const reply=addMessage('','assistant');const thoughtLog=document.createElement('div');thoughtLog.className='thought-log';reply.appendChild(thoughtLog);/* 回覆文本塊與命令塊按事件到達順序交錯插入，避免 followup 總結出現在命令框上方 */const streamRoot=document.createElement('div');streamRoot.className='skill-output';reply.appendChild(streamRoot);let textNode=document.createElement('div');textNode.className='reply-text';textNode.textContent='思考中...';streamRoot.appendChild(textNode);let firstCommand=true;const appendText=()=>{if(!textNode||!textNode.isConnected||streamRoot.lastElementChild!==textNode){textNode=document.createElement('div');textNode.className='reply-text';streamRoot.appendChild(textNode);}return textNode};const clearThinking=()=>{const n0=streamRoot.querySelector('.reply-text');if(n0&&n0.textContent==='思考中...')n0.textContent='';};const addCommand=(ev,c)=>{/* 第一條命令到達：刪除命令前的所有解釋性文字，避免「好的我來幫你…」打斷工作流；命令完成後的總結在命令框之後，不受影響 */if(ev==='command_start'&&firstCommand){firstCommand=false;streamRoot.querySelectorAll('.reply-text').forEach(n=>n.remove());}clearThinking();/* 命令狀態行之後到達的文本要開新文本塊，保證到達順序即顯示順序 */textNode=null;if(ev==='command_start'){const l=document.createElement('div');l.className='skill-cmd-start';l.textContent='⚙ '+(c||'執行技能中...');streamRoot.appendChild(l);}else{const box=document.createElement('div');box.className='skill-cmd-result';const lab=document.createElement('div');lab.className='skill-cmd-label';lab.textContent='輸出 Output';const pre=document.createElement('pre');pre.textContent=(c||'').replace(/\s+$/,'');box.appendChild(lab);box.appendChild(pre);streamRoot.appendChild(box);}};const thoughtLabels={gan_decision:'GAN 決策',gan_topic:'議題',gan_argument:'正方論點',gan_counter_argument:'反方論點',gan_synthesis:'綜合結論',solve_mode:'Solve 模式',skill:'Skill',gan:'思考'};const addThought=(t,c)=>{clearThinking();const line=document.createElement('div');line.className='thought-line '+(t?'t-'+t:'');line.dataset.label=thoughtLabels[t]||'思考';line.textContent=(c||'').replace(/^\[[^\]]+\]\s*/,'');thoughtLog.appendChild(line);$('#messages').scrollTop=$('#messages').scrollHeight};try{const response=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:text}],stream:true,attachments:atts})});if(!response.ok){const data=await response.json().catch(()=>({}));const err=new Error(data.error?.message||'请求失败');err.status=response.status;throw err}
+$('#chat-form').onsubmit=async event=>{event.preventDefault();const text=$('#prompt').value.trim();const atts=uploadUI.payload();if(!text&&!atts.length)return;if(uploadUI.files.some(f=>f.uploading)){window.alert('文件還在上傳中，請稍候再發送');return;}addMessage(atts.length?((text?text+'\n':'')+atts.map(a=>`📎 ${a.name}`).join('\n')):text,'user');$('#prompt').value='';uploadUI.clear();voice.beginTurn();const reply=addMessage('','assistant');const thoughtLog=document.createElement('div');thoughtLog.className='thought-log';reply.appendChild(thoughtLog);/* 回覆文本塊與命令塊按事件到達順序交錯插入，避免 followup 總結出現在命令框上方 */const streamRoot=document.createElement('div');streamRoot.className='skill-output';reply.appendChild(streamRoot);let textNode=document.createElement('div');textNode.className='reply-text';textNode.textContent='思考中...';streamRoot.appendChild(textNode);let firstCommand=true;const appendText=()=>{if(!textNode||!textNode.isConnected||streamRoot.lastElementChild!==textNode){textNode=document.createElement('div');textNode.className='reply-text';streamRoot.appendChild(textNode);}return textNode};const clearThinking=()=>{const n0=streamRoot.querySelector('.reply-text');if(n0&&n0.textContent==='思考中...')n0.textContent='';};const addCommand=(ev,c)=>{/* 第一條命令到達：刪除命令前的所有解釋性文字，避免「好的我來幫你…」打斷工作流；命令完成後的總結在命令框之後，不受影響 */if(ev==='command_start'&&firstCommand){firstCommand=false;streamRoot.querySelectorAll('.reply-text').forEach(n=>n.remove());}clearThinking();/* 命令狀態行之後到達的文本要開新文本塊，保證到達順序即顯示順序 */textNode=null;if(ev==='command_start'){const l=document.createElement('div');l.className='skill-cmd-start';l.textContent='⚙ '+(c||'執行技能中...');streamRoot.appendChild(l);}else{const box=document.createElement('div');box.className='skill-cmd-result';const lab=document.createElement('div');lab.className='skill-cmd-label';lab.textContent='輸出 Output';const pre=document.createElement('pre');pre.textContent=(c||'').replace(/\s+$/,'');box.appendChild(lab);box.appendChild(pre);streamRoot.appendChild(box);}};const thoughtLabels={gan_decision:'GAN 決策',gan_topic:'議題',gan_argument:'正方論點',gan_counter_argument:'反方論點',gan_synthesis:'綜合結論',solve_mode:'Solve 模式',skill:'Skill',gan:'思考'};const addThought=(t,c)=>{clearThinking();const line=document.createElement('div');line.className='thought-line '+(t?'t-'+t:'');line.dataset.label=thoughtLabels[t]||'思考';line.textContent=(c||'').replace(/^\[[^\]]+\]\s*/,'');thoughtLog.appendChild(line);$('#messages').scrollTop=$('#messages').scrollHeight};try{const response=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:text}],stream:true,attachments:atts})});if(!response.ok){const data=await response.json().catch(()=>({}));const err=new Error(data.error?.message||'请求失败');err.status=response.status;throw err}
 const reader=response.body?.getReader();if(!reader){throw Error('该浏览器不支持流式响应');}
 const decoder=new TextDecoder();let buffer='';let sawContent=false;while(true){const {value,done}=await reader.read();if(done)break;buffer+=decoder.decode(value,{stream:true});const parts=buffer.split('\n\n');buffer=parts.pop()||'';for(const part of parts){const line=part.trim();if(!line.startsWith('data:'))continue;const payload=line.slice(5).trim();if(!payload||payload==='[DONE]')continue;try{const data=JSON.parse(payload);const content=data.choices?.[0]?.delta?.content;if(data.error){addThought('error',content||'生成失敗');}else if(data.command_event){addCommand(data.command_event,content);}else if(data.thought){addThought(data.thought_type||'',content);}else if(typeof content==='string'&&content){const n=appendText();if(n.textContent==='思考中...')n.textContent='';n.textContent+=content;sawContent=true;voice.feed(content);}if(data.choices?.[0]?.finish_reason==='stop'){if(!sawContent){reply.textContent='錯誤：AI 沒有產生任何有效內容';}}}catch(error){console.warn('Stream parse error',error,payload)}}}
 if(!sawContent){reply.textContent='錯誤：AI 沒有產生任何有效內容';voice.cancel();}else{/* 收尾：去掉每個文本塊首部空行；把「思考下一步」狀態行標記為完成，避免看起來永久卡死 */streamRoot.querySelectorAll('.reply-text').forEach(n=>{n.textContent=n.textContent.replace(/^\n+/,'')});streamRoot.querySelectorAll('.skill-cmd-start').forEach(el=>{if(/thinking about the next step/.test(el.textContent))el.textContent=el.textContent.replace('⚙','✓')});voice.flush();}
@@ -67,11 +67,31 @@ $('#prompt').onkeydown=event=>{if(event.key==='Enter'&&event.ctrlKey)$('#chat-fo
 const voice={
   on:false, cap:null, recognition:null, wantStop:false,
   speakBuf:'', inCode:false, queue:[], pumping:false, current:null, urls:[],
+  micPaused:false, awaitingDrain:false,
   supported:('SpeechRecognition' in window)||('webkitSpeechRecognition' in window),
   lang(){return (state.settings&&state.settings.language)==='English'?'en-US':'zh-TW';},
   /* ---- 對話流鉤子 ---- */
-  resetTurn(){this.speakBuf='';this.inCode=false;this._abortPlayback();this.queue=[];},
-  cancel(){this.resetTurn();},
+  resetTurn(){this.speakBuf='';this.inCode=false;this.awaitingDrain=false;this._abortPlayback();this.queue=[];},
+  /* AI 回合開始：清空舊播放並靜音麥克風（半雙工，防止 Aize 語音被識別成新發言打斷自己） */
+  beginTurn(){this.resetTurn();this.pauseMic();},
+  /* AI 回合結束（出錯/無內容）：清理並恢復聽覺 */
+  endTurn(){this.resetTurn();this.resumeMic();},
+  cancel(){this.endTurn();},
+  pauseMic(){
+    if(!this.on||this.micPaused)return;
+    this.micPaused=true;
+    try{this.recognition&&this.recognition.stop();}catch(e){}
+  },
+  resumeMic(){
+    if(!this.on||!this.micPaused)return;
+    this.micPaused=false;
+    const r=this.recognition;
+    if(r){try{r.start();}catch(e){/* onend 裡也會兜底重啟 */}}
+  },
+  _onSpeakingDone(){
+    // 所有句子播完（或沒有可播內容）後，恢復麥克風聽下一句
+    if(this.awaitingDrain){this.awaitingDrain=false;this.resumeMic();}
+  },
   feed(chunk){
     if(!this.on||!chunk)return;
     // 追蹤 ``` 代碼塊，代碼內容不朗讀
@@ -85,6 +105,9 @@ const voice={
   flush(){
     if(!this.on)return;
     this._extract(true);
+    this.awaitingDrain=true;
+    // 沒有任何待播/播放中的句子時直接解鎖；仍在播放則等 pump 收尾
+    if(!this.queue.length&&!this.pumping)this._onSpeakingDone();
   },
   _extract(last){
     // 按句末標點切分；過長片段再按逗號切
@@ -147,27 +170,54 @@ const voice={
         if(!this.on)break;
         try{await this._synthAndPlay(text);}catch(e){console.warn('[voice] tts skip',e);}
       }
-    }finally{this.pumping=false;}
+    }finally{
+      this.pumping=false;
+      this._onSpeakingDone();
+    }
   },
   _synthAndPlay(text){
     return new Promise(async (resolve)=>{
-      let timer=setTimeout(()=>{try{audio&&audio.pause();}catch(_){}resolve();},60000);
       let audio=null,url='';
-      const finish=()=>{clearTimeout(timer);if(url)URL.revokeObjectURL(url);resolve();};
+      const ctrl=new AbortController();this._ctrl=ctrl;
+      let timer=setTimeout(()=>{try{audio&&audio.pause();}catch(_){}try{ctrl.abort();}catch(_){}resolve();},60000);
+      const finish=()=>{clearTimeout(timer);if(url)URL.revokeObjectURL(url);if(this._ctrl===ctrl)this._ctrl=null;resolve();};
       try{
-        const resp=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
-        if(!resp.ok){finish();return;}
+        const resp=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text}),signal:ctrl.signal});
+        if(!resp.ok){console.warn('[voice] tts HTTP',resp.status);finish();return;}
         const blob=await resp.blob();
         if(!this.on){finish();return;}
         url=URL.createObjectURL(blob);this.urls.push(url);
         audio=new Audio(url);this.current=audio;
         audio.onended=finish;audio.onerror=finish;
-        await audio.play().catch(()=>finish());
+        try{
+          await audio.play();
+        }catch(err){
+          if(err&&err.name==='NotAllowedError'){
+            // 瀏覽器自動播放策略：頁面刷新後沒有用戶手勢會被拒，等手勢後重試一次
+            await this._waitForUnlock();
+            if(!this.on||this.current!==audio){finish();return;}
+            try{await audio.play();}catch(e2){console.warn('[voice] 播放仍被拒絕',e2&&e2.name);}
+          }else{console.warn('[voice] 播放失敗',err&&err.name);}
+          finish();
+        }
       }catch(e){finish();}
     });
   },
+  /* 等待首次用戶手勢以解鎖音頻播放（Edge/Chrome 自動播放策略） */
+  _waitForUnlock(){
+    if(!this._unlockPromise){
+      this._unlockPromise=new Promise((res)=>{
+        const done=()=>{document.removeEventListener('pointerdown',done,true);document.removeEventListener('keydown',done,true);this._unlockPromise=null;res();};
+        document.addEventListener('pointerdown',done,true);
+        document.addEventListener('keydown',done,true);
+        console.warn('[voice] 瀏覽器阻擋了聲音播放：點擊頁面任意位置即可啟用');
+      });
+    }
+    return this._unlockPromise;
+  },
   _abortPlayback(){
     this.queue=[];
+    if(this._ctrl){try{this._ctrl.abort();}catch(_){}this._ctrl=null;}
     if(this.current){try{this.current.pause();}catch(_){}this.current=null;}
     this.urls.forEach(u=>{try{URL.revokeObjectURL(u);}catch(_){}});
     this.urls=[];
@@ -182,10 +232,10 @@ const voice={
     if(this.cap&&this.cap.tts_available===false){
       window.alert('伺服器尚未安裝 TTS 引擎，AI 回覆將不會朗讀，語音輸入仍可使用。');
     }
-    this.on=true;this._updateUI();this._startRecognition();
+    this.on=true;this.micPaused=false;this.awaitingDrain=false;this._updateUI();this._startRecognition();
   },
   off(){
-    this.on=false;this.wantStop=true;
+    this.on=false;this.wantStop=true;this.micPaused=false;
     try{this.recognition&&this.recognition.stop();}catch(e){}
     this._abortPlayback();this.speakBuf='';
     this._updateUI();
@@ -202,6 +252,8 @@ const voice={
     let finals='';
     this.wantStop=false;
     r.onresult=e=>{
+      // AI 思考/播報期間掛起麥克風：此時拾到的都是揚聲器裡 Aize 的聲音（回聲），不得送發
+      if(this.micPaused)return;
       let interim='';
       for(let i=e.resultIndex;i<e.results.length;i++){
         const res=e.results[i];
@@ -222,7 +274,7 @@ const voice={
     };
     r.onend=()=>{
       // Chrome 連續識別會在靜音後自動結束；語音模式開啟時自動重開
-      if(!this.on||this.wantStop)return;
+      if(!this.on||this.wantStop||this.micPaused)return;
       const restart=()=>{if(this.on&&!this.wantStop){try{r.start();}catch(_){}}};
       try{r.start();}catch(e){setTimeout(restart,600);}
     };

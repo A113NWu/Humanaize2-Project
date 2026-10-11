@@ -21,10 +21,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
+import json
 import os
 import re
 import threading
 import time
+import wave
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Optional, Tuple
 from urllib.parse import urlparse
@@ -752,6 +755,19 @@ def _resolve_provider_defaults(opts: SynthesizeOptions) -> Tuple[str, str, str, 
     return use_provider, env_api_key, use_voice, use_model, use_api_url  # type: ignore
 
 
+def _tts_muted() -> bool:
+    """讀取 ui_settings.json 的 tts_muted 開關；缺省不靜音，讀取失敗視為不靜音。"""
+    try:
+        try:
+            from app_paths import get_settings_path
+        except ImportError:
+            from core.app_paths import get_settings_path
+        with open(get_settings_path(), "r", encoding="utf-8") as f:
+            return bool(json.load(f).get("tts_muted"))
+    except Exception:
+        return False
+
+
 def synthesize_speech(opts: SynthesizeOptions) -> Dict[str, Any]:
     """
     统一 TTS 合成入口。
@@ -766,6 +782,17 @@ def synthesize_speech(opts: SynthesizeOptions) -> Dict[str, Any]:
     抛出:
       TTSError(message, status)
     """
+    # 全局靜音開關：ui_settings.json 設 "tts_muted": true 時返回 0.05s 靜音，
+    # 流程照常走完（前端不報錯），只是不發聲。
+    if _tts_muted():
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as _w:
+            _w.setnchannels(1)
+            _w.setsampwidth(2)
+            _w.setframerate(24000)
+            _w.writeframes(b"\x00\x00" * 1200)  # 0.05 秒靜音
+        return {"audio_bytes": buf.getvalue(), "content_type": "audio/wav", "provider": "muted"}
+
     normalized_text = str(opts.text or "").strip()
     if not normalized_text or len(normalized_text) > 8000:
         raise TTSError("朗读文本长度必须在 1 到 8000 字之间", 400)

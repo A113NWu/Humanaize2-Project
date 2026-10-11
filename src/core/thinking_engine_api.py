@@ -1199,9 +1199,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             "guard_auto_start": False, "guard_interval": 5, "guard_firewall": True,
             "guard_network_monitor": True, "guard_system_monitor": True,
             "counter_measure_enabled": True, "counter_lab_mode": False,
-            "counter_max_warnings": 2, "counter_cooldown": 300, "iot_auto_start": True,
-            "iot_host": "0.0.0.0", "iot_port": 8765, "iot_scan_enabled": True,
-            "iot_scan_interval": 30, "iot_discovered_devices": [],
+            "counter_max_warnings": 2, "counter_cooldown": 300,
             "allow_lan_access": False, "web_auth_username": "", "web_auth_password_hash": ""
         }
 

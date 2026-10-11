@@ -267,12 +267,13 @@ def main():
     try:
         from voice.kokoro_tts import KokoroTTS
         KokoroTTS.instance().warmup_async()
-    except Exception:
+    except Exception as _warm_err_1:
         try:
             from core.voice.kokoro_tts import KokoroTTS
             KokoroTTS.instance().warmup_async()
-        except Exception:
-            pass
+        except Exception as _warm_err_2:
+            print("[TTS] 預熱調用失敗: %r / %r" % (_warm_err_1, _warm_err_2),
+                  file=sys.stderr, flush=True)
 
     # 啟動閒置引擎：網頁模式過去缺少它，導致 Aize 的閒置 GAN 思考與
     # [Social] 社交事件完全不會發生，GAN 面板自然也沒有內容。

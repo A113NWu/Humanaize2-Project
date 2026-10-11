@@ -13,6 +13,7 @@
 
 import io
 import os
+import re
 import sys
 import wave
 import struct
@@ -20,6 +21,18 @@ import threading
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _log_both(msg: str, warn: bool = False):
+    """logger + stderr 雙寫：確保安裝版（onefile）日誌一定能看到預熱記錄。"""
+    try:
+        (logger.warning if warn else logger.info)(msg)
+    except Exception:
+        pass
+    try:
+        print(msg, file=sys.stderr, flush=True)
+    except Exception:
+        pass
 
 _MODEL_DIRNAME = "kokoro-multi-lang-v1_1"
 
@@ -56,14 +69,28 @@ _SID_BY_VOICE = {name: sid for sid, name in _VOICE_BY_SID.items()}
 DEFAULT_SID = 3  # zf_001：年輕中文女聲，Aize 預設嗓音
 
 # 按句切分（Kokoro 單次只處理一句，長文需客戶端拼接）
-_SENT_SPLIT = __import__("re").compile(r"[^，。！？!?；;\n]+[，。！？!?；;\n]?")
+_SENT_SPLIT = re.compile(r"[^，。！？!?；;\n]+[，。！？!?；;\n]?")
 
 # espeak-zh 無法音素化的拉丁專有名詞 -> 中文諧音（避免漏讀）
-_NAME_FIX = __import__("re").compile(r"\bAize\b", __import__("re").IGNORECASE)
+_NAME_FIX = re.compile(r"\bAize\b", re.IGNORECASE)
+
+# emoji / 符號 / 零寬字符：espeak 會讀出怪聲或異常停頓，合成前一律剔除
+_EMOJI_RE = re.compile(
+    "[\U0001F000-\U0001FAFF"   # emoji 主區（含 🐋🎉 等）
+    "\U00002600-\U000027BF"    # 雜項符號/裝飾符號（★✨☀）
+    "\U00002B00-\U00002BFF"    # ⭐⭕ 等
+    "\U0001F1E6-\U0001F1FF"    # 旗幟
+    "\uFE0F\u200D\u20E3\u2049\u2122]+"
+)
+# 重複標點折疊（！！！-> ！），避免怪異拖音
+_STACKED_PUNCT_RE = re.compile(r"([！?？。~～!])\1+")
 
 
 def _fix_text(text: str) -> str:
-    return _NAME_FIX.sub("艾澤", str(text or ""))
+    t = _NAME_FIX.sub("艾澤", str(text or ""))
+    t = _EMOJI_RE.sub(" ", t)
+    t = _STACKED_PUNCT_RE.sub(r"\1", t)
+    return re.sub(r"  +", " ", t)
 
 
 def model_dir() -> str:
@@ -196,10 +223,15 @@ class KokoroTTS:
                     max_num_sentences=1,
                 )
                 self._tts = sherpa_onnx.OfflineTts(cfg)
-                logger.info("[Kokoro] 模型加載完成（%d 個音色）", self._tts.num_speakers)
+                # 真合成一句：連同 espeak 數據/首句圖初始化一起熱完，首次朗讀即秒出
+                try:
+                    self._tts.generate("你好。", sid=DEFAULT_SID, speed=1.0)
+                except Exception:
+                    pass
+                _log_both("[Kokoro] 模型加載完成並已預熱（%d 個音色）" % self._tts.num_speakers)
             except Exception as e:
                 self._failed = True
-                logger.warning("[Kokoro] 模型加載失敗: %s", e)
+                _log_both("[Kokoro] 模型加載失敗: %s" % e, warn=True)
         return self._tts
 
     def synthesize(self, text: str, voice: str = "", speed: float = 1.0) -> bytes:

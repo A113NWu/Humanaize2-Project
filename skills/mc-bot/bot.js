@@ -27,12 +27,41 @@ const { StoredData: VoiceStoredData } = require('./vendor/simplevoice/StoredData
 const { VoiceBridge } = require('./voice')
 const { installForgeHandshake } = require('./vendor/forge')
 
-const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8'))
+// ---- 解析錯誤風暴抑制 ----
+// mineflayer 對 Forge 1.20.1 自定義物品 NBT（entityMetadataItem→slot→optionalNbt）解析
+// 必然拋 PartialReadError，且以未捕獲 rejection 形式進入 stderr。曾 1.5 小時刷出
+// 78MB/58 萬行堆棧，吃掉 62% CPU 並拖垮同機 MC 服務器。此處限流：同類錯誤只記
+// 計數，每 60 秒匯總一行；其餘異常照常打印。
+const _SUPPRESS_RE = /PartialReadError|Read error|Missing characters in string|unexpected size|Reading Error/i
+let _suppressedCount = 0
+let _suppressWindowStart = 0
+function _summarizeSuppressed () {
+  if (_suppressedCount > 0) {
+    console.log('[bot] 忽略 %d 條 Forge NBT 解析錯誤（60 秒內）', _suppressedCount)
+    _suppressedCount = 0
+  }
+}
+setInterval(_summarizeSuppressed, 60000).unref()
+function _handleProcessError (err, kind) {
+  const msg = String((err && err.message) || err)
+  if (_SUPPRESS_RE.test(msg) || _SUPPRESS_RE.test(String((err && err.stack) || ''))) {
+    _suppressedCount++
+    if (!_suppressWindowStart) { _suppressWindowStart = 1; _summarizeSuppressed() }
+    return
+  }
+  console.error(`[${kind}]`, (err && err.stack) || msg)
+}
+process.on('unhandledRejection', (err) => _handleProcessError(err, 'rejection'))
+process.on('uncaughtException', (err) => _handleProcessError(err, 'uncaught'))
+
+const cfgPath = path.join(__dirname, 'config.json')
+const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'))
 
 // 命令行覆蓋：node bot.js --port 61234 --host 127.0.0.1
+const CLI_OVERRIDES = []
 for (let i = 2; i < process.argv.length - 1; i++) {
-  if (process.argv[i] === '--port') cfg.port = Number(process.argv[i + 1])
-  if (process.argv[i] === '--host') cfg.host = process.argv[i + 1]
+  if (process.argv[i] === '--port') { cfg.port = Number(process.argv[i + 1]); CLI_OVERRIDES.push('port') }
+  if (process.argv[i] === '--host') { cfg.host = process.argv[i + 1]; CLI_OVERRIDES.push('host') }
 }
 
 const HOSTILE_MOBS = new Set([
@@ -49,13 +78,127 @@ function pushChat (from, text) {
   if (chatLog.length > 200) chatLog.shift()
 }
 
+// ---------- 登錄驗證（Sol's AuthLogin，固定密碼自動 /register、/login） ----------
+function installAutoAuth (clientBot) {
+  const auth = cfg.auth
+  if (!auth || auth.enabled === false || !auth.password) return
+
+  const pw = auth.password
+  let authed = false
+  let regSent = 0
+  let loginSent = 0
+  // Brigadier 的 SINGLE_QUOTABLE_WORD 不接受裸寫的 @ 等字符，參數統一加引號
+  const quoted = () => `"${pw}"`
+  const sendReg = () => {
+    if (regSent++ < 3) {
+      console.log('[auth] 發送 /register')
+      clientBot.chat(`/register ${quoted()} ${quoted()}`)
+    }
+  }
+  const sendLogin = () => {
+    if (loginSent++ < 3 && !authed) {
+      console.log('[auth] 發送 /login')
+      clientBot.chat(`/login ${quoted()}`)
+    }
+  }
+
+  clientBot.on('messagestr', (raw) => {
+    if (authed) return
+    const s = String(raw).toLowerCase()
+    if (s.includes('login successful') ||
+        s.includes('registration successful') ||
+        s.includes('auto-login') ||
+        s.includes('returned to your previous location')) {
+      authed = true
+      console.log('[auth] 登錄驗證已通過，賬號已解鎖')
+      return
+    }
+    // 已註冊賬號：服務器提示改用 /login
+    if (s.includes('already registered') || s.includes('please login') || s.includes('use /login')) {
+      return sendLogin()
+    }
+    // 新賬號 / 註冊提示
+    if (s.includes('please register') || s.includes('register with') || s.includes('/register')) {
+      return sendReg()
+    }
+  })
+
+  // 兜底主動發送：spawn 後先試註冊，再試登錄；服務器的錯誤回執也會被上面的消息回補
+  clientBot.once('spawn', () => {
+    setTimeout(sendReg, 1200)
+    setTimeout(sendLogin, 4000)
+    setTimeout(() => {
+      if (!authed) console.warn('[auth] 15 秒內未確認登錄成功，若服務器重啟過請檢查密碼配置')
+    }, 15000)
+  })
+}
+
 // ---------- 创建机器人 ----------
 let bot = null
 let brain = null
 let voiceBridge = null
 let reconnectTimer = null
+let reconnectDelayMs = 10000
+let botAlive = false
+let botStarting = false
+
+function scheduleReconnect (ms) {
+  if (reconnectTimer) clearTimeout(reconnectTimer)
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null
+    createBot()
+  }, ms)
+}
+
+// ---------- 配置熱加載（面板保存 config.json 後自動生效，無需重啟） ----------
+const CONN_KEYS = ['host', 'port', 'username', 'version', 'forge']
+let cfgMtimeMs = 0
+try { cfgMtimeMs = fs.statSync(cfgPath).mtimeMs } catch (e) {}
+
+function reloadConfigIfChanged () {
+  let st
+  try { st = fs.statSync(cfgPath) } catch (e) { return }
+  if (st.mtimeMs === cfgMtimeMs) return
+  cfgMtimeMs = st.mtimeMs
+
+  let next
+  try {
+    next = JSON.parse(fs.readFileSync(cfgPath, 'utf8'))
+  } catch (e) {
+    console.warn('[cfg] config.json 解析失敗，保留舊配置:', e.message)
+    return
+  }
+
+  // 命令行臨時覆蓋過的鍤不允許被文件改回（本進程生命週期內）
+  for (const k of CLI_OVERRIDES) next[k] = cfg[k]
+
+  const connChanged = CONN_KEYS.some(k => String(next[k]) !== String(cfg[k]))
+  const oldWebPort = cfg.web && cfg.web.port
+
+  Object.assign(cfg, next)
+
+  if (connChanged) {
+    console.log(`[cfg] 連接配置變更 → ${cfg.host}:${cfg.port}（${cfg.username}），3 秒後自動重連`)
+    pushChat('系统', `服務器配置變更（${cfg.host}:${cfg.port}），自動重連中…`)
+    reconnectDelayMs = 3000
+    setTimeout(() => { reconnectDelayMs = 10000 }, 12000)
+    // 先掛一個兜底定時器；若連接活著，quit 觸發的 end 會用新定時器覆蓋它
+    if (bot) { try { bot.quit('config changed') } catch (e) {} }
+    scheduleReconnect(3000)
+  } else {
+    console.log('[cfg] 配置已熱更新（語音/安全/大腦等參數即時生效）')
+  }
+
+  // 網頁面板端口改了需要重啟進程（http.Server 不支持無痛換端口）
+  if (oldWebPort && next.web && Number(next.web.port) !== Number(oldWebPort)) {
+    console.warn('[cfg] 面板端口變更需重啟機器人服務後生效')
+  }
+}
+setInterval(reloadConfigIfChanged, 2000)
 
 function createBot () {
+  if (botAlive || botStarting) return // 已有連接/正在連接，忽略重複的重連調度
+  botStarting = true
   console.log(`[bot] 连接 ${cfg.host}:${cfg.port}，用户名 ${cfg.username}，版本 ${cfg.version}（离线模式）`)
   bot = mineflayer.createBot({
     host: cfg.host,
@@ -68,6 +211,10 @@ function createBot () {
 
   // Forge（FML3）登入握手：讓 bot 能進裝了 Simple Voice Chat 的 Forge 房間；原版伺服器不受影響
   if (cfg.forge !== false) installForgeHandshake(bot._client)
+
+  // 登錄驗證（Sol's AuthLogin）：進服後自動完成 /register、/login，
+  // 固定密碼純反射處理，不經過 Aize 的 LLM 決策
+  installAutoAuth(bot)
 
   bot.loadPlugin(pathfinder)
   bot.loadPlugin(collectBlock)
@@ -84,6 +231,7 @@ function createBot () {
   }
 
   bot.once('spawn', onSpawn)
+  bot.on('login', () => { botStarting = false; botAlive = true })
   bot.on('chat', onChat)
   bot.on('whisper', (u, m) => onChat(u, m))
   bot.on('death', onDeath)
@@ -92,10 +240,12 @@ function createBot () {
     pushChat('系统', '我被踢出了房间：' + String(reason).slice(0, 200))
   })
   bot.on('end', () => {
-    console.log('[bot] 连接断开，10 秒后重连')
-    pushChat('系统', '连接断开，10 秒后自动重连…')
+    botAlive = false
+    botStarting = false
+    console.log('[bot] 连接断开，%s 后重连', (reconnectDelayMs / 1000) + ' 秒')
+    pushChat('系统', `连接断开，${reconnectDelayMs / 1000} 秒后自动重连…`)
     cleanup()
-    reconnectTimer = setTimeout(createBot, 10000)
+    scheduleReconnect(reconnectDelayMs)
   })
   bot.on('error', (err) => {
     console.log('[bot] 错误:', err.message)

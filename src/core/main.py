@@ -9,7 +9,6 @@ Humanaize - 主要進入點
     humanaize2 boot -m solve [-r <file>] [--hsn] [-gan] [--sandbox <dir>] [problem]
                                   - 啟動解決模式
     humanaize2 boot -m guard [--background|-b] [--start-when-boot|-s] - 啟動守護模式
-    humanaize2 boot -m iot [--host <ip>] [--port <n>] - 啟動 IoT 算力網絡
     humanaize2 settings           - 開啟設定介面
     humanaize2 check-server       - 檢查本地 llama-server
     humanaize2 skills -list | -enable <name> | -disable <name> | -install <zip> - 管理技能
@@ -1000,71 +999,8 @@ def _read_ascii():
         return ""
 
 
-def _auto_start_iot_network():
-    """在後台自動啟動 IoT 算力網絡（如果配置啟用）"""
-    def _start():
-        try:
-            settings_path = _get_ui_settings_path()
-            
-            # 讀取配置
-            import json
-            settings = {}
-            if os.path.exists(settings_path):
-                with open(settings_path, 'r', encoding='utf-8') as f:
-                    settings = json.load(f)
-            
-            auto_start = settings.get("iot_auto_start", True)
-            if not auto_start:
-                return
-            
-            host = settings.get("iot_host", "0.0.0.0")
-            port = settings.get("iot_port", 8765)
-            scan_enabled = settings.get("iot_scan_enabled", True)
-            scan_interval = settings.get("iot_scan_interval", 30)
-            
-            from tools.iot_compute_manager import start_iot_network
-            manager = start_iot_network(host=host, port=port)
-            print(f"[IoT] 算力網絡後台啟動成功: ws://{host}:{port}")
-            
-            # 啟動設備掃描
-            if scan_enabled:
-                from tools.iot_device_scanner import IoTDeviceScanner
-                scanner = IoTDeviceScanner(port=port, scan_interval=scan_interval)
-                
-                # 保存掃描到的設備到配置
-                def on_device_found(device):
-                    saved = settings.get("iot_discovered_devices", [])
-                    saved_ids = {d.get("ip") for d in saved}
-                    if device.get("ip") not in saved_ids:
-                        saved.append(device)
-                        settings["iot_discovered_devices"] = saved
-                        try:
-                            with open(settings_path, 'w', encoding='utf-8') as f:
-                                json.dump(settings, f, indent=4, ensure_ascii=False)
-                        except Exception:
-                            pass
-                
-                scanner.on_device_found(on_device_found)
-                scanner.start_scanning()
-                print(f"[IoT] 設備掃描已啟動（間隔: {scan_interval}s）")
-            
-        except ImportError as e:
-            logger.debug(f"[IoT] network dependencies not available: {e}")
-        except Exception as e:
-            logger.error(f"[IoT] auto start failed: {e}")
-    
-    thread = threading.Thread(target=_start, daemon=True)
-    thread.start()
-
-
 def boot_cli():
     _check_and_start_server()
-    # CLI 界面屏蔽後台 IoT 網絡日誌（仍完整寫入日誌文件）。
-    # [iot] 覆蓋所有 IoT 模組的 print；iot_ 覆蓋 stdlib logging 經
-    # lastResort 打到 stderr 的 logger 名（tools.iot_*）；websockets
-    # 覆蓋 IoT 服務器依賴庫的警告。顯式 `boot -m iot` 不走此函數，保留全部輸出。
-    logger.suppress_console_patterns(["[iot]", "iot_", "websockets"])
-    _auto_start_iot_network()
     from ui.cli import HumanaizeCLI
     cli = HumanaizeCLI()
     cli.run()
@@ -1073,7 +1009,6 @@ def boot_cli():
 def boot_web_dashboard():
     """启动本地服务并打开浏览器管理面板。"""
     _check_and_start_server()
-    _auto_start_iot_network()
     _check_updates_background()
 
     from memory.memory import load_memory
@@ -1133,8 +1068,7 @@ def _check_updates_background():
 
 def boot_gui():
     _check_and_start_server()
-    _auto_start_iot_network()
-    
+
     # 后台检查更新
     _check_updates_background()
     
@@ -1163,8 +1097,7 @@ def boot_gui():
 def boot_windows_gui():
     """启动 Windows 专属现代化 GUI"""
     _check_and_start_server()
-    _auto_start_iot_network()
-    
+
     # 后台检查更新
     _check_updates_background()
     
@@ -1193,8 +1126,6 @@ def boot_solve(args):
     if not _check_and_start_server():
         print("[ERROR] Failed to start LLM server. Exiting...")
         return
-    
-    _auto_start_iot_network()
 
     from tools.solve_mode import SolveMode
     
@@ -1262,53 +1193,6 @@ def boot_guard(args):
         print(f"[ERROR] Failed to import guard_mode module: {e}")
     except Exception as e:
         print(f"[ERROR] Failed to start Guard mode: {e}")
-
-
-def boot_iot(args):
-    """啟動 IoT 算力網絡（獨立於 HSN）"""
-    print("[IoT] 正在啟動算力網絡...")
-    
-    # 解析參數
-    host = "0.0.0.0"
-    port = 8765
-    
-    for i, arg in enumerate(args):
-        if arg == "--host" and i + 1 < len(args):
-            host = args[i + 1]
-        elif arg == "--port" and i + 1 < len(args):
-            port = int(args[i + 1])
-    
-    try:
-        from tools.iot_compute_manager import start_iot_network
-        
-        manager = start_iot_network(host=host, port=port)
-        
-        print(f"[IoT] 算力網絡已啟動")
-        print(f"[IoT] WebSocket 地址: ws://{host}:{port}")
-        print(f"[IoT] 等待設備連接中...")
-        print(f"[IoT] 按 Ctrl+C 停止服務")
-        
-        # 顯示狀態
-        import time
-        try:
-            while True:
-                time.sleep(5)
-                stats = manager.get_stats()
-                online = stats.get('online_devices', 0)
-                total = stats.get('total_devices', 0)
-                tasks = stats.get('completed_tasks', 0)
-                print(f"[IoT] 狀態: 在線={online}/{total} | 已完成任務={tasks}")
-        except KeyboardInterrupt:
-            print("\n[IoT] 正在停止算力網絡...")
-            from tools.iot_compute_manager import stop_iot_network
-            stop_iot_network()
-            print("[IoT] 已停止")
-            
-    except ImportError as e:
-        print(f"[ERROR] Failed to import IoT module: {e}")
-        print("[INFO] 請安裝 websockets 庫: pip install websockets>=12.0")
-    except Exception as e:
-        print(f"[ERROR] Failed to start IoT network: {e}")
 
 
 def open_settings():
@@ -1405,8 +1289,6 @@ def _print_usage():
     print("                              - Start problem solving mode")
     print("  humanaize2 boot -m guard [--background|-b] [--start-when-boot|-s]")
     print("                              - Start guard mode")
-    print("  humanaize2 boot -m iot [--host <ip>] [--port <n>]")
-    print("                              - Start IoT compute network")
     print("  humanaize2 settings         - Open settings interface")
     print("  humanaize2 check-server     - Check the local llama-server")
     print("  humanaize2 init-msf-db      - Initialize the MSF PostgreSQL schema")
@@ -1422,9 +1304,6 @@ def _print_usage():
     print("\nOptions for guard mode:")
     print("  --background, -b        Run in background mode")
     print("  --start-when-boot, -s   Enable auto-start on system boot")
-    print("\nOptions for IoT mode:")
-    print("  --host <ip>             Bind address (default: 127.0.0.1)")
-    print("  --port <n>              Bind port (default: 8080)")
 
 
 def main():
@@ -1494,9 +1373,6 @@ def main():
         elif mode == "guard":
             print("Starting Guard mode...")
             boot_guard(mode_args)
-        elif mode == "iot":
-            print("Starting IoT Compute Network...")
-            boot_iot(mode_args)
         else:
             choice = random.randint(0, 4)
             if choice == 3 and ascii_art:

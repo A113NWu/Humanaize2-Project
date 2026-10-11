@@ -30,7 +30,7 @@
   #notice.err{color:#ff7a7a}
   a{color:var(--accent);text-decoration:none}
   a:hover{text-decoration:underline}
-  #log-box{margin-top:4px;padding:10px;border:1px solid var(--line);border-radius:10px;background:rgba(0,0,0,.25);max-height:220px;overflow:auto;font-family:Consolas,monospace;font-size:11px;line-height:1.5;white-space:pre-wrap;word-break:break-all;display:none}
+  #log-box{margin-top:4px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:rgba(0,0,0,.25);max-height:420px;overflow:auto;font-family:Consolas,'Courier New',monospace;font-size:13px;line-height:1.7;white-space:pre-wrap;word-break:break-all;display:none}
 </style>
 </head>
 <body>
@@ -50,7 +50,7 @@
 <fieldset><legend>服务器连接</legend>
   <div class="row">
     <label>服务器地址<input name="host" placeholder="127.0.0.1"></label>
-    <label>端口<input name="port" type="number" min="1" max="65535"></label>
+    <label>端口<input name="port" type="number" min="1" max="65535" placeholder="22565"></label>
   </div>
   <div class="row">
     <label>游戏内用户名<input name="username"></label>
@@ -104,7 +104,7 @@
 </fieldset>
 <div class="actions">
   <button type="submit">💾 保存配置</button>
-  <span class="muted">保存后需重启机器人服务生效。</span>
+  <span class="muted">保存即生效：服务器地址/端口/用户名变更会自动重连，其余参数实时刷新。</span>
 </div>
 </form>
 <pre id="log-box"></pre>
