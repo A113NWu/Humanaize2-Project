@@ -153,27 +153,9 @@
   }
 
   let lastSpeakAt = 0;
-  let lastIdleIdx = -1;
-  /* 閒置微動：每 14~26 秒隨機做一個動作，讓形象有生命力；
-     說話後 8 秒內不搶戲；避免連續重複同一個動作 */
-  function scheduleIdleMotion() {
-    const delay = 14000 + Math.random() * 12000;
-    setTimeout(() => {
-      if (!model) { scheduleIdleMotion(); return; }
-      if (Date.now() - lastSpeakAt > 8000) {
-        const motions = (model.internalModel.settings || {}).motions || {};
-        const group = motions['Idle'] ? 'Idle' : (motions['TapBody'] ? 'TapBody' : Object.keys(motions)[0]);
-        if (group) {
-          const n = (motions[group] || []).length;
-          let idx = Math.floor(Math.random() * n);
-          if (n > 1) { while (idx === lastIdleIdx) idx = Math.floor(Math.random() * n); }
-          lastIdleIdx = idx;
-          playMotion(group, idx);
-        }
-      }
-      scheduleIdleMotion();
-    }, delay);
-  }
+  /* 閒置微動：動作全由 Aize 通過 motion 命令下達，頁面不再隨機播放；
+     模型自帶的眨眼/呼吸物理仍在，閒置時不會是僵死狀態 */
+  function scheduleIdleMotion() { /* 已停用：保留函數名避免調用點報錯 */ }
 
   function playMotion(group, index) {
     if (!model) return;
@@ -181,7 +163,8 @@
       const motions = (model.internalModel.settings || {}).motions || {};
       if (!motions[group]) group = Object.keys(motions)[0];
       if (!group) return;
-      const idx = (typeof index === 'number' && index >= 0) ? index : Math.floor(Math.random() * motions[group].length);
+      // 未指定編號時固定播第一個：動作選擇權完全交給 Aize，頁面不做隨機
+      const idx = (typeof index === 'number' && index >= 0) ? index : 0;
       model.motion(group, idx);
     } catch (e) { console.warn('motion failed', e); }
   }
@@ -242,15 +225,11 @@
   function handleCommand(cmd) {
     switch (cmd.type) {
       case 'speak':
-        lastSpeakAt = Date.now();
-        // 開口說話時隨機做一個身體動作，避免每次都一樣
-        const r = Math.random();
-        if (r < 0.6) playMotion('TapBody');
-        else playMotion('Idle', Math.floor(Math.random() * 9));
+        // 動作由 Aize 自己通過 motion 命令下達，這裡不再自動附加動作
         speak(cmd.text || '');
         addMsg('Aize', cmd.text || '', 'aize');
         break;
-      case 'motion': playMotion(cmd.group, cmd.index); lastSpeakAt = Date.now(); break;
+      case 'motion': playMotion(cmd.group, cmd.index); break;
       case 'expression': playExpression(cmd.name); break;
       case 'chat_in':
         addMsg(cmd.user || cmd.source || 'ext', cmd.text || '', 'ext');

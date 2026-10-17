@@ -47,6 +47,10 @@ class ThinkingEngine:
     
     def __init__(self, on_response_callback=None):
         logger.info("Initializing ThinkingEngine")
+        # on_response 走 property：外部賦值存進 _on_response_raw，
+        # 內部所有 self.on_response({...}) 調用實際拿到 _dispatch_response，
+        # 統一在出口剝離 [motion:...] 標籤並推給 Live2D hub（見 _dispatch_response）。
+        self._on_response_raw = None
         self.on_response = on_response_callback
         self.queue = queue.Queue()
         self.running = True
@@ -85,6 +89,67 @@ class ThinkingEngine:
             self.misskey_watcher = None
             logger.warning(f"MisskeyWatcher not started: {e}")
 
+    # ---------- Live2D 動作標籤 ----------
+    # Aize 在回覆中寫 [motion:組名] 或 [motion:組名:編號] 控制身體動作；
+    # 標籤在出口統一剝離（用戶/TTS 看不到），動作推給 Live2D hub，
+    # 面板浮窗與虛擬攝像頭頁輪詢同一 hub，天然同步。
+    _MOTION_TAG_RE = re.compile(r"\[\s*motion\s*:\s*([A-Za-z]+)\s*(?::\s*(\d+)\s*)?\]", re.IGNORECASE)
+
+    @property
+    def on_response(self):
+        return self._dispatch_response
+
+    @on_response.setter
+    def on_response(self, cb):
+        self._on_response_raw = cb
+
+    def _dispatch_response(self, event):
+        cb = self._on_response_raw
+        if cb is None:
+            return
+        if isinstance(event, dict) and event.get("type") == "chat_response":
+            cleaned, motions = self._extract_motion_tags(str(event.get("reply") or ""))
+            if motions:
+                self._push_live2d_motions(motions)
+            if not cleaned.strip():
+                return  # 純動作句：不展示、不朗读
+            event = dict(event, reply=cleaned)
+        try:
+            cb(event)
+        except Exception:
+            pass
+
+    @classmethod
+    def _extract_motion_tags(cls, text):
+        """從回覆文本提取 [motion:...] 標籤。返回 (剝離後文本, [(group, idx), ...])。"""
+        if not text or "[motion" not in text.lower():
+            return text, []
+        motions = []
+        def _sub(m):
+            group = m.group(1)
+            idx = int(m.group(2)) if m.group(2) is not None else None
+            motions.append((group, idx))
+            return " "
+        cleaned = cls._MOTION_TAG_RE.sub(_sub, text)
+        cleaned = re.sub(r"[ \t]{2,}", " ", cleaned).strip(" \t\r\n，,。.；;、")
+        return cleaned, motions
+
+    def _push_live2d_motions(self, motions):
+        """把動作命令推給 Live2D hub；任何失敗都靜默，絕不影響聊天。"""
+        try:
+            try:
+                from tools.live2d_hub import get_live2d_hub
+            except ImportError:
+                from core.tools.live2d_hub import get_live2d_hub
+            hub = get_live2d_hub()
+            for group, idx in motions:
+                cmd = {"type": "motion", "group": group}
+                if idx is not None:
+                    cmd["index"] = max(0, min(8, idx))
+                hub.push_command(cmd)
+        except Exception:
+            pass
+
     def _on_watcher_event(self, event):
         """監聽器事件 → 統一事件出口（CLI 因果樹 / 網頁思考面板）。"""
         try:
@@ -104,7 +169,11 @@ class ThinkingEngine:
             self._stream_callbacks.remove(callback)
     
     def _notify_stream_callbacks(self, sentence, target_info=None):
-        """通知所有注册的流式回调函数"""
+        """通知所有注册的流式回调函数（剝除動作標籤；動作已由 on_response 出口推過，這裡不重複推）"""
+        if isinstance(sentence, str) and "[motion" in sentence.lower():
+            sentence, _ = self._extract_motion_tags(sentence)
+            if not sentence.strip():
+                return
         for callback in self._stream_callbacks:
             try:
                 callback(sentence, target_info)
