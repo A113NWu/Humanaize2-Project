@@ -277,9 +277,10 @@ select option{background:#14262f;color:var(--text)}
 .settings-section label{display:flex;flex-direction:column;gap:6px;color:var(--muted);font-size:12px;margin:0 0 15px}
 .openai-settings{padding-bottom:14px;margin-bottom:14px;border-bottom:1px solid var(--line)}
 .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.checks{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:5px 0 18px}
-.checks label{display:block;color:var(--text);font-size:13px}
-.checks input{accent-color:var(--accent);margin-right:8px}
+.checks{display:flex;flex-direction:column;gap:12px;margin:5px 0 18px}
+.checks label{display:flex;flex-direction:row;align-items:center;gap:10px;color:var(--text);font-size:13px;margin:0;min-width:0;width:100%}
+/* 單列全寬：文字貼左，開關恆居最右（必須顯式 row，否則被 .settings-section label 的 column 帶跑） */
+.checks label input[type="checkbox"]{flex:0 0 auto;order:2;margin-left:auto}
 .save-row{display:flex;align-items:center;justify-content:flex-end;gap:15px;margin-top:25px;padding-top:18px;border-top:1px solid var(--line)}
 .notice{color:var(--accent);font-size:12px;margin-right:auto}
 
@@ -336,6 +337,9 @@ select option{background:#14262f;color:var(--text)}
 .skill-cmd-result{background:rgba(20,14,8,0.72);border:1px solid rgba(255,138,30,0.35);border-left:3px solid #ff8a1e;border-radius:8px;overflow:hidden}
 .skill-cmd-result .skill-cmd-label{font-size:0.7em;letter-spacing:0.08em;color:#ffb36b;background:rgba(255,138,30,0.12);padding:3px 10px;text-transform:uppercase}
 .skill-cmd-result pre{margin:0;padding:10px 12px;font-family:Consolas,'Courier New',monospace;font-size:0.88em;line-height:1.7;color:#8ee88e;white-space:pre-wrap;word-break:break-all;max-height:320px;overflow-y:auto}
+/* Aize 說話中：隱藏 Skill 執行框，只留對話與形象 */
+body.aize-speaking .skill-cmd-start,
+body.aize-speaking .skill-cmd-result{display:none !important}
 
 /* ===== GAN 思考面板（事件流，復用對話氣泡內 thought-line 配色） ===== */
 .thought-stream{display:flex;flex-direction:column;gap:3px;overflow-y:auto}
@@ -361,3 +365,79 @@ select option{background:#14262f;color:var(--text)}
 .skill-cfg-toggle{flex:none;margin-top:2px}
 .skill-cfg-panel{margin:-4px 0 2px}
 .skill-cfg-frame{display:block;width:100%;height:clamp(680px,calc(100vh - 190px),1200px);border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.03)}
+
+/* ============================================================
+   開關（switch）樣式：文字左對齊，右側滑塊
+   覆蓋設置頁所有打勾選項（.checks / 技能列表 / openai 區塊）
+   ============================================================ */
+.checks input[type="checkbox"],
+.skill-item input[type="checkbox"],
+.openai-settings input[type="checkbox"]{
+  appearance:none;-webkit-appearance:none;
+  width:40px;height:22px;border-radius:999px;flex:none;margin:0;cursor:pointer;
+  background:rgba(255,255,255,.16);border:1px solid var(--line);
+  position:relative;transition:background .2s,border-color .2s;
+}
+.checks input[type="checkbox"]::after,
+.skill-item input[type="checkbox"]::after,
+.openai-settings input[type="checkbox"]::after{
+  content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;
+  background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.35);transition:left .2s;
+}
+.checks input[type="checkbox"]:checked,
+.skill-item input[type="checkbox"]:checked,
+.openai-settings input[type="checkbox"]:checked{background:var(--accent-deep);border-color:var(--accent-deep)}
+.checks input[type="checkbox"]:checked::after,
+.skill-item input[type="checkbox"]:checked::after,
+.openai-settings input[type="checkbox"]:checked::after{left:20px}
+.skill-item{align-items:center}
+.skill-item input[type="checkbox"]{margin-top:0;order:2;margin-left:auto}
+.skill-item .skill-meta{order:1;min-width:0}
+/* openai 區塊內的開關行：文字左、開關右（同樣用 order，不用 space-between） */
+.openai-settings label:has(> input[type="checkbox"]){
+  flex-direction:row;align-items:center;
+  color:var(--text);font-size:13px;
+}
+.openai-settings label:has(> input[type="checkbox"]) > input[type="checkbox"]{margin-left:auto}
+
+/* ============================================================
+   動畫速度：--anim-mult 由設置頁寫入（默認 1.5，偏慢）
+   ============================================================ */
+:root{--anim-mult:1.5}
+.view.active{animation-duration:calc(.3s*var(--anim-mult))}
+.message{animation-duration:calc(.25s*var(--anim-mult))}
+.sidebar{transition-duration:calc(.25s*var(--anim-mult))}
+.nav-item,.settings-tab,.composer button,.save-row button,
+.composer .voice-toggle,.composer .upload-toggle,
+.settings-content input,.settings-content select,.settings-content textarea,
+.checks input[type="checkbox"],.checks input[type="checkbox"]::after,
+.skill-item input[type="checkbox"],.skill-item input[type="checkbox"]::after,
+.openai-settings input[type="checkbox"],.openai-settings input[type="checkbox"]::after{
+  transition-duration:calc(.18s*var(--anim-mult));
+}
+
+/* ============================================================
+   右下角 Live2D 形象（iframe 透明嵌入 /live2d 頁面）
+   ============================================================ */
+#live2d-box{
+  position:fixed;right:14px;bottom:80px;width:280px;height:390px;z-index:15;
+}
+#live2d-widget{
+  position:absolute;inset:0;width:100%;height:100%;
+  border:0;background:transparent;pointer-events:auto;
+}
+/* 拖動手柄：常駐但低調，懸停變亮；用 pointer capture 跨 iframe 拖動 */
+#live2d-drag{
+  position:absolute;top:2px;left:50%;transform:translateX(-50%);
+  width:52px;height:20px;border-radius:999px;z-index:2;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(20,20,35,.5);color:rgba(255,255,255,.8);
+  font-size:13px;letter-spacing:2px;line-height:1;
+  opacity:.4;transition:opacity .2s;cursor:grab;
+  touch-action:none;user-select:none;-webkit-user-select:none;
+}
+#live2d-drag:hover{opacity:1}
+#live2d-drag:active{cursor:grabbing}
+@media(max-width:760px){
+  #live2d-box{width:190px;height:270px;right:6px;bottom:72px}
+}

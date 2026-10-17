@@ -72,6 +72,26 @@ class ThinkingEngine:
         self.search_enabled = bool(self._load_ui_settings().get("auto_web_search", False))
         
         self._stream_callbacks = []
+
+        # Misskey 新消息/活動監聽：有動靜時提醒 Aize 並由她決定互動與否
+        try:
+            try:
+                from tools.misskey_watcher import MisskeyWatcher
+            except ImportError:
+                from core.tools.misskey_watcher import MisskeyWatcher
+            self.misskey_watcher = MisskeyWatcher(on_event=self._on_watcher_event)
+            self.misskey_watcher.start()
+        except Exception as e:
+            self.misskey_watcher = None
+            logger.warning(f"MisskeyWatcher not started: {e}")
+
+    def _on_watcher_event(self, event):
+        """監聽器事件 → 統一事件出口（CLI 因果樹 / 網頁思考面板）。"""
+        try:
+            if self.on_response and isinstance(event, dict):
+                self.on_response(event)
+        except Exception:
+            pass
     
     def register_stream_callback(self, callback):
         """注册流式输出回调函数，用于实时发送消息（如QQ）"""
@@ -330,26 +350,64 @@ class ThinkingEngine:
                     c.startswith("[Skill]"))
 
         memory_messages = (memory or {}).get("messages", []) if isinstance(memory, dict) else []
-        memory_lines = []
-        for message in memory_messages[-20:]:
+        # 最近 4 輪對話（約 8 條）常駐，保證短期上下文連貫
+        recent_lines = []
+        seen_contents = set()
+        for message in memory_messages[-8:]:
             if not isinstance(message, dict):
                 continue
             role = message.get("role", "unknown")
             content = message.get("content", "")
             if content and not _is_machine_message(content):
-                memory_lines.append(f"{role}: {content}")
+                recent_lines.append(f"{role}: {content}")
+                seen_contents.add(content)
 
-        memory_text = "\n".join(memory_lines) or "No previous memory."
+        # 長期記憶：用當前問題到向量記憶庫檢索相關記憶，不再全量疊加
+        recalled_lines = []
+        try:
+            try:
+                from tools.memory_db import get_memory_db
+            except ImportError:
+                from core.tools.memory_db import get_memory_db
+            for hit in get_memory_db().search(str(user_question or ""), top_k=5):
+                c = hit.get("content", "")
+                if c and c not in seen_contents:
+                    recalled_lines.append(f"{hit.get('role', 'unknown')}: {c}")
+                    seen_contents.add(c)
+        except Exception:
+            pass
+
+        memory_parts = []
+        if recent_lines:
+            memory_parts.append("[Recent]\n" + "\n".join(recent_lines))
+        if recalled_lines:
+            memory_parts.append("[Recalled]\n" + "\n".join(recalled_lines))
+        memory_text = "\n\n".join(memory_parts) or "No previous memory."
         other_text = "\n\n".join(str(item).strip() for item in (other_prompts or []) if str(item).strip())
         other_text = other_text or "None."
         gan_text = str(gan_prompt or "").strip() or "None."
         tail_text = str(tail).strip() if tail else "Respond concisely. Respond in the same language as the user's input."
+
+        # 經驗數據庫：檢索與當前問題相關的過往思考方式/見聞，注入提示詞
+        exp_text = "None."
+        try:
+            try:
+                from tools.experience_db import get_experience_db
+            except ImportError:
+                from core.tools.experience_db import get_experience_db
+            hits = get_experience_db().format_for_prompt(str(user_question or ""), top_k=3)
+            if hits:
+                exp_text = hits
+        except Exception:
+            pass
 
         return (
             "MAIN PROMPT:\n"
             f"{str(main_prompt or '').strip()}\n\n"
             "MEMORY DATABASE:\n"
             f"{memory_text}\n\n"
+            "RELEVANT EXPERIENCE:\n"
+            f"{exp_text}\n\n"
             "CURRENT USER QUESTION:\n"
             f"{str(user_question or '').strip()}\n\n"
             "GAN PROMPT:\n"
@@ -1652,6 +1710,20 @@ class ThinkingEngine:
             existing.append(result)
             with open(file_path, "w", encoding="utf-8") as f:
                 json.dump(existing, f, ensure_ascii=False, indent=2)
+
+            # GAN 辯論的綜合結論即 Aize 的思考方式 → 自動沉澱進經驗數據庫
+            synthesis = (result.get("synthesis") or "").strip()
+            if synthesis:
+                try:
+                    try:
+                        from tools.experience_db import get_experience_db
+                    except ImportError:
+                        from core.tools.experience_db import get_experience_db
+                    get_experience_db().save(
+                        synthesis, kind="thinking",
+                        tags=["gan", (result.get("gan_topic") or "")[:30]])
+                except Exception:
+                    pass
         except Exception:
             pass
 

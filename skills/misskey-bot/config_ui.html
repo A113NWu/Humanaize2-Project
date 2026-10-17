@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root{--accent:#5fc7b4;--accent-deep:#3ea393;--text:#f0ebe4;--muted:#9a9187;--line:rgba(255,255,255,.12)}
+  *{box-sizing:border-box}
+  body{margin:0;padding:16px;background:transparent;color:var(--text);font-family:"Segoe UI",sans-serif;font-size:13px}
+  h3{margin:0 0 4px;font-size:14px}
+  .muted{color:var(--muted);font-size:12px;margin:0 0 14px;line-height:1.5}
+  fieldset{border:1px solid var(--line);border-radius:10px;padding:12px;margin:0 0 12px}
+  legend{padding:0 6px;font-size:12px;color:var(--muted)}
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:10px}
+  label:last-child{margin-bottom:0}
+  input,select{display:block;width:100%;margin-top:4px;padding:7px 9px;border-radius:8px;border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--text);font-size:13px}
+  input:focus,select:focus{outline:none;border-color:var(--accent)}
+  .row{display:flex;gap:10px}
+  .row label{flex:1}
+  .actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:6px 0 12px}
+  button{padding:8px 16px;border:0;border-radius:10px;cursor:pointer;font-weight:700;font-size:12px;color:#0d2428;background:linear-gradient(145deg,#acf0e2,var(--accent-deep))}
+  button:hover{filter:brightness(1.07)}
+  button.ghost{background:rgba(255,255,255,.08);color:var(--text);border:1px solid var(--line);box-shadow:none;font-weight:600}
+  #status-line{font-size:12px;color:var(--muted)}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#666;margin-right:6px;vertical-align:middle}
+  .dot.on{background:#4ade80;box-shadow:0 0 6px #4ade80}
+  #notice{min-height:16px;font-size:12px;color:var(--accent);margin-bottom:8px}
+  #notice.err{color:#ff7a7a}
+</style>
+</head>
+<body>
+<h3>Misskey 機器人（Aize）</h3>
+<p class="muted">讓 Aize 在 Misskey 實例發文、回覆提及、讀取時間線。Token 僅保存在本機技能目錄 config.json。</p>
+
+<div class="actions">
+  <span class="dot on" id="run-dot" style="display:none"></span>
+  <span id="status-line">讀取狀態中…</span>
+</div>
+<div id="notice"></div>
+
+<form id="cfg-form">
+<fieldset><legend>實例連接</legend>
+  <div class="row">
+    <label>伺服器 Host<input name="host" placeholder="hub.imikufans.com" autocomplete="off"></label>
+    <label>預設發文可見性
+      <select name="default_visibility">
+        <option value="public">public（公開）</option>
+        <option value="home">home（首頁）</option>
+        <option value="followers">followers（僅關注者）</option>
+        <option value="specified">specified（指定）</option>
+      </select>
+    </label>
+  </div>
+  <label>Access Token<input name="token" type="password" autocomplete="new-password" placeholder="留空表示不修改現有 Token"></label>
+</fieldset>
+<div class="actions">
+  <button type="submit">💾 保存並驗證配置</button>
+  <button type="button" class="ghost" id="btn-bot">🏷 標註為機器人</button>
+</div>
+</form>
+
+<script>
+const $=s=>document.querySelector(s);
+function notice(t,err){const n=$('#notice');n.textContent=t||'';n.className=err?'err':'';}
+async function exec(action,params){
+  const r=await fetch('/api/skills/execute',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name:'misskey-bot',action,params})});
+  const d=await r.json().catch(()=>({}));
+  const res=d&&d.result;
+  if(!r.ok||!res||res.success===false)throw Error((res&&(res.error||res.message))||(d.error&&d.error.message)||('請求失敗 '+r.status));
+  return res;
+}
+async function loadStatus(){
+  try{
+    const r=await exec('status');
+    if(r.host)$('#cfg-form [name=host]').value=r.host;
+    if(r.default_visibility)$('#cfg-form [name=default_visibility]').value=r.default_visibility;
+    const tok=$('#cfg-form [name=token]');
+    tok.value='';
+    tok.placeholder=r.has_token?'已配置 Token（留空不修改）':'尚未配置 Token';
+    const who=r.username?('@'+r.username+'@'+r.host):(r.host||'未配置');
+    $('#status-line').textContent=who+'｜機器人標註：'+(r.remote_isBot===true?'是':'否');
+  }catch(e){
+    $('#status-line').textContent='狀態讀取失敗：'+e.message;
+  }
+}
+$('#cfg-form').onsubmit=async e=>{
+  e.preventDefault();
+  const host=$('#cfg-form [name=host]').value.trim();
+  if(!host){notice('請填寫伺服器 Host',true);return;}
+  const params={
+    host,
+    default_visibility:$('#cfg-form [name=default_visibility]').value,
+    token:$('#cfg-form [name=token]').value.trim()
+  };
+  notice('保存並驗證中…');
+  try{
+    const r=await exec('configure',params);
+    $('#cfg-form [name=token]').value='';
+    notice(r.message||'配置已保存');
+    await loadStatus();
+  }catch(err){notice('配置失敗：'+err.message,true);}
+};
+$('#btn-bot').onclick=async()=>{
+  notice('正在標註為機器人…');
+  try{
+    const r=await exec('set_bot');
+    notice(r.message||'已標註為機器人');
+    await loadStatus();
+  }catch(err){notice('標註失敗：'+err.message,true);}
+};
+loadStatus();
+</script>
+</body>
+</html>

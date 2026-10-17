@@ -33,14 +33,23 @@ def save_memory(mem):
 
 def add(mem, role, content, source=None):
     entry = {
-        "role": role, 
-        "content": content, 
+        "role": role,
+        "content": content,
         "time": datetime.now().isoformat(),
         "source": source or ("user" if role == "user" else "ai_response")
     }
     mem.setdefault("messages", []).append(entry)
     if len(mem["messages"]) > MAX_MEMORY:
         mem["messages"] = mem["messages"][-MAX_MEMORY:]
+    # 同步索引進向量記憶庫（懶加載，失敗不影響主流程）
+    try:
+        try:
+            from ..tools.memory_db import get_memory_db
+        except ImportError:
+            from tools.memory_db import get_memory_db
+        get_memory_db().add(role, content, timestamp=entry["time"])
+    except Exception:
+        pass
     return mem  # 返回更新后的memory对象
 
 def add_message(mem, role, content):

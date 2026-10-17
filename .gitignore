@@ -68,6 +68,16 @@ local.properties
 .env
 .venv/
 venv/
+# API keys / credentials (never commit)
+Key_*.txt
+key_*.txt
+
+# Runtime data
+data/memory_db.json
+data/misskey_watch_state.json
+virtual_memory_check.json
+src/core/tools/ai_selfdevelop/customizations/response_strategy.json
+skills/HumanaizeSocietyNetwork/experience_share_policy.json
 
 # OS files
 .DS_Store

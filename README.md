@@ -107,6 +107,20 @@ pip install -r requirements.txt
 python src/core/windows_main.py
 ```
 
+## 安卓 Termux 运行
+
+在 Termux 里 clone 即用（仅网页/CLI 模式，无桌面 GUI）：
+
+```
+pkg install git -y
+git clone https://github.com/A113NWu/Humanaize2-Project.git
+cd Humanaize2-Project
+bash install_termux.sh
+bash humanaize2.sh boot
+```
+
+然后手机浏览器打开 `http://127.0.0.1:8082/`。模型请在设置页配置 API（OpenRouter / 小米 MiMo 等），本地 llama 在 Termux 上不可用。
+
 ## 常见问题
 
 - **面板打不开**：看日志窗口有没有报错；确认 8082 端口未被占用；`http://127.0.0.1:8082/health` 返回 `ok` 即正常。

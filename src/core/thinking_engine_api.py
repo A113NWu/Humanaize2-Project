@@ -673,7 +673,10 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
     def finish(self):
         try:
             duration_ms = (time.perf_counter() - getattr(self, '_request_started_at', time.perf_counter())) * 1000
-            logger.info(f"[HTTP] finish method={self.command} path={self.path} duration_ms={duration_ms:.1f}")
+            # 客戶端提前斷開時 self.command / self.path 可能未設置，安全取值
+            method = getattr(self, 'command', '?')
+            path = getattr(self, 'path', '?')
+            logger.info(f"[HTTP] finish method={method} path={path} duration_ms={duration_ms:.1f}")
         finally:
             super().finish()
 
@@ -701,7 +704,11 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
 
     # ---------- 訪問控制：局域網門禁 + 賬戶登錄 ----------
     _LOCAL_CLIENTS = ("127.0.0.1", "::1", "localhost")
-    _AUTH_EXEMPT_PATHS = ("/api/login", "/health")
+    _AUTH_EXEMPT_PATHS = ("/api/login", "/health", "/live2d",
+                          "/api/live2d/poll", "/api/live2d/command",
+                          "/api/live2d/chat", "/api/tts")
+    # OBS 瀏覽源無法登錄，Live2D 頁面資源與攝像頭背景圖免登錄（仍受局域網門禁限制）
+    _AUTH_EXEMPT_PREFIXES = ("/live2d/", "/asset/")
 
     def _lan_blocked(self) -> bool:
         """非本機來源且未開啟局域網訪問 → 拒絕（熱生效）。"""
@@ -741,7 +748,9 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         if self._lan_blocked():
             self._send_error("局域网访问未启用，仅本机可访问此面板", 403)
             return False
-        if path in self._AUTH_EXEMPT_PATHS or not self._auth_required():
+        if (path in self._AUTH_EXEMPT_PATHS
+                or path.startswith(self._AUTH_EXEMPT_PREFIXES)
+                or not self._auth_required()):
             return True
         if self._session_valid():
             return True
@@ -834,6 +843,12 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._handle_list_skills()
         elif parsed.path.startswith('/api/skills/'):
             self._route_skill_api_get(parsed.path)
+        elif parsed.path == '/live2d':
+            self._send_static_file("live2d/index.html", "text/html; charset=utf-8")
+        elif parsed.path.startswith('/live2d/'):
+            self._handle_live2d_static(parsed.path)
+        elif parsed.path == '/api/live2d/poll':
+            self._handle_live2d_poll(parsed)
         elif parsed.path == '/':
             self._send_static_file("index.html", "text/html; charset=utf-8")
         elif parsed.path == '/background':
@@ -850,6 +865,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                 self._send_static_file(asset_name, asset_types[asset_name])
             else:
                 self._send_error("Not found", 404)
+        elif parsed.path.startswith('/asset/'):
+            self._handle_root_asset(parsed.path)
         else:
             self._send_error("Not found", 404)
 
@@ -953,8 +970,226 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._route_skill_api_post(parsed.path)
         elif parsed.path == '/api/upload':
             self._handle_upload()
+        elif parsed.path == '/api/live2d/command':
+            self._handle_live2d_command()
+        elif parsed.path == '/api/live2d/chat':
+            self._handle_live2d_chat()
         else:
             self._send_error("Not found", 404)
+
+    # ---------- Live2D ----------
+
+    _LIVE2D_MIME = {
+        ".js": "text/javascript; charset=utf-8",
+        ".json": "application/json; charset=utf-8",
+        ".png": "image/png",
+        ".moc3": "application/octet-stream",
+        ".html": "text/html; charset=utf-8",
+        ".css": "text/css; charset=utf-8",
+    }
+
+    def _handle_live2d_static(self, url_path):
+        """本地化的 Live2D 資源（庫與模型），不再依賴外網 CDN。"""
+        rel = url_path[len("/live2d/"):].replace("\\", "/").lstrip("/")
+        if not rel or ".." in rel.split("/"):
+            self._send_error("invalid path", 400)
+            return
+        ext = os.path.splitext(rel)[1].lower()
+        self._send_static_file("live2d/" + rel, self._LIVE2D_MIME.get(ext, "application/octet-stream"))
+
+    _ROOT_ASSET_MIME = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+    }
+
+    def _handle_root_asset(self, url_path):
+        """項目根目錄 Asset/ 下的圖片資源（如虛擬攝像頭背景 Camera_bkg.png）。"""
+        rel = url_path[len("/asset/"):].replace("\\", "/").lstrip("/")
+        if not rel or ".." in rel.split("/") or "/" in rel:
+            self._send_error("invalid path", 400)
+            return
+        ext = os.path.splitext(rel)[1].lower()
+        mime = self._ROOT_ASSET_MIME.get(ext)
+        if not mime:
+            self._send_error("Not found", 404)
+            return
+        roots = []
+        if getattr(sys, "frozen", False):
+            roots.append(os.path.dirname(os.path.abspath(sys.executable)))
+        roots.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        for root in roots:
+            path = os.path.join(root, "Asset", rel)
+            if os.path.isfile(path):
+                self._send_file_path(path, mime)
+                return
+        self._send_error("Not found", 404)
+
+    @staticmethod
+    def _live2d_hub():
+        try:
+            from tools.live2d_hub import get_live2d_hub
+        except ImportError:
+            from core.tools.live2d_hub import get_live2d_hub
+        return get_live2d_hub()
+
+    def _handle_live2d_poll(self, parsed):
+        try:
+            from urllib.parse import parse_qs
+            since = parse_qs(parsed.query or "").get("since", ["0"])[0]
+        except Exception:
+            since = "0"
+        try:
+            hub = self._live2d_hub()
+            self._send_json({"commands": hub.poll_commands(since),
+                             "status": hub.status()})
+        except Exception as e:
+            self._send_error(f"live2d poll failed: {e}", 500)
+
+    def _handle_live2d_command(self):
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = json.loads(self.rfile.read(content_length).decode('utf-8'))
+        except Exception as e:
+            self._send_error(f"Invalid JSON body: {e}")
+            return
+        if not isinstance(body, dict) or not body.get("type"):
+            self._send_error("command object with 'type' is required", 400)
+            return
+        try:
+            cmd_id = self._live2d_hub().push_command(body)
+            self._send_json({"success": True, "id": cmd_id})
+        except Exception as e:
+            self._send_error(f"live2d command failed: {e}", 500)
+
+    def _handle_live2d_chat(self):
+        """Live2D 頁面/外部聊天源送來的消息：走引擎生成回復，
+        回復同時推 speak 命令給 Live2D 頁面朗讀，並以 JSON 返回文本。"""
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = json.loads(self.rfile.read(content_length).decode('utf-8'))
+        except Exception as e:
+            self._send_error(f"Invalid JSON body: {e}")
+            return
+
+        text = (body.get("text") or "").strip() if isinstance(body, dict) else ""
+        user = (body.get("user") or "live2d").strip() if isinstance(body, dict) else "live2d"
+        if not text:
+            self._send_error("text is required", 400)
+            return
+
+        state = ThinkingEngineState()
+        thinking_engine = state.get_thinking_engine()
+        memory = state.get_memory()
+        personality = state.get_personality()
+        if not thinking_engine:
+            self._send_error("ThinkingEngine not available", 503)
+            return
+        try:
+            thinking_engine.pause_idle()
+        except Exception:
+            pass
+
+        if not self._chat_lock.acquire(blocking=False):
+            self._send_error("AI 正在思考中，請稍後再試", 409)
+            return
+
+        try:
+            # 與 /api/chat 相同的 system 塊拼裝（精簡版：不跑拒答決策線程，
+            # Live2D 場景下彈幕/會議消息需要穩定回復）
+            personality_prompt = ""
+            if personality:
+                personality_prompt = getattr(personality, 'description', '') or str(personality)
+            context = build_context_from_memory(memory) if memory else ""
+            system_block_parts = []
+            try:
+                from data.prompts_manager import load_system_prompt, load_agent_prompt
+            except ImportError:
+                from core.data.prompts_manager import load_system_prompt, load_agent_prompt
+            for loader in (load_system_prompt, load_agent_prompt):
+                try:
+                    t = (loader() or "").strip()
+                    if t:
+                        system_block_parts.append(t)
+                except Exception:
+                    pass
+            if personality_prompt:
+                system_block_parts.append(personality_prompt)
+            _skills_text = _get_skills_prompt_cached()
+            if _skills_text:
+                system_block_parts.append(_skills_text)
+            if context:
+                system_block_parts.append(context)
+
+            messages = [{"role": "user", "content": text}]
+            full_prompt = build_prompt_from_messages(messages, "\n\n".join(system_block_parts))
+
+            if memory is not None:
+                try:
+                    from memory import add as _mem_add, save_memory as _mem_save
+                    _mem_add(memory, "user", f"[{user}] {text}", source="live2d")
+                    _mem_save(memory)
+                except Exception:
+                    pass
+
+            collector = ResponseCollector(timeout=300)
+            original_on_response = thinking_engine.on_response
+            thinking_engine.on_response = collector.callback
+
+            reply = ""
+            try:
+                thinking_engine.queue_chat_task(
+                    full_prompt,
+                    memory=memory,
+                    user_text=text,
+                    personality=personality,
+                    use_gan_decision=False,
+                )
+                while True:
+                    chunk = collector.get_chunk()
+                    if chunk["type"] == "chunk":
+                        reply += chunk["content"]
+                    elif chunk["type"] == "done":
+                        break
+                    elif chunk["type"] == "error":
+                        reply = reply or f"錯誤: {chunk['content']}"
+                        break
+                    elif chunk["type"] == "timeout":
+                        reply = reply or "抱歉，我剛才走神了～"
+                        break
+                collector.set_finished()
+            finally:
+                thinking_engine.on_response = original_on_response
+
+            reply = clean_reply(reply) if reply else ""
+            if not reply:
+                self._send_error("empty reply", 502)
+                return
+
+            if memory is not None:
+                try:
+                    from memory import add as _mem_add, save_memory as _mem_save
+                    _mem_add(memory, "assistant", reply, source="live2d")
+                    _mem_save(memory)
+                except Exception:
+                    pass
+
+            # 推 speak 命令：Live2D 頁面輪詢拿到後 TTS 朗讀 + 唇形
+            try:
+                self._live2d_hub().push_command({"type": "speak", "text": reply})
+            except Exception:
+                pass
+
+            self._send_json({"success": True, "reply": reply})
+        except Exception as e:
+            logger.error(f"[Live2D] chat error: {e}\n{traceback.format_exc()}")
+            self._send_error(f"live2d chat failed: {e}", 500)
+        finally:
+            try:
+                self._chat_lock.release()
+            except RuntimeError:
+                pass
 
     # 聊天附件大小不限（用戶要求移除 20MB 上限）
     _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
@@ -1200,7 +1435,9 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             "guard_network_monitor": True, "guard_system_monitor": True,
             "counter_measure_enabled": True, "counter_lab_mode": False,
             "counter_max_warnings": 2, "counter_cooldown": 300,
-            "allow_lan_access": False, "web_auth_username": "", "web_auth_password_hash": ""
+            "allow_lan_access": False, "web_auth_username": "", "web_auth_password_hash": "",
+            "live2d_enabled": True, "animation_speed": "1.5",
+            "tts_enabled": False
         }
 
     def _read_settings_raw(self):
@@ -2610,6 +2847,16 @@ class ThinkingEngineAPIServer:
         self.thread.start()
         self.running = True
         logger.info(f"ThinkingEngine API server started on http://{self.host}:{self.port}")
+
+        # 後台預熱技能管理器：首次掃描需導入全部技能模塊（可達十幾秒），
+        # 放啟動線程做掉，用戶首次打開「技能管理」分頁時即點即顯
+        def _prewarm_skills():
+            try:
+                _get_skills_manager().get_all_skills()
+            except Exception as e:
+                logger.warning(f"[Skills] prewarm failed: {e}")
+        threading.Thread(target=_prewarm_skills, daemon=True,
+                         name="SkillsPrewarm").start()
 
     def stop(self):
         """停止API服务器"""

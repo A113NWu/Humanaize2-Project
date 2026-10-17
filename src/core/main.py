@@ -1034,7 +1034,11 @@ def boot_web_dashboard():
     server = start_api_server(host="0.0.0.0", port=8082)
     dashboard_url = f"http://127.0.0.1:{server.port}/"
     print(f"[INFO] Browser dashboard started: {dashboard_url}")
-    webbrowser.open(dashboard_url)
+    try:
+        webbrowser.open(dashboard_url)
+    except Exception:
+        # Termux / 無桌面環境：無瀏覽器可開，用戶手動訪問上面的 URL 即可
+        pass
 
     try:
         while True:

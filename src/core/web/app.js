@@ -4,7 +4,63 @@ const rawFetch=window.fetch.bind(window);window.fetch=(...args)=>rawFetch(...arg
 const basicSettings=$('[data-section-view="basic"]');basicSettings.insertAdjacentHTML('afterbegin','<div class="openai-settings"><label><input name="openai_enabled" type="checkbox">启用 OpenAI API 模式（默认关闭）</label><label>OpenAI API Key<input name="openai_api_key" type="password" placeholder="留空则使用本地模型"></label><label>OpenAI Base URL<input name="openai_base_url" placeholder="https://api.openai.com/v1"></label><label>OpenAI 模型<input name="openai_model" placeholder="gpt-4o-mini"></label><label>视觉模型（分析上传的图片用，留空沿用对话模型）<input name="vision_model" placeholder="如 gpt-4o / qwen-vl-max"></label></div>');
 function addMessage(text,role){const item=document.createElement('div');item.className=`message ${role}`;item.textContent=text;$('#messages').appendChild(item);$('#messages').scrollTop=$('#messages').scrollHeight;return item}
 function showView(name){$$('.view').forEach(view=>view.classList.toggle('active',view.id===`view-${name}`));$$('.nav-item[data-view]').forEach(item=>item.classList.toggle('active',item.dataset.view===name));const label={chat:'对话',thoughts:'GAN 思考',skills:'Skill 输出',status:'系统状态',settings:'设置'}[name];$('#page-title').textContent=label;$('#view-label').textContent=label;$('#sidebar').classList.remove('open')}
-async function loadSettings(){const response=await fetch('/api/settings');state.settings=await response.json();for(const [key,value] of Object.entries(state.settings)){const field=$(`#settings-form [name="${key}"]`);if(!field)continue;if(field.type==='checkbox')field.checked=Boolean(value);else field.value=value}const pwField=$('#settings-form [name="web_auth_password"]');if(pwField)pwField.placeholder=state.settings.web_auth_enabled?'已设置密码（留空不修改）':'未设置密码';$('#model-name').textContent=state.settings.model_name||'未设置'}
+async function loadSettings(){const response=await fetch('/api/settings');state.settings=await response.json();for(const [key,value] of Object.entries(state.settings)){const field=$(`#settings-form [name="${key}"]`);if(!field)continue;if(field.type==='checkbox')field.checked=Boolean(value);else field.value=value}const pwField=$('#settings-form [name="web_auth_password"]');if(pwField)pwField.placeholder=state.settings.web_auth_enabled?'已设置密码（留空不修改）':'未设置密码';$('#model-name').textContent=state.settings.model_name||'未设置';applyUiPrefs()}
+/* ====================== 右下角 Live2D 形象 + 動畫速度 ====================== */
+const live2dWidget={
+  el:null,frame:null,enabled:false,
+  apply(on){this.enabled=!!on;if(!this.el)return;if(on&&!this.frame.src)this.frame.src=this.frame.dataset.src;this.el.style.display=on?'block':'none';},
+  /* 推命令給 Live2D 頁面（說話/動作）；失敗靜默不影響聊天 */
+  push(cmd){if(!this.enabled)return;fetch('/api/live2d/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cmd)}).catch(()=>{});},
+  /* 說話時隨機選一個動作（TapBody / 各種 Idle），別老是循環同一個 */
+  randomSpeakMotion(){const r=Math.random();if(r<0.5)return {type:'motion',group:'TapBody'};return {type:'motion',group:'Idle',index:Math.floor(Math.random()*9)};},
+  onSpeakStart(){this.push(this.randomSpeakMotion());document.body.classList.add('aize-speaking');},
+  /* 說話途中每隔一段內容再做一個動作，讓形象全程有動態而非只開頭動一下 */
+  onSpeakProgress(){this.push(this.randomSpeakMotion());},
+  /* 主頁語音模式開著時音頻由主頁播，這裡只讓形象動；否則形象自己開口說 */
+  onReply(text){if(voice.speakActive())return;const t=String(text||'').replace(/\s+/g,' ').trim();if(t)this.push({type:'speak',text:t.slice(0,400)});}
+};
+function applyUiPrefs(){
+  live2dWidget.apply(state.settings.live2d_enabled!==false&&String(state.settings.live2d_enabled)!=='false');
+  document.documentElement.style.setProperty('--anim-mult',state.settings.animation_speed||'1.5');
+  /* 語音引擎被關掉時立即停止正在播的語音（純 TTS 模式；麥克風對話模式不受影響） */
+  if(!state.settings.tts_enabled&&typeof voice!=='undefined'&&!voice.on){try{voice._abortPlayback();voice.speakBuf='';}catch(e){}}
+}
+/* Live2D 浮窗拖動：手柄 pointer capture 後即使滑過 iframe 事件也不丟；
+   位置存 localStorage，刷新保留，雙擊手柄歸位 */
+(function initLive2dDrag(){
+  const box=$('#live2d-box'), frame=$('#live2d-widget'), handle=$('#live2d-drag');
+  live2dWidget.el=box; live2dWidget.frame=frame;
+  const place=(l,t)=>{box.style.left=l+'px';box.style.top=t+'px';box.style.right='auto';box.style.bottom='auto';};
+  try{
+    const p=JSON.parse(localStorage.getItem('live2d_pos')||'null');
+    if(p&&typeof p.left==='number'&&typeof p.top==='number') place(p.left,p.top);
+  }catch(e){}
+  let drag=null;
+  handle.addEventListener('pointerdown',e=>{
+    e.preventDefault();
+    const r=box.getBoundingClientRect();
+    drag={dx:e.clientX-r.left,dy:e.clientY-r.top};
+    try{handle.setPointerCapture(e.pointerId);}catch(err){}
+  });
+  handle.addEventListener('pointermove',e=>{
+    if(!drag)return;
+    const maxL=innerWidth-box.offsetWidth, maxT=innerHeight-box.offsetHeight;
+    const l=Math.min(Math.max(0,e.clientX-drag.dx),maxL);
+    const t=Math.min(Math.max(0,e.clientY-drag.dy),maxT);
+    place(l,t);
+  });
+  const end=()=>{
+    if(!drag)return; drag=null;
+    const r=box.getBoundingClientRect();
+    try{localStorage.setItem('live2d_pos',JSON.stringify({left:Math.round(r.left),top:Math.round(r.top)}));}catch(e){}
+  };
+  handle.addEventListener('pointerup',end);
+  handle.addEventListener('pointercancel',end);
+  handle.addEventListener('dblclick',()=>{
+    try{localStorage.removeItem('live2d_pos');}catch(e){}
+    box.style.left=box.style.top=box.style.right=box.style.bottom='';
+  });
+})();
 async function checkHealth(){try{const response=await fetch('/health');if(!response.ok)throw Error();$('#status').textContent='在线';$('#api-health').textContent='在线'}catch(error){$('#status').textContent='离线';$('#api-health').textContent='离线'}}
 /* 刷新頁面後重建聊天：優先使用結構化時間線（思考行/命令區塊/正文分離，
    與實時流式渲染一致），時間線不可用時降級為 memory.json 純文本歷史 */
@@ -57,10 +113,10 @@ async function refreshStatus(){try{const data=await (await fetch('/api/status'))
 $('#collapse-sidebar').onclick=()=>$('#sidebar').classList.toggle('collapsed');$('#open-sidebar').onclick=()=>$('#sidebar').classList.add('open');$$('.nav-item[data-view]').forEach(item=>item.onclick=()=>showView(item.dataset.view));$$('.settings-tab').forEach(tab=>tab.onclick=()=>{$$('.settings-tab').forEach(item=>item.classList.remove('active'));$$('.settings-section').forEach(item=>item.classList.remove('active'));tab.classList.add('active');$(`[data-section-view="${tab.dataset.section}"]`).classList.add('active')});
 $('#chat-form').onsubmit=async event=>{event.preventDefault();const text=$('#prompt').value.trim();const atts=uploadUI.payload();if(!text&&!atts.length)return;if(uploadUI.files.some(f=>f.uploading)){window.alert('文件還在上傳中，請稍候再發送');return;}addMessage(atts.length?((text?text+'\n':'')+atts.map(a=>`📎 ${a.name}`).join('\n')):text,'user');$('#prompt').value='';uploadUI.clear();voice.beginTurn();const reply=addMessage('','assistant');const thoughtLog=document.createElement('div');thoughtLog.className='thought-log';reply.appendChild(thoughtLog);/* 回覆文本塊與命令塊按事件到達順序交錯插入，避免 followup 總結出現在命令框上方 */const streamRoot=document.createElement('div');streamRoot.className='skill-output';reply.appendChild(streamRoot);let textNode=document.createElement('div');textNode.className='reply-text';textNode.textContent='思考中...';streamRoot.appendChild(textNode);let firstCommand=true;const appendText=()=>{if(!textNode||!textNode.isConnected||streamRoot.lastElementChild!==textNode){textNode=document.createElement('div');textNode.className='reply-text';streamRoot.appendChild(textNode);}return textNode};const clearThinking=()=>{const n0=streamRoot.querySelector('.reply-text');if(n0&&n0.textContent==='思考中...')n0.textContent='';};const addCommand=(ev,c)=>{/* 第一條命令到達：刪除命令前的所有解釋性文字，避免「好的我來幫你…」打斷工作流；命令完成後的總結在命令框之後，不受影響 */if(ev==='command_start'&&firstCommand){firstCommand=false;streamRoot.querySelectorAll('.reply-text').forEach(n=>n.remove());}clearThinking();/* 命令狀態行之後到達的文本要開新文本塊，保證到達順序即顯示順序 */textNode=null;if(ev==='command_start'){const l=document.createElement('div');l.className='skill-cmd-start';l.textContent='⚙ '+(c||'執行技能中...');streamRoot.appendChild(l);}else{const box=document.createElement('div');box.className='skill-cmd-result';const lab=document.createElement('div');lab.className='skill-cmd-label';lab.textContent='輸出 Output';const pre=document.createElement('pre');pre.textContent=(c||'').replace(/\s+$/,'');box.appendChild(lab);box.appendChild(pre);streamRoot.appendChild(box);}};const thoughtLabels={gan_decision:'GAN 決策',gan_topic:'議題',gan_argument:'正方論點',gan_counter_argument:'反方論點',gan_synthesis:'綜合結論',solve_mode:'Solve 模式',skill:'Skill',gan:'思考'};const addThought=(t,c)=>{clearThinking();const line=document.createElement('div');line.className='thought-line '+(t?'t-'+t:'');line.dataset.label=thoughtLabels[t]||'思考';line.textContent=(c||'').replace(/^\[[^\]]+\]\s*/,'');thoughtLog.appendChild(line);$('#messages').scrollTop=$('#messages').scrollHeight};try{const response=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:text}],stream:true,attachments:atts})});if(!response.ok){const data=await response.json().catch(()=>({}));const err=new Error(data.error?.message||'请求失败');err.status=response.status;throw err}
 const reader=response.body?.getReader();if(!reader){throw Error('该浏览器不支持流式响应');}
-const decoder=new TextDecoder();let buffer='';let sawContent=false;while(true){const {value,done}=await reader.read();if(done)break;buffer+=decoder.decode(value,{stream:true});const parts=buffer.split('\n\n');buffer=parts.pop()||'';for(const part of parts){const line=part.trim();if(!line.startsWith('data:'))continue;const payload=line.slice(5).trim();if(!payload||payload==='[DONE]')continue;try{const data=JSON.parse(payload);const content=data.choices?.[0]?.delta?.content;if(data.error){addThought('error',content||'生成失敗');}else if(data.command_event){addCommand(data.command_event,content);}else if(data.thought){addThought(data.thought_type||'',content);}else if(typeof content==='string'&&content){const n=appendText();if(n.textContent==='思考中...')n.textContent='';n.textContent+=content;sawContent=true;voice.feed(content);}if(data.choices?.[0]?.finish_reason==='stop'){if(!sawContent){reply.textContent='錯誤：AI 沒有產生任何有效內容';}}}catch(error){console.warn('Stream parse error',error,payload)}}}
-if(!sawContent){reply.textContent='錯誤：AI 沒有產生任何有效內容';voice.cancel();}else{/* 收尾：去掉每個文本塊首部空行；把「思考下一步」狀態行標記為完成，避免看起來永久卡死 */streamRoot.querySelectorAll('.reply-text').forEach(n=>{n.textContent=n.textContent.replace(/^\n+/,'')});streamRoot.querySelectorAll('.skill-cmd-start').forEach(el=>{if(/thinking about the next step/.test(el.textContent))el.textContent=el.textContent.replace('⚙','✓')});voice.flush();}
+const decoder=new TextDecoder();let buffer='';let sawContent=false;let replyText='';let nextMotionAt=80;while(true){const {value,done}=await reader.read();if(done)break;buffer+=decoder.decode(value,{stream:true});const parts=buffer.split('\n\n');buffer=parts.pop()||'';for(const part of parts){const line=part.trim();if(!line.startsWith('data:'))continue;const payload=line.slice(5).trim();if(!payload||payload==='[DONE]')continue;try{const data=JSON.parse(payload);const content=data.choices?.[0]?.delta?.content;if(data.error){addThought('error',content||'生成失敗');}else if(data.command_event){addCommand(data.command_event,content);}else if(data.thought){addThought(data.thought_type||'',content);}else if(typeof content==='string'&&content){const n=appendText();if(n.textContent==='思考中...')n.textContent='';n.textContent+=content;if(!sawContent)live2dWidget.onSpeakStart();sawContent=true;replyText+=content;voice.feed(content);/* 每累積約 80 字讓 Aize 再做一個動作，全程有動態 */if(replyText.length>=nextMotionAt){nextMotionAt+=80;live2dWidget.onSpeakProgress();}}if(data.choices?.[0]?.finish_reason==='stop'){if(!sawContent){reply.textContent='錯誤：AI 沒有產生任何有效內容';}}}catch(error){console.warn('Stream parse error',error,payload)}}}
+if(!sawContent){reply.textContent='錯誤：AI 沒有產生任何有效內容';voice.cancel();document.body.classList.remove('aize-speaking');}else{/* 收尾：去掉每個文本塊首部空行；把「思考下一步」狀態行標記為完成，避免看起來永久卡死 */streamRoot.querySelectorAll('.reply-text').forEach(n=>{n.textContent=n.textContent.replace(/^\n+/,'')});streamRoot.querySelectorAll('.skill-cmd-start').forEach(el=>{if(/thinking about the next step/.test(el.textContent))el.textContent=el.textContent.replace('⚙','✓')});live2dWidget.onReply(replyText);voice.flush();/* 沒開 TTS：語音不會啟動，直接顯回 Skill 框 */if(!voice.speakActive())setTimeout(()=>document.body.classList.remove('aize-speaking'),120);}
 state.messages++;$('#message-count').textContent=state.messages}catch(error){voice.cancel();if(error.status===409){reply.textContent=error.message;reply.classList.add('busy-notice');$('#prompt').value=text}else{reply.textContent=`请求失败：${error.message}`}}};
-$('#settings-form').onsubmit=async event=>{event.preventDefault();const values={};for(const field of $('#settings-form').elements){if(!field.name)continue;values[field.name]=field.type==='checkbox'?field.checked:field.value}try{const response=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(values)});const data=await response.json();if(!response.ok)throw Error(data.error?.message||'保存失败');$('#settings-notice').textContent=data.message||'已保存';setTimeout(()=>$('#settings-notice').textContent='',1800)}catch(error){$('#settings-notice').textContent=`保存失败：${error.message}`}};
+$('#settings-form').onsubmit=async event=>{event.preventDefault();const values={};for(const field of $('#settings-form').elements){if(!field.name)continue;values[field.name]=field.type==='checkbox'?field.checked:field.value}try{const response=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(values)});const data=await response.json();if(!response.ok)throw Error(data.error?.message||'保存失败');Object.assign(state.settings,values);applyUiPrefs();$('#settings-notice').textContent=data.message||'已保存';setTimeout(()=>$('#settings-notice').textContent='',1800)}catch(error){$('#settings-notice').textContent=`保存失败：${error.message}`}};
 $('#prompt').onkeydown=event=>{if(event.key==='Enter'&&event.ctrlKey)$('#chat-form').requestSubmit()};loadSettings().catch(error=>$('#settings-notice').textContent=`读取失败：${error.message}`);checkHealth();refreshStatus();setInterval(refreshStatus,3000);loadChatHistory();
 
 /* ====================== 語音對話（STT + 流式 TTS） ====================== */
@@ -70,8 +126,10 @@ const voice={
   micPaused:false, awaitingDrain:false,
   supported:('SpeechRecognition' in window)||('webkitSpeechRecognition' in window),
   lang(){return (state.settings&&state.settings.language)==='English'?'en-US':'zh-TW';},
+  /* 是否應該出聲：麥克風對話模式，或設置裡開了語音引擎（純 TTS 自動朗讀） */
+  speakActive(){return this.on||!!(state.settings&&state.settings.tts_enabled);},
   /* ---- 對話流鉤子 ---- */
-  resetTurn(){this.speakBuf='';this.inCode=false;this.awaitingDrain=false;this._abortPlayback();this.queue=[];},
+  resetTurn(){this.speakBuf='';this.inCode=false;this.awaitingDrain=false;this._abortPlayback();this.queue=[];document.body.classList.remove('aize-speaking');},
   /* AI 回合開始：清空舊播放並靜音麥克風（半雙工，防止 Aize 語音被識別成新發言打斷自己） */
   beginTurn(){this.resetTurn();this.pauseMic();},
   /* AI 回合結束（出錯/無內容）：清理並恢復聽覺 */
@@ -89,11 +147,12 @@ const voice={
     if(r){try{r.start();}catch(e){/* onend 裡也會兜底重啟 */}}
   },
   _onSpeakingDone(){
-    // 所有句子播完（或沒有可播內容）後，恢復麥克風聽下一句
+    // 所有句子播完（或沒有可播內容）後，恢復麥克風聽下一句，並顯回 Skill 執行框
+    document.body.classList.remove('aize-speaking');
     if(this.awaitingDrain){this.awaitingDrain=false;this.resumeMic();}
   },
   feed(chunk){
-    if(!this.on||!chunk)return;
+    if(!this.speakActive()||!chunk)return;
     // 追蹤 ``` 代碼塊，代碼內容不朗讀
     const parts=String(chunk).split('```');
     for(let i=0;i<parts.length;i++){
@@ -103,7 +162,7 @@ const voice={
     this._extract(false);
   },
   flush(){
-    if(!this.on)return;
+    if(!this.speakActive())return;
     this._extract(true);
     this.awaitingDrain=true;
     // 沒有任何待播/播放中的句子時直接解鎖；仍在播放則等 pump 收尾
@@ -167,7 +226,7 @@ const voice={
     try{
       while(this.queue.length){
         const text=this.queue.shift();
-        if(!this.on)break;
+        if(!this.speakActive())break;
         try{await this._synthAndPlay(text);}catch(e){console.warn('[voice] tts skip',e);}
       }
     }finally{
@@ -185,7 +244,7 @@ const voice={
         const resp=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text}),signal:ctrl.signal});
         if(!resp.ok){console.warn('[voice] tts HTTP',resp.status);finish();return;}
         const blob=await resp.blob();
-        if(!this.on){finish();return;}
+        if(!this.speakActive()){finish();return;}
         url=URL.createObjectURL(blob);this.urls.push(url);
         audio=new Audio(url);this.current=audio;
         audio.onended=finish;audio.onerror=finish;
@@ -380,7 +439,7 @@ const thoughtFeed={
         }else if(d.type==='autonomous'){
           this.append({thought_type:'social',content:d.content||'',time:d.time||''});
           // fix4：Aize 主動找用戶說話 → 直接 PO 到聊天區（assistant 氣泡）
-          if(d.content)addMessage(d.content,'assistant');
+          if(d.content){addMessage(d.content,'assistant');live2dWidget.onSpeakStart();live2dWidget.onReply(d.content);}
         }
       }catch(_){/* 忽略無法解析的幀（含 ping） */}
     };
@@ -411,9 +470,19 @@ thoughtFeed.init();
 const skillsAdmin={
   skills:[],
   async list(){
-    const data=await (await fetch('/api/skills')).json();
-    this.skills=data.skills||[];
-    this.render();
+    const box=$('#skills-list');
+    if(box)box.innerHTML='<div class="muted">技能列表載入中…首次打開需掃描全部技能，可能要等十幾秒，請稍候。</div>';
+    try{
+      const resp=await fetch('/api/skills');
+      if(!resp.ok)throw Error('HTTP '+resp.status);
+      const data=await resp.json();
+      this.skills=data.skills||[];
+      this.render();
+    }catch(e){
+      console.warn('[skills] list failed',e);
+      if(box)box.innerHTML='<div class="muted">技能列表加載失敗：'+String(e.message||e)+'　<button type="button" class="mini-btn" id="skills-retry">重試</button></div>';
+      const btn=$('#skills-retry');if(btn)btn.onclick=()=>this.list();
+    }
   },
   render(){
     const box=$('#skills-list');
@@ -436,7 +505,7 @@ const skillsAdmin={
       desc.className='skill-desc muted';
       desc.textContent=skill.description||'—';
       meta.appendChild(name);meta.appendChild(desc);
-      row.appendChild(cb);row.appendChild(meta);
+      row.appendChild(meta);row.appendChild(cb);
       box.appendChild(row);
       // 有獨立配置界面的技能：加「配置」按鈕，展開內嵌 iframe
       if(skill.has_config_ui){
@@ -475,68 +544,9 @@ const skillsAdmin={
       window.alert(`技能切換失敗：${e.message}`);
     }
   },
-  /* ---------- Misskey 配置卡片 ---------- */
-  setStatus(text,ok){
-    const el=$('#mk-status');
-    el.textContent=text||'';
-    el.style.color=ok===false?'#ff7a7a':'';
-  },
-  async misskeyStatus(){
-    try{
-      const resp=await fetch('/api/skills/execute',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({name:'misskey-bot',action:'status'})});
-      const data=await resp.json();
-      const r=(data&&data.result)||{};
-      if(!resp.ok||r.success===false)throw Error(r.error||r.connect_error||'讀取狀態失敗');
-      if(r.host)$('#mk-host').value=r.host;
-      if(r.default_visibility)$('#mk-visibility').value=r.default_visibility;
-      $('#mk-token').value='';
-      $('#mk-token').placeholder=r.has_token?'已配置 Token（留空不修改）':'尚未配置 Token';
-      const who=r.username?`@${r.username}@${r.host}`:r.host;
-      this.setStatus(`${who}｜機器人標註：${r.remote_isBot===true?'是':'否'}`,true);
-    }catch(e){
-      this.setStatus(`狀態讀取失敗：${e.message}`,false);
-    }
-  },
-  async misskeyConfigure(){
-    const params={
-      host:$('#mk-host').value.trim(),
-      default_visibility:$('#mk-visibility').value,
-      token:$('#mk-token').value.trim()
-    };
-    if(!params.host){window.alert('請填寫伺服器 Host');return;}
-    this.setStatus('保存並驗證中…');
-    try{
-      const resp=await fetch('/api/skills/execute',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({name:'misskey-bot',action:'configure',params})});
-      const data=await resp.json();
-      const r=(data&&data.result)||{};
-      if(!resp.ok||r.success===false)throw Error(r.error||r.message||'保存失敗');
-      $('#mk-token').value='';
-      this.setStatus(r.message||'配置已保存',true);
-      await this.misskeyStatus();
-    }catch(e){
-      this.setStatus(`配置失敗：${e.message}`,false);
-    }
-  },
-  async misskeySetBot(){
-    this.setStatus('正在標註為機器人…');
-    try{
-      const resp=await fetch('/api/skills/execute',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({name:'misskey-bot',action:'set_bot'})});
-      const data=await resp.json();
-      const r=(data&&data.result)||{};
-      if(!resp.ok||r.success===false)throw Error(r.error||'標註失敗');
-      this.setStatus(r.message||'已標註為機器人',true);
-      await this.misskeyStatus();
-    }catch(e){
-      this.setStatus(`標註失敗：${e.message}`,false);
-    }
-  },
+  /* ---------- Misskey 配置已移入技能折疊面板（skills/misskey-bot/config_ui.html） ---------- */
   loaded:false,
   init(){
-    $('#mk-save').onclick=()=>this.misskeyConfigure();
-    $('#mk-bot').onclick=()=>this.misskeySetBot();
     // 後端首次構造技能管理器需導入全部技能模塊（十幾秒），改為首次打開
     // 「技能管理」分頁時才加載，避免拖慢網頁啟動
     $$('.settings-tab').forEach(tab=>{
@@ -549,7 +559,6 @@ const skillsAdmin={
           const box=$('#skills-list');
           if(box)box.innerHTML=`<div class="muted">技能列表讀取失敗：${e.message}</div>`;
         });
-        this.misskeyStatus();
       });
     });
   }

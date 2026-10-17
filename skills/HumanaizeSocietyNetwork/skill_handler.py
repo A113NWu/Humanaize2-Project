@@ -12,12 +12,14 @@ try:
     from .network_engine import NetworkEngine
     from .friend_manager import FriendManager
     from .thought_exchange import ThoughtExchange
+    from . import experience_share
     COMPONENTS_AVAILABLE = True
 except ImportError:
     try:
         from network_engine import NetworkEngine
         from friend_manager import FriendManager
         from thought_exchange import ThoughtExchange
+        import experience_share
         COMPONENTS_AVAILABLE = True
     except ImportError:
         COMPONENTS_AVAILABLE = False
@@ -78,7 +80,10 @@ class HumanaizeSocietyNetwork:
             'get_received_gan': self._handle_get_received_gan,
             'get_pending_messages': self._handle_get_pending_messages,
             'statistics': self._handle_statistics,
-            'evaluate_friendship': self._handle_evaluate_friendship
+            'evaluate_friendship': self._handle_evaluate_friendship,
+            'query_experience': self._handle_query_experience,
+            'set_experience_share_policy': self._handle_set_share_policy,
+            'get_experience_share_policy': self._handle_get_share_policy
         }
         
         handler = action_handlers.get(action, self._handle_unknown)
@@ -635,6 +640,45 @@ class HumanaizeSocietyNetwork:
                 'error': str(e)
             }
     
+    def _handle_query_experience(self, input_data: Dict) -> Dict:
+        """向所有好友查詢經驗庫（對方可自行決定是否分享）"""
+        try:
+            question = input_data.get('question') or input_data.get('query')
+            if not question:
+                return {'status': 'error', 'error': 'question required'}
+            top_k = input_data.get('top_k', 3)
+            return {
+                'status': 'success',
+                'action': 'query_experience',
+                'result': experience_share.query_friends_experience(question, top_k)
+            }
+        except Exception as e:
+            return {'status': 'error', 'error': str(e)}
+
+    def _handle_set_share_policy(self, input_data: Dict) -> Dict:
+        """設置本機經驗庫共享策略：ask(由Aize決定)/always/never"""
+        try:
+            mode = str(input_data.get('mode', '')).strip().lower()
+            if not experience_share.save_policy(mode):
+                return {'status': 'error',
+                        'error': 'mode must be one of: ask, always, never'}
+            # 確保本機已在監聽，策略立即對新查詢生效
+            experience_share.ensure_started()
+            return {'status': 'success',
+                    'action': 'set_experience_share_policy',
+                    'result': {'mode': mode}}
+        except Exception as e:
+            return {'status': 'error', 'error': str(e)}
+
+    def _handle_get_share_policy(self, input_data: Dict) -> Dict:
+        """查看本機經驗庫共享策略"""
+        try:
+            return {'status': 'success',
+                    'action': 'get_experience_share_policy',
+                    'result': experience_share.load_policy()}
+        except Exception as e:
+            return {'status': 'error', 'error': str(e)}
+
     def _handle_unknown(self, input_data: Dict) -> Dict:
         """Handle unknown action"""
         action = input_data.get('action', 'unknown')
@@ -646,7 +690,9 @@ class HumanaizeSocietyNetwork:
                 'add_friend', 'remove_friend', 'get_friends', 'choose_friend',
                 'share_thought', 'get_received_thoughts',
                 'share_gan', 'get_received_gan',
-                'get_pending_messages', 'statistics', 'evaluate_friendship'
+                'get_pending_messages', 'statistics', 'evaluate_friendship',
+                'query_experience', 'set_experience_share_policy',
+                'get_experience_share_policy'
             ]
         }
 

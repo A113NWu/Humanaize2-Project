@@ -99,6 +99,12 @@ class IdleEngine:
         """
         self.is_running_gan = True
         gan_result = None
+        # 顯式開場事件：CLI/網頁可藉此畫出獨立的「閒置思考」區塊
+        if self.callback:
+            try:
+                self.callback({"type": "idle_begin"})
+            except Exception:
+                pass
         try:
             # Step 1: Let Aize choose an activity and determine thinking direction
             activity, thinking_topic = self._choose_activity()
@@ -175,6 +181,12 @@ class IdleEngine:
             
             # 在GAN完成后运行自我优化（如果有足够的交互数据）
             self._run_self_optimization()
+            # 顯式收場事件：本次閒置活動（含社交/自我優化）全部結束
+            if self.callback:
+                try:
+                    self.callback({"type": "idle_end"})
+                except Exception:
+                    pass
     
     def _choose_activity(self):
         """让Aize选择空闲活动和思考方向"""

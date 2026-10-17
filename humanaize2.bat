@@ -116,10 +116,30 @@ if %FILESIZE% gtr 0 (
 goto :EOF
 
 :main
-python --version >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] Python is not installed or not in PATH.
-    echo Please install Python 3.8 or higher from: https://www.python.org/downloads/
+rem 依賴安裝在 Python 3.13：優先用 py launcher 固定 3.13，其次 py -3，
+rem 最後才退回 PATH 上的 python，並刻意避開 Microsoft Store 的
+rem WindowsApps stub（它在部分終端會報 "The system cannot execute the specified program."）。
+set "PYCMD="
+py -3.13 -c "import sys" >nul 2>&1
+if not errorlevel 1 set "PYCMD=py -3.13"
+if not defined PYCMD (
+    py -3 -c "import sys" >nul 2>&1
+    if not errorlevel 1 set "PYCMD=py -3"
+)
+if not defined PYCMD (
+    for /f "delims=" %%P in ('where python 2^>nul') do (
+        echo %%P | findstr /i "WindowsApps" >nul
+        if errorlevel 1 (
+            if not defined PYCMD (
+                "%%P" -c "import sys" >nul 2>&1
+                if not errorlevel 1 set "PYCMD=%%P"
+            )
+        )
+    )
+)
+if not defined PYCMD (
+    echo [ERROR] 找不到可用的 Python（專案需要 Python 3.13）。
+    echo         請安裝 Python 3.13，或直接執行： py -3.13 src\core\main.py boot -m cli
     pause
     exit /b 1
 )
@@ -143,7 +163,7 @@ if not exist "%MAIN_DIR%src\core\main.py" (
 )
 
 echo [INFO] Starting Humanaize 2.0...
-python -u "%MAIN_DIR%src\core\main.py" %*
+%PYCMD% -u "%MAIN_DIR%src\core\main.py" %*
 
 if errorlevel 1 (
     echo.

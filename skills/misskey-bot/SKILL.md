@@ -6,6 +6,10 @@ metadata:
   risk_level: medium
   requires_approval: false
   version: 1.0.0
+  config_ui: config_ui.html
+  config_file: config.json
+  config_secret_fields:
+    - token
 ---
 
 # Misskey 機器人技能

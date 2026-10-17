@@ -1,195 +1,74 @@
 """
 Humanaize Memory Skill
-Query and manage conversation memory
+
+操作 Aize 的向量記憶庫：需要回憶時主動搜索，而不是把全部記憶疊進上下文。
+日常對話會自動索引；這個技能用於主動檢索、手動保存、查看與遺忘。
 """
 
 import os
-import json
-from typing import Dict, Any, List, Optional
-from datetime import datetime
+import sys
+from typing import Any, Dict
 
 
-MEMORY_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "data", "memory.json")
+def _ensure_src_path():
+    here = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(os.path.dirname(here))
+    for p in (os.path.join(project_root, "src"),
+              os.path.join(project_root, "src", "core")):
+        if p not in sys.path and os.path.isdir(p):
+            sys.path.insert(0, p)
 
 
-def _load_memory() -> Dict:
-    """Load memory from file"""
+def _get_db():
+    _ensure_src_path()
     try:
-        if os.path.exists(MEMORY_FILE):
-            with open(MEMORY_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-    except Exception:
-        pass
-    return {"conversations": [], "facts": [], "preferences": {}}
-
-
-def _save_memory(memory: Dict) -> bool:
-    """Save memory to file"""
-    try:
-        os.makedirs(os.path.dirname(MEMORY_FILE), exist_ok=True)
-        with open(MEMORY_FILE, 'w', encoding='utf-8') as f:
-            json.dump(memory, f, indent=4, ensure_ascii=False)
-        return True
-    except Exception:
-        return False
+        from tools.memory_db import get_memory_db
+    except ImportError:
+        from core.tools.memory_db import get_memory_db
+    return get_memory_db()
 
 
 def execute(input_data: Any) -> Dict:
     """
-    Execute memory operation
-
-    Args:
-        input_data: Either a string action or dict with 'action' key
-            Actions: search, add, list, clear, stats, recall, status, thoughts
-
-    Returns:
-        Dict with operation result
+    Actions:
+      search  - 用問題檢索相關記憶  {action, query, top_k?}
+      save    - 手動保存一條記憶    {action, content, role?, kind?}
+      list    - 最近記憶列表        {action, limit?}
+      forget  - 按 id 遺忘          {action, id}
+      status  - 記憶庫狀態
     """
     if isinstance(input_data, dict):
         action = input_data.get("action", "search")
-        query = input_data.get("query", "")
-        data = input_data.get("data", {})
-        limit = input_data.get("limit", 10)
     else:
         action = "search"
-        query = str(input_data)
-        data = {}
-        limit = 10
+        input_data = {"query": str(input_data)}
 
-    memory = _load_memory()
+    try:
+        db = _get_db()
+    except Exception as e:
+        return {"success": False, "error": f"memory db unavailable: {e}"}
 
     if action == "search":
-        return _search_memory(memory, query)
-    elif action == "add":
-        return _add_memory(memory, data)
-    elif action == "list":
-        return _list_memory(memory, data)
-    elif action == "clear":
-        return _clear_memory(memory)
-    elif action == "stats":
-        return _get_stats(memory)
-    elif action == "recall":
-        msgs = memory.get("conversations", [])[-limit:]
-        return {"status": "success", "messages": msgs, "count": len(msgs)}
-    elif action == "status":
-        return {
-            "status": "success",
-            "messages": len(memory.get("conversations", [])),
-            "thoughts": len(memory.get("facts", [])),
-            "decisions": len(memory.get("preferences", {}))
-        }
-    elif action == "thoughts":
-        thoughts = memory.get("facts", [])[-limit:]
-        return {"status": "success", "thoughts": thoughts, "count": len(thoughts)}
-    else:
-        return {
-            "success": False,
-            "error": f"Unknown action: {action}"
-        }
+        query = str(input_data.get("query", ""))
+        top_k = int(input_data.get("top_k", input_data.get("limit", 5)))
+        hits = db.search(query, top_k=top_k)
+        return {"success": True, "results": hits, "count": len(hits)}
 
+    if action == "save":
+        content = str(input_data.get("content", "") or input_data.get("query", ""))
+        role = str(input_data.get("role", "note"))
+        kind = str(input_data.get("kind", "note"))
+        return db.add(role, content, kind=kind)
 
-def _search_memory(memory: Dict, query: str) -> Dict:
-    """Search memory for matching entries"""
-    if not query:
-        return {
-            "success": True,
-            "results": [],
-            "count": 0
-        }
+    if action == "list":
+        limit = int(input_data.get("limit", 20))
+        items = db.list_all(limit=limit)
+        return {"success": True, "items": items, "count": len(items)}
 
-    query_lower = query.lower()
-    results = []
+    if action == "forget":
+        return db.forget(input_data.get("id"))
 
-    for conv in memory.get("conversations", []):
-        if query_lower in conv.get("text", "").lower():
-            results.append(conv)
+    if action == "status":
+        return {"success": True, "entries": len(db.entries), "path": db.path}
 
-    for fact in memory.get("facts", []):
-        if query_lower in str(fact).lower():
-            results.append(fact)
-
-    return {
-        "success": True,
-        "results": results,
-        "count": len(results),
-        "query": query
-    }
-
-
-def _add_memory(memory: Dict, data: Dict) -> Dict:
-    """Add new memory entry"""
-    entry_type = data.get("type", "fact")
-    content = data.get("content", "")
-
-    if not content:
-        return {
-            "success": False,
-            "error": "No content provided"
-        }
-
-    if entry_type == "conversation":
-        memory.setdefault("conversations", []).append({
-            "text": content,
-            "timestamp": datetime.now().isoformat()
-        })
-    elif entry_type == "fact":
-        memory.setdefault("facts", []).append({
-            "fact": content,
-            "timestamp": datetime.now().isoformat()
-        })
-    elif entry_type == "preference":
-        key = data.get("key", "general")
-        memory.setdefault("preferences", {})[key] = {
-            "value": content,
-            "timestamp": datetime.now().isoformat()
-        }
-
-    _save_memory(memory)
-
-    return {
-        "success": True,
-        "message": f"Added {entry_type}: {content[:50]}..."
-    }
-
-
-def _list_memory(memory: Dict, data: Dict) -> Dict:
-    """List memory entries"""
-    entry_type = data.get("type", None)
-    limit = data.get("limit", 50)
-
-    if entry_type:
-        items = memory.get(entry_type + "s", [])[-limit:]
-    else:
-        items = []
-        for key in ["conversations", "facts"]:
-            items.extend(memory.get(key, []))
-        items = items[-limit:]
-
-    return {
-        "success": True,
-        "items": items,
-        "count": len(items)
-    }
-
-
-def _clear_memory(memory: Dict) -> Dict:
-    """Clear all memory"""
-    memory = {"conversations": [], "facts": [], "preferences": {}}
-    _save_memory(memory)
-
-    return {
-        "success": True,
-        "message": "Memory cleared"
-    }
-
-
-def _get_stats(memory: Dict) -> Dict:
-    """Get memory statistics"""
-    return {
-        "success": True,
-        "stats": {
-            "conversations": len(memory.get("conversations", [])),
-            "facts": len(memory.get("facts", [])),
-            "preferences": len(memory.get("preferences", {}))
-        }
-    }
+    return {"success": False, "error": f"Unknown action: {action}"}

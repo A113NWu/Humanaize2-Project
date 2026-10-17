@@ -29,6 +29,11 @@ class NetworkEngine:
         self.friends: Dict[str, Dict] = {}
         self.connections: Dict[str, socket.socket] = {}
         self.pending_messages: List[Dict] = []
+
+        # 經驗庫共享：收到 experience_query 時由應用層決定是否開放查詢。
+        # 簽名: (sender_id, sender_name, question, top_k) -> dict
+        #   {"allow": bool, "reason": str, "results": [{"text","kind","score"}...]}
+        self.on_experience_query = None
         
         self.friends_file = os.path.join(
             os.path.dirname(__file__), 
@@ -191,7 +196,12 @@ class NetworkEngine:
         sender_id = message.get('sender_id')
         content = message.get('content')
         message_type = message.get('message_type', 'chat')
-        
+
+        # 經驗庫查詢：交給應用層回調決定是否分享，結果直接回給請求方
+        if message_type == 'experience_query':
+            self._process_experience_query(message, client_socket)
+            return
+
         self.pending_messages.append({
             'type': message_type,
             'sender_id': sender_id,
@@ -221,7 +231,86 @@ class NetworkEngine:
             client_socket.send(json.dumps(response).encode('utf-8'))
         except Exception:
             pass
-    
+
+    def _process_experience_query(self, message: Dict, client_socket: socket.socket):
+        """處理好友的經驗庫查詢：由 on_experience_query 回調決定分享與否。"""
+        sender_id = message.get('sender_id')
+        sender_name = message.get('sender_name') or \
+            self.friends.get(sender_id, {}).get('name', 'Unknown')
+        question = message.get('content', '')
+        top_k = message.get('top_k', 3)
+
+        decision = {'allow': False, 'reason': 'no handler attached', 'results': []}
+        if callable(self.on_experience_query):
+            try:
+                result = self.on_experience_query(sender_id, sender_name, question, top_k)
+                if isinstance(result, dict):
+                    decision.update(result)
+            except Exception as e:
+                decision['reason'] = f'handler error: {e}'
+
+        self.pending_messages.append({
+            'type': 'experience_query_received',
+            'sender_id': sender_id,
+            'sender_name': sender_name,
+            'content': question,
+            'allowed': bool(decision.get('allow')),
+            'reason': decision.get('reason', ''),
+            'timestamp': datetime.now().isoformat()
+        })
+
+        response = {
+            'type': 'experience_result',
+            'sender_id': self.ai_id,
+            'sender_name': self.ai_name,
+            'allow': bool(decision.get('allow')),
+            'reason': decision.get('reason', ''),
+            'results': decision.get('results', []),
+            'timestamp': datetime.now().isoformat()
+        }
+        try:
+            client_socket.send(json.dumps(response, ensure_ascii=False).encode('utf-8'))
+        except Exception:
+            pass
+
+    def query_experience(self, question: str, top_k: int = 3, timeout: float = 10.0) -> Dict:
+        """向所有好友廣播經驗庫查詢，收集各客戶端的檢索結果/拒絕原因。"""
+        if not self.friends:
+            return {'status': 'error', 'error': 'No friends to query'}
+
+        results = []
+        for friend_id, friend_info in self.friends.items():
+            entry = {'friend_id': friend_id, 'friend_name': friend_info.get('name', 'Unknown')}
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(timeout)
+                sock.connect((friend_info['address'], friend_info['port']))
+
+                message = {
+                    'type': 'friend_message',
+                    'sender_id': self.ai_id,
+                    'sender_name': self.ai_name,
+                    'content': question,
+                    'message_type': 'experience_query',
+                    'top_k': top_k,
+                    'timestamp': datetime.now().isoformat()
+                }
+                sock.send(json.dumps(message, ensure_ascii=False).encode('utf-8'))
+
+                response = json.loads(sock.recv(16384).decode('utf-8'))
+                sock.close()
+
+                entry['status'] = 'success'
+                entry['allow'] = bool(response.get('allow'))
+                entry['reason'] = response.get('reason', '')
+                entry['results'] = response.get('results', [])
+            except Exception as e:
+                entry['status'] = 'error'
+                entry['error'] = str(e)
+            results.append(entry)
+
+        return {'status': 'completed', 'question': question, 'responses': results}
+
     def _run_discovery(self):
         """Run discovery service to find other AIs"""
         try:

@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aize Live2D</title>
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+  body { background: #1a1a2e; font-family: "Microsoft JhengHei", sans-serif; }
+  body.transparent { background: transparent; }
+  #stage { position: fixed; inset: 0; }
+  #overlay {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,.55); color: #fff; z-index: 20; cursor: pointer; text-align: center;
+  }
+  #overlay .card { background: rgba(20,20,40,.9); padding: 28px 40px; border-radius: 12px; }
+  #chat {
+    position: fixed; left: 12px; bottom: 12px; width: 320px; max-height: 45%;
+    display: flex; flex-direction: column; z-index: 10;
+    background: rgba(15,15,30,.72); border-radius: 10px; overflow: hidden;
+  }
+  #chat-log { flex: 1; overflow-y: auto; padding: 8px 10px; font-size: 13px; color: #eee; }
+  #chat-log .msg { margin: 4px 0; line-height: 1.4; word-break: break-word; }
+  #chat-log .msg.aize { color: #ffb3c8; }
+  #chat-log .msg.ext { color: #9fd3ff; }
+  #chat-log .msg .who { opacity: .65; font-size: 11px; margin-right: 4px; }
+  #chat-bar { display: flex; border-top: 1px solid rgba(255,255,255,.12); }
+  #chat-input {
+    flex: 1; background: transparent; border: none; outline: none;
+    color: #fff; padding: 9px 10px; font-size: 13px;
+  }
+  #mic-btn, #send-btn {
+    background: transparent; border: none; color: #ccc; cursor: pointer;
+    padding: 0 12px; font-size: 16px;
+  }
+  #mic-btn.listening { color: #ff5b5b; animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  #status {
+    position: fixed; top: 8px; left: 10px; z-index: 10; color: rgba(255,255,255,.55);
+    font-size: 11px; pointer-events: none; text-shadow: 0 1px 2px #000;
+  }
+  body.transparent #chat, body.transparent #status { display: none; }
+  body.transparent.ui #chat, body.transparent.ui #status { display: flex; }
+  body.widget #chat, body.widget #status { display: none; }
+  /* 虛擬攝像頭模式：白底背景圖 + 只顯示上半身，無任何 UI */
+  body.camera {
+    background: #fff url('/asset/Camera_bkg.png') center / cover no-repeat;
+  }
+  body.camera #chat, body.camera #status, body.camera #overlay { display: none !important; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="status">loading…</div>
+<div id="chat">
+  <div id="chat-log"></div>
+  <div id="chat-bar">
+    <input id="chat-input" placeholder="跟 Aize 說話…" autocomplete="off">
+    <button id="mic-btn" title="語音輸入">🎤</button>
+    <button id="send-btn" title="發送">➤</button>
+  </div>
+</div>
+<div id="overlay"><div class="card">
+  <h2>Aize Live2D</h2>
+  <p id="overlay-text">點擊任意處啟動（需要一次點擊才能播放聲音）</p>
+</div></div>
+
+<script src="/live2d/vendor/pixi.min.js"></script>
+<script src="/live2d/vendor/live2dcubismcore.min.js"></script>
+<script src="/live2d/vendor/pixi-live2d-display.min.js"></script>
+<script>
+(function () {
+  const qs = new URLSearchParams(location.search);
+  const WIDGET = qs.get('widget') === '1';
+  const CAMERA = qs.get('camera') === '1';
+  if (qs.get('transparent') === '1' || WIDGET) {
+    document.body.classList.add('transparent');
+    if (qs.get('ui') === '1') document.body.classList.add('ui');
+  }
+  if (WIDGET) document.body.classList.add('widget');
+  if (CAMERA) document.body.classList.add('camera');
+  const MODEL_URL = qs.get('model') || '/live2d/model/hiyori/Hiyori.model3.json';
+
+  const statusEl = document.getElementById('status');
+  const logEl = document.getElementById('chat-log');
+  const inputEl = document.getElementById('chat-input');
+  const micBtn = document.getElementById('mic-btn');
+  const sendBtn = document.getElementById('send-btn');
+  const overlay = document.getElementById('overlay');
+  const overlayText = document.getElementById('overlay-text');
+
+  function setStatus(t) { statusEl.textContent = t; }
+  function addMsg(who, text, cls) {
+    const div = document.createElement('div');
+    div.className = 'msg ' + (cls || '');
+    const w = document.createElement('span');
+    w.className = 'who'; w.textContent = who;
+    div.appendChild(w);
+    div.appendChild(document.createTextNode(text));
+    logEl.appendChild(div);
+    logEl.scrollTop = logEl.scrollHeight;
+    while (logEl.children.length > 80) logEl.removeChild(logEl.firstChild);
+  }
+
+  // ---------- PIXI / Live2D ----------
+  const app = new PIXI.Application({
+    view: null, resizeTo: window, backgroundAlpha: 0, autoStart: true,
+  });
+  document.getElementById('stage').appendChild(app.view);
+
+  let model = null;
+  let audioCtx = null;
+
+  async function loadModel() {
+    setStatus('模型加載中…');
+    model = await PIXI.live2d.Live2DModel.from(MODEL_URL, { autoInteract: true });
+    app.stage.addChild(model);
+    fitModel();
+    window.addEventListener('resize', fitModel);
+    model.internalModel.on('hit', (areas) => {
+      if (areas && areas.length) playMotion('TapBody');
+    });
+    const groups = Object.keys((model.internalModel.settings || {}).motions || {});
+    setStatus('就緒 | 動作組: ' + (groups.join(', ') || '無'));
+    scheduleIdleMotion();
+  }
+  function fitModel() {
+    if (!model) return;
+    // 先歸一再取原始尺寸，避免縮放後寬高被二次計算導致角色跑出框外
+    model.scale.set(1);
+    const w0 = model.width, h0 = model.height;
+    let s;
+    if (CAMERA) {
+      // 虛擬攝像頭：只顯示上半身（頭到腰佔畫面下半幅），下半身裁出畫面外。
+      // 實測 Hiyori 角色約佔模型邊界高 64%、頂部留白 12%，
+      // 故邊界高拉到 ~1.56 倍畫面高 → 角色高 ≈ 畫面高；
+      // y 放 0.31 倍畫面高 → 角色頭頂落在畫面中線、腰部對齊畫面底。
+      s = (window.innerHeight * 1.56) / h0;
+      model.scale.set(s);
+      model.x = (window.innerWidth - w0 * s) / 2;
+      model.y = window.innerHeight * 0.31;
+      return;
+    }
+    if (WIDGET) {
+      // 浮窗模式：以高度貼合，保證全身可見；水平居中
+      s = (window.innerHeight * 0.98) / h0;
+    } else {
+      s = Math.min(window.innerWidth / w0, window.innerHeight / h0) * 0.9;
+    }
+    model.scale.set(s);
+    model.x = (window.innerWidth - w0 * s) / 2;
+    model.y = window.innerHeight - h0 * s;
+  }
+
+  let lastSpeakAt = 0;
+  let lastIdleIdx = -1;
+  /* 閒置微動：每 14~26 秒隨機做一個動作，讓形象有生命力；
+     說話後 8 秒內不搶戲；避免連續重複同一個動作 */
+  function scheduleIdleMotion() {
+    const delay = 14000 + Math.random() * 12000;
+    setTimeout(() => {
+      if (!model) { scheduleIdleMotion(); return; }
+      if (Date.now() - lastSpeakAt > 8000) {
+        const motions = (model.internalModel.settings || {}).motions || {};
+        const group = motions['Idle'] ? 'Idle' : (motions['TapBody'] ? 'TapBody' : Object.keys(motions)[0]);
+        if (group) {
+          const n = (motions[group] || []).length;
+          let idx = Math.floor(Math.random() * n);
+          if (n > 1) { while (idx === lastIdleIdx) idx = Math.floor(Math.random() * n); }
+          lastIdleIdx = idx;
+          playMotion(group, idx);
+        }
+      }
+      scheduleIdleMotion();
+    }, delay);
+  }
+
+  function playMotion(group, index) {
+    if (!model) return;
+    try {
+      const motions = (model.internalModel.settings || {}).motions || {};
+      if (!motions[group]) group = Object.keys(motions)[0];
+      if (!group) return;
+      const idx = (typeof index === 'number' && index >= 0) ? index : Math.floor(Math.random() * motions[group].length);
+      model.motion(group, idx);
+    } catch (e) { console.warn('motion failed', e); }
+  }
+
+  function playExpression(name) {
+    if (!model || !name) return;
+    try { model.expression(name); } catch (e) { console.warn('expression failed', e); }
+  }
+
+  // ---------- 說話（TTS + 唇形） ----------
+  let speakQueue = Promise.resolve();
+  function speak(text) {
+    speakQueue = speakQueue.then(() => _speakOnce(text)).catch(e => console.warn('speak failed', e));
+  }
+  async function _speakOnce(text) {
+    const resp = await fetch('/api/tts', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: String(text).slice(0, 2000) }),
+    });
+    if (!resp.ok) throw new Error('tts http ' + resp.status);
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    try {
+      if (model && model.speak) {
+        await new Promise((resolve) => {
+          model.speak(url, { volume: 1, onFinish: resolve, onError: resolve });
+        });
+      } else {
+        await playAudioManual(url);
+      }
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    }
+  }
+  function playAudioManual(url) {
+    return new Promise((resolve) => {
+      const a = new Audio(url);
+      a.onended = resolve; a.onerror = resolve;
+      a.play().catch(resolve);
+    });
+  }
+
+  // ---------- 命令輪詢 ----------
+  let lastId = 0;
+  async function poll() {
+    try {
+      const r = await fetch('/api/live2d/poll?since=' + lastId);
+      if (r.ok) {
+        const data = await r.json();
+        for (const cmd of (data.commands || [])) {
+          lastId = Math.max(lastId, cmd.id || 0);
+          handleCommand(cmd);
+        }
+      }
+    } catch (e) { /* 服務重啟時靜默 */ }
+    setTimeout(poll, 1000);
+  }
+  function handleCommand(cmd) {
+    switch (cmd.type) {
+      case 'speak':
+        lastSpeakAt = Date.now();
+        // 開口說話時隨機做一個身體動作，避免每次都一樣
+        const r = Math.random();
+        if (r < 0.6) playMotion('TapBody');
+        else playMotion('Idle', Math.floor(Math.random() * 9));
+        speak(cmd.text || '');
+        addMsg('Aize', cmd.text || '', 'aize');
+        break;
+      case 'motion': playMotion(cmd.group, cmd.index); lastSpeakAt = Date.now(); break;
+      case 'expression': playExpression(cmd.name); break;
+      case 'chat_in':
+        addMsg(cmd.user || cmd.source || 'ext', cmd.text || '', 'ext');
+        sendChat(cmd.text, cmd.user || cmd.source);
+        break;
+    }
+  }
+
+  // ---------- 聊天 ----------
+  let chatBusy = false;
+  async function sendChat(text, user) {
+    text = String(text || '').trim();
+    if (!text || chatBusy) return;
+    chatBusy = true;
+    try {
+      const r = await fetch('/api/live2d/chat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: text, user: user || 'web' }),
+      });
+      const data = await r.json();
+      if (data.reply) addMsg('Aize', data.reply, 'aize'); // speak 命令會由輪詢帶來語音
+      else if (data.error) addMsg('系統', data.error, '');
+    } catch (e) {
+      addMsg('系統', '連線失敗: ' + e.message, '');
+    } finally {
+      chatBusy = false;
+    }
+  }
+  function submitInput() {
+    const t = inputEl.value.trim();
+    if (!t) return;
+    inputEl.value = '';
+    addMsg('你', t, '');
+    sendChat(t, 'web');
+  }
+  sendBtn.addEventListener('click', submitInput);
+  inputEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitInput(); });
+
+  // ---------- 語音輸入（Web Speech API） ----------
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let recog = null, listening = false;
+  function toggleMic() {
+    if (!SR) { addMsg('系統', '此瀏覽器不支持語音識別', ''); return; }
+    if (listening) { recog.stop(); return; }
+    recog = new SR();
+    recog.lang = 'zh-TW';
+    recog.interimResults = false;
+    recog.continuous = true;
+    recog.onresult = (ev) => {
+      const res = ev.results[ev.results.length - 1];
+      if (res.isFinal) {
+        const t = res[0].transcript.trim();
+        if (t) { addMsg('你(語音)', t, ''); sendChat(t, 'voice'); }
+      }
+    };
+    recog.onend = () => { listening = false; micBtn.classList.remove('listening'); };
+    recog.onerror = () => { recog.stop(); };
+    recog.start();
+    listening = true;
+    micBtn.classList.add('listening');
+  }
+  micBtn.addEventListener('click', toggleMic);
+
+  // ---------- 啟動 ----------
+  // widget/透明（OBS 瀏覽源）模式：無法點擊覆蓋層，直接啟動；
+  // 首次點擊畫面時恢復 AudioContext（瀏覽器自動播放策略）
+  function begin() {
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+    loadModel().catch(e => {
+      // 任何模式都把錯誤露出來，避免透明/widget 模式靜默空白
+      overlayText.textContent = '模型加載失敗: ' + (e && e.message ? e.message : e);
+      overlay.style.display = 'flex';
+      console.error(e);
+    });
+    poll();
+  }
+  if (WIDGET || CAMERA || document.body.classList.contains('transparent')) {
+    overlay.style.display = 'none';
+    if (!CAMERA) document.documentElement.style.background = 'transparent';
+    begin();
+    document.addEventListener('pointerdown', () => {
+      try { audioCtx && audioCtx.resume(); } catch (e) {}
+    });
+  } else {
+    overlay.addEventListener('click', function start() {
+      overlay.removeEventListener('click', start);
+      overlay.style.display = 'none';
+      begin();
+    });
+  }
+})();
+</script>
+</body>
+</html>
