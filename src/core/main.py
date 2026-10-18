@@ -1221,7 +1221,19 @@ def handle_update(args):
     updater = AutoUpdater("https://github.com/A113NWu/Humanaize2-Project.git")
     
     def progress_callback(msg):
-        print(f"[UPDATE] {msg}")
+        # 下載進度畫成單行進度條，避免每 1% 刷一行
+        import re as _re
+        m = _re.match(r"^(.*?)\.\.\.\s*(\d+)%$", str(msg))
+        if m:
+            label, pct = m.group(1), int(m.group(2))
+            width = 30
+            filled = min(width, int(width * pct / 100))
+            bar = "█" * filled + "░" * (width - filled)
+            print(f"\r[UPDATE] {label} [{bar}] {pct:3d}%", end="", flush=True)
+            if pct >= 100:
+                print()
+        else:
+            print(f"[UPDATE] {msg}")
     
     print("Checking for updates...")
     update_info = updater.check_for_updates()

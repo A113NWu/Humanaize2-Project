@@ -610,6 +610,11 @@ class HumanaizeUI:
         
         update_progress_label = ctk.CTkLabel(update_frame, text="", anchor="w")
         update_progress_label.grid(row=3, column=0, sticky="w", padx=15, pady=(0, 5))
+
+        update_progress_bar = ctk.CTkProgressBar(update_frame)
+        update_progress_bar.grid(row=4, column=0, sticky="ew", padx=15, pady=(0, 5))
+        update_progress_bar.set(0)
+        update_progress_bar.grid_remove()  # 只在下載時顯示
         
         def check_for_updates():
             status_label.configure(text="Checking for updates...")
@@ -640,15 +645,26 @@ class HumanaizeUI:
             threading.Thread(target=check_in_background, daemon=True).start()
         
         def download_update():
+            import re as _re
+
             def progress_callback(message):
-                update_progress_label.configure(text=message)
+                message = str(message)
+                m = _re.match(r"^(.*?)\.\.\.\s*(\d+)%$", message)
+                if m:
+                    update_progress_label.configure(text=f"{m.group(1)}... {m.group(2)}%")
+                    update_progress_bar.set(int(m.group(2)) / 100)
+                else:
+                    update_progress_label.configure(text=message)
                 self.settings_window.update()
-            
+
             update_progress_label.configure(text="Starting update...", text_color="#f59e0b")
+            update_progress_bar.set(0)
+            update_progress_bar.grid()
             self.settings_window.update()
-            
+
             result = updater.download_and_install_update(progress_callback)
-            
+
+            update_progress_bar.grid_remove()
             if result.get("success"):
                 update_progress_label.configure(text="", text_color="#10b981")
                 status_label.configure(text=result["message"], text_color="#10b981")
@@ -657,7 +673,7 @@ class HumanaizeUI:
                 status_label.configure(text=result.get("message", "Update failed"), text_color="#ef4444")
         
         button_frame_update = ctk.CTkFrame(update_frame, fg_color="transparent")
-        button_frame_update.grid(row=4, column=0, sticky="ew", padx=15, pady=(5, 12))
+        button_frame_update.grid(row=5, column=0, sticky="ew", padx=15, pady=(5, 12))
         button_frame_update.grid_columnconfigure(0, weight=1)
         button_frame_update.grid_columnconfigure(1, weight=1)
         

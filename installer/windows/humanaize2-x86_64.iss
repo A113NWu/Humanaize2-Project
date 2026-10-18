@@ -1,9 +1,9 @@
 ; Inno Setup script for Humanaize 2.0 Agent (x86_64)
 ; SourceDir 指向專案根目錄（installer\windows 的上兩層）
-; 版本號可由構建腳本覆蓋：ISCC /DAppVersion=2.3.13
+; 版本號可由構建腳本覆蓋：ISCC /DAppVersion=2.3.14
 
 #ifndef AppVersion
-  #define AppVersion "2.3.13"
+  #define AppVersion "2.3.14"
 #endif
 
 [Setup]

@@ -1,5 +1,5 @@
 {
-  "version": "2.3.13",
-  "last_updated": "2026-10-17T00:00:00.000000",
-  "release_notes": "v2.3.13：Termux 安裝支持（git clone 後即用）；虛擬攝像頭（Live2D 上半身構圖 + Camera_bkg 背景、OBS 自動配置）；提示詞優化（短句、像人聊天、禁分點列舉）；Live2D 說話時隨機動作多樣化、說話期間隱藏技能框；修復 HTTP finish() 異常崩潰；CLI 啟動屏蔽 web API 日誌；新增 experience / live2d 技能。"
+  "version": "2.3.14",
+  "last_updated": "2026-10-18T00:00:00.000000",
+  "release_notes": "v2.3.14：Aize 自主控制 Live2D 身體動作（[motion:] 標籤機制，單輪完成省 token，浮窗與虛擬攝像頭同步）；說話風格更像真人（短句、禁分點）；修復更新器 UAC 不彈窗；更新下載加進度條（CLI 單行條 / GUI 進度條控件）；修復 Live2D 浮窗拖出螢幕消失。"
 }

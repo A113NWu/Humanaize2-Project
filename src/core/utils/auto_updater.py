@@ -338,13 +338,15 @@ class AutoUpdater:
         with open(bootstrap_path, "w", encoding="utf-8-sig") as f:
             f.write(bootstrap)
 
-        # 0x00000008 DETACHED_PROCESS | 0x00000200 NEW_PROCESS_GROUP | 0x08000000 NO_WINDOW
+        # 不能用 DETACHED_PROCESS/NO_WINDOW：分離進程不在交互式窗口站，
+        # Start-Process -Verb RunAs 會無法彈出 UAC。-WindowStyle Hidden 即可
+        # 隱藏 PowerShell 窗口，同時保留觸發 UAC 的能力；父進程退出不會殺子進程。
         subprocess.Popen(
             [
                 "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                "-WindowStyle", "Hidden",
                 "-File", bootstrap_path,
             ],
-            creationflags=0x00000008 | 0x00000200 | 0x08000000,
             close_fds=True,
         )
 
