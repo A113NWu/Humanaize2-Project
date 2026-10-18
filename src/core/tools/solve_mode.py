@@ -127,6 +127,7 @@ class SolveModeStatusBar:
         }
         self.first_render = True
         self.status_bar_lines = 4  # 状态栏占用的行数
+        self._painted = False  # 是否已在終端底部繪製（用於原地重繪）
     
     def _get_terminal_width(self) -> int:
         """获取终端宽度"""
@@ -184,8 +185,31 @@ class SolveModeStatusBar:
         return ansi_escape.sub('', text)
     
     def print_update(self):
-        """打印状态栏更新"""
-        print(self.render())
+        """打印狀態欄更新（Claude Code 風格：已繪製過則原地重繪，不再從底部另起一行）"""
+        line = self.render()
+        out = sys.stdout
+        try:
+            is_tty = out.isatty()
+        except Exception:
+            is_tty = False
+        if self._painted and is_tty:
+            # 游標移到上一行行首並清除——上次狀態欄就在那裡
+            out.write("\x1b[F\x1b[2K")
+        out.write(line + "\n")
+        out.flush()
+        self._painted = True
+
+    def erase(self):
+        """抹掉底部已繪製的狀態欄（之後的普通打印不會把狀態欄越推越上）"""
+        out = sys.stdout
+        try:
+            is_tty = out.isatty()
+        except Exception:
+            is_tty = False
+        if self._painted and is_tty:
+            out.write("\x1b[F\x1b[2K")
+            out.flush()
+        self._painted = False
 
 
 class HSNetwork:
@@ -504,14 +528,13 @@ class SolveMode:
         if not self.todo_list:
             return {"status": "failed", "error": "Failed to generate task list"}
         
-        # 显示初始状态栏
+        # 显示初始状态栏（釘在底部，後續日誌由 _out 負責在其上方滾動）
         self._update_status_bar()
         self.status_bar.print_update()
-        print()
-        
+
         # Execute tasks
         results = self._execute_tasks()
-        
+
         # 显示最终状态栏
         self._update_status_bar(progress=1.0)
         self.status_bar.print_update()
@@ -1238,6 +1261,17 @@ Continue the code now:
         """Stop the solve process"""
         self._running = False
         self._stop_event.set()
+
+    def _out(self, *args, **kwargs):
+        """帶釘底狀態欄的打印：先抹掉底部狀態欄 → 打印日誌 → 原地重繪。
+        讓任務日誌向上滾動、狀態欄始終固定在終端最後一行（Claude Code 風格）。"""
+        bar = getattr(self, "status_bar", None)
+        if bar is None:
+            print(*args, **kwargs)
+            return
+        bar.erase()
+        print(*args, **kwargs)
+        bar.print_update()
     
     def _print_header(self):
         """Print the solve mode header"""
@@ -1647,8 +1681,7 @@ Continue the code now:
             elapsed_time="00:00"
         )
         self.status_bar.print_update()
-        print()
-    
+
     def _execute_tasks(self) -> List[Dict]:
         """Execute all tasks in order"""
         results = []
@@ -1666,16 +1699,16 @@ Continue the code now:
             # Validate task completion
             if task.status != Task.STATUS_COMPLETED:
                 if self._use_color:
-                    print(f"{Colors.YELLOW}[WARN]{Colors.RESET} Task {task.id} did not complete successfully")
+                    self._out(f"{Colors.YELLOW}[WARN]{Colors.RESET} Task {task.id} did not complete successfully")
                 else:
-                    print(f"[WARN] Task {task.id} did not complete successfully")
-            
+                    self._out(f"[WARN] Task {task.id} did not complete successfully")
+
             # 添加分隔线，为下一个任务做准备（不是最后一个任务时）
             if idx < len(self.todo_list) - 1:
                 if self._use_color:
-                    print(f"\n{Colors.DIM}{'─' * 70}{Colors.RESET}\n")
+                    self._out(f"\n{Colors.DIM}{'─' * 70}{Colors.RESET}\n")
                 else:
-                    print(f"\n{'─' * 70}\n")
+                    self._out(f"\n{'─' * 70}\n")
         
         return results
     
@@ -1684,9 +1717,9 @@ Continue the code now:
         task.status = Task.STATUS_IN_PROGRESS
 
         if self._use_color:
-            print(f"\n{Colors.BOLD}{Colors.ORANGE}●{Colors.RESET} {Colors.BOLD}Task {task.id}{Colors.RESET} {Colors.DIM}{task.title}{Colors.RESET}")
+            self._out(f"\n{Colors.BOLD}{Colors.ORANGE}●{Colors.RESET} {Colors.BOLD}Task {task.id}{Colors.RESET} {Colors.DIM}{task.title}{Colors.RESET}")
         else:
-            print(f"\n● Task {task.id}: {task.title}")
+            self._out(f"\n● Task {task.id}: {task.title}")
 
         task.result = self._process_task(task)
 
@@ -1695,23 +1728,23 @@ Continue the code now:
 
         if task.status == Task.STATUS_COMPLETED:
             if self._use_color:
-                print(f"{Colors.GREEN}  ☑ Completed{Colors.RESET}{f'{Colors.DIM} · validation {task.validation_score:.1f}/1.0{Colors.RESET}' if task.validation_score > 0 else ''}")
+                self._out(f"{Colors.GREEN}  ☑ Completed{Colors.RESET}{f'{Colors.DIM} · validation {task.validation_score:.1f}/1.0{Colors.RESET}' if task.validation_score > 0 else ''}")
             else:
-                print(f"  ☑ Completed")
+                self._out(f"  ☑ Completed")
         else:
             if self._use_color:
-                print(f"{Colors.RED}  ☒ Failed{Colors.RESET}")
+                self._out(f"{Colors.RED}  ☒ Failed{Colors.RESET}")
             else:
-                print(f"  ☒ Failed")
+                self._out(f"  ☒ Failed")
 
         if task.result:
             result_text = str(task.result)
             if self._use_color:
-                print(f"{Colors.GRAY}  ⎿ {result_text}{Colors.RESET}")
+                self._out(f"{Colors.GRAY}  ⎿ {result_text}{Colors.RESET}")
             else:
-                print(f"  ⎿ {result_text}")
+                self._out(f"  ⎿ {result_text}")
 
-        print()
+        self._out()
         return task.to_dict()
     
     def _format_progress(self, progress: float) -> str:
@@ -1777,9 +1810,9 @@ Continue the code now:
                     prompt_with_history += f"\n\nIMPORTANT: You MUST output a command or skill invocation now."
                 
                 if self._use_color:
-                    print(f"\n{Colors.BOLD}{Colors.ORANGE}✻{Colors.RESET} {Colors.DIM}Thinking...{Colors.RESET}")
+                    self._out(f"\n{Colors.BOLD}{Colors.ORANGE}✻{Colors.RESET} {Colors.DIM}Thinking...{Colors.RESET}")
                 else:
-                    print("\n✻ Thinking...")
+                    self._out("\n✻ Thinking...")
 
                 response = ""
                 sys.stdout.flush()
@@ -1789,23 +1822,23 @@ Continue the code now:
                     response = chat(prompt_with_history, max_tokens=max_tokens)
                     if response:
                         if self._use_color:
-                            print(f"{Colors.ORANGE}  ⏺{Colors.RESET} {response}")
+                            self._out(f"{Colors.ORANGE}  ⏺{Colors.RESET} {response}")
                         else:
-                            print(f"  ⏺ {response}")
+                            self._out(f"  ⏺ {response}")
                 except Exception as e:
                     if self._use_color:
-                        print(f"{Colors.RED}  ⎿ Chat error: {str(e)}{Colors.RESET}")
+                        self._out(f"{Colors.RED}  ⎿ Chat error: {str(e)}{Colors.RESET}")
                     else:
-                        print(f"  ⎿ Chat error: {str(e)}")
-                
-                print()
+                        self._out(f"  ⎿ Chat error: {str(e)}")
+
+                self._out()
                 sys.stdout.flush()
-                
+
                 if not response:
                     if self._use_color:
-                        print(f"{Colors.RED}[WARN]{Colors.RESET} AI returned empty response")
+                        self._out(f"{Colors.RED}[WARN]{Colors.RESET} AI returned empty response")
                     else:
-                        print("[WARN] AI returned empty response")
+                        self._out("[WARN] AI returned empty response")
                     task.status = Task.STATUS_COMPLETED
                     return self._generate_fallback_result(task)
                 
@@ -1817,17 +1850,17 @@ Continue the code now:
                     skill_input = skill_call.get('input', '')
 
                     if self._use_color:
-                        print(f"{Colors.BOLD}{Colors.MAGENTA}  ⏺ Skill: {skill_name}{Colors.RESET}")
+                        self._out(f"{Colors.BOLD}{Colors.MAGENTA}  ⏺ Skill: {skill_name}{Colors.RESET}")
                     else:
-                        print(f"  ⏺ Skill: {skill_name}")
+                        self._out(f"  ⏺ Skill: {skill_name}")
 
                     try:
                         skill_result = self.skills_manager.execute_skill(skill_name, skill_input)
 
                         if self._use_color:
-                            print(f"{Colors.DIM}  ⎿ status: {skill_result.get('status', 'unknown')}{Colors.RESET}")
+                            self._out(f"{Colors.DIM}  ⎿ status: {skill_result.get('status', 'unknown')}{Colors.RESET}")
                         else:
-                            print(f"  ⎿ status: {skill_result.get('status', 'unknown')}")
+                            self._out(f"  ⎿ status: {skill_result.get('status', 'unknown')}")
                         
                         previous_results += f"\nSkill '{skill_name}' executed:\n"
                         previous_results += f"Input: {json.dumps(skill_input, ensure_ascii=False)[:200]}\n"
@@ -1842,9 +1875,9 @@ Continue the code now:
                         supervisor_feedback = self._supervisor_check(task, response, skill_result)
                         if supervisor_feedback == "REDO":
                             if self._use_color:
-                                print(f"{Colors.BOLD}{Colors.RED}  ⎿ Supervisor: REDO — regenerating{Colors.RESET}")
+                                self._out(f"{Colors.BOLD}{Colors.RED}  ⎿ Supervisor: REDO — regenerating{Colors.RESET}")
                             else:
-                                print("  ⎿ Supervisor: REDO — regenerating")
+                                self._out("  ⎿ Supervisor: REDO — regenerating")
                             continue
 
                         skill_calls_made += 1
@@ -1852,9 +1885,9 @@ Continue the code now:
                         continue
                     except Exception as e:
                         if self._use_color:
-                            print(f"{Colors.RED}  ⎿ Skill error: {str(e)}{Colors.RESET}")
+                            self._out(f"{Colors.RED}  ⎿ Skill error: {str(e)}{Colors.RESET}")
                         else:
-                            print(f"  ⎿ Skill error: {str(e)}")
+                            self._out(f"  ⎿ Skill error: {str(e)}")
                         previous_results += f"\nSkill '{skill_name}' failed: {str(e)}\n"
                         skill_calls_made += 1
                         continue
@@ -1864,17 +1897,17 @@ Continue the code now:
                     extracted_cmd = self._extract_command_from_response(response)
                     if extracted_cmd:
                         if self._use_color:
-                            print(f"{Colors.BOLD}{Colors.CYAN}  ⏺ Run:{Colors.RESET} {extracted_cmd}")
+                            self._out(f"{Colors.BOLD}{Colors.CYAN}  ⏺ Run:{Colors.RESET} {extracted_cmd}")
                         else:
-                            print(f"  ⏺ Run: {extracted_cmd}")
+                            self._out(f"  ⏺ Run: {extracted_cmd}")
                         try:
                             auto_result = self.skills_manager.execute_skill("shell", {"command": extracted_cmd})
                             output_text = str(auto_result.get("output", auto_result))[:2000] if isinstance(auto_result, dict) else str(auto_result)[:2000]
                             if output_text:
                                 if self._use_color:
-                                    print(f"{Colors.DIM}  ⎿ {output_text}{Colors.RESET}")
+                                    self._out(f"{Colors.DIM}  ⎿ {output_text}{Colors.RESET}")
                                 else:
-                                    print(f"  ⎿ {output_text}")
+                                    self._out(f"  ⎿ {output_text}")
                             previous_results += f"\nCommand executed: {extracted_cmd}\nOutput: {output_text}\n"
                             skill_calls_made += 1
                             retries_without_skill = 0
@@ -1899,9 +1932,9 @@ Continue the code now:
             if previous_results:
                 try:
                     if self._use_color:
-                        print(f"\n{Colors.BOLD}{Colors.ORANGE}✻{Colors.RESET} {Colors.DIM}Writing final report...{Colors.RESET}")
+                        self._out(f"\n{Colors.BOLD}{Colors.ORANGE}✻{Colors.RESET} {Colors.DIM}Writing final report...{Colors.RESET}")
                     else:
-                        print("\n✻ Writing final report...")
+                        self._out("\n✻ Writing final report...")
                     final_prompt = (
                         prompt + "\n\nPrevious Results (already executed, do NOT run again):\n"
                         + previous_results
@@ -1912,18 +1945,18 @@ Continue the code now:
                     final_response = chat(final_prompt, max_tokens=max_tokens)
                     if final_response and final_response.strip():
                         if self._use_color:
-                            print(f"\n{Colors.GREEN}{final_response}{Colors.RESET}")
+                            self._out(f"\n{Colors.GREEN}{final_response}{Colors.RESET}")
                         return final_response
                 except Exception as e:
                     if self._use_color:
-                        print(f"{Colors.YELLOW}[WARN]{Colors.RESET} Final report failed: {str(e)}")
+                        self._out(f"{Colors.YELLOW}[WARN]{Colors.RESET} Final report failed: {str(e)}")
             return f"Task completed with {skill_calls_made} skill invocations.\n\nFinal: {response}"
         
         except Exception as e:
             if self._use_color:
-                print(f"\n{Colors.RED}[ERROR]{Colors.RESET} Exception in _process_task: {str(e)}")
+                self._out(f"\n{Colors.RED}[ERROR]{Colors.RESET} Exception in _process_task: {str(e)}")
             else:
-                print(f"\n[ERROR] Exception in _process_task: {str(e)}")
+                self._out(f"\n[ERROR] Exception in _process_task: {str(e)}")
             task.status = Task.STATUS_COMPLETED
             return self._generate_fallback_result(task)
     
