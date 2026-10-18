@@ -56,6 +56,16 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    // 按 ABI 拆包：部分設備安裝 universal 包會報「與系統不兼容」，提供單架構包
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64")
+            isUniversalApk = true
+        }
+    }
     
     kotlinOptions {
         jvmTarget = "17"
