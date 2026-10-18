@@ -364,10 +364,10 @@ def chat(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top_p=TOP_
     """
     provider = _provider_settings()
     logger.info(f"Provider: {provider}")
-    # 雲端思考模型（MiniMax-M3/R1）512 token 常被推理吃光導致正文為空；
+    # 用戶要求：使用 API（雲端）時不限制輸出長度，避免整理文件等長內容被截斷。
     # 僅提升「默認預算」的調用，顯式傳值的決策類調用（如 400）保持不變
     if provider and max_tokens == MAX_TOKENS:
-        max_tokens = 1024
+        max_tokens = 16384
 
     if stop_event is not None and stop_event.is_set():
         logger.info("LLM request aborted by stop event")
@@ -515,7 +515,7 @@ def chat_stream(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top
     provider = _provider_settings()
     if provider:
         if max_tokens == MAX_TOKENS:
-            max_tokens = 1024  # 雲端思考模型需要推理預算，默認 512 不夠
+            max_tokens = 16384  # API 模式不限制輸出，給足夠的生成預算
         cloud_failed = False
         try:
             request_session = session or create_session()

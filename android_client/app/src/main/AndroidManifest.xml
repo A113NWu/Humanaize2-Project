@@ -39,6 +39,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.AizeCompanion"
+        android:usesCleartextTraffic="true"
         tools:targetApi="34">
 
         <!-- ShizukuProvider：用於向 Shizuku 服務宣告本 app 的存在 -->
@@ -59,18 +60,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        
-        <!-- 算力服务（前台服务） -->
-        <service
-            android:name=".service.ComputeService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
-        
-        <!-- 设备发现服务 -->
-        <service
-            android:name=".service.DiscoveryService"
-            android:exported="false" />
-        
+
     </application>
 
 </manifest>

@@ -849,6 +849,13 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._handle_live2d_static(parsed.path)
         elif parsed.path == '/api/live2d/poll':
             self._handle_live2d_poll(parsed)
+        elif parsed.path == '/api/phone/poll':
+            self._handle_phone_poll(parsed)
+        elif parsed.path == '/api/phone/status':
+            try:
+                self._send_json(self._phone_hub().status())
+            except Exception as e:
+                self._send_error(f"phone status failed: {e}", 500)
         elif parsed.path == '/':
             self._send_static_file("index.html", "text/html; charset=utf-8")
         elif parsed.path == '/background':
@@ -974,6 +981,10 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._handle_live2d_command()
         elif parsed.path == '/api/live2d/chat':
             self._handle_live2d_chat()
+        elif parsed.path == '/api/phone/result':
+            self._handle_phone_result()
+        elif parsed.path == '/api/phone/command':
+            self._handle_phone_command()
         else:
             self._send_error("Not found", 404)
 
@@ -1190,6 +1201,75 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                 self._chat_lock.release()
             except RuntimeError:
                 pass
+
+    # ---------- 手機命令通道（安卓客戶端 × Shizuku） ----------
+
+    @staticmethod
+    def _phone_hub():
+        try:
+            from tools.phone_hub import get_phone_hub
+        except ImportError:
+            from core.tools.phone_hub import get_phone_hub
+        return get_phone_hub()
+
+    def _handle_phone_poll(self, parsed):
+        """手機端輪詢待執行命令。"""
+        try:
+            from urllib.parse import parse_qs
+            qs = parse_qs(parsed.query or "")
+            since = qs.get("since", ["0"])[0]
+            device = qs.get("device", [""])[0]
+        except Exception:
+            since, device = "0", ""
+        try:
+            hub = self._phone_hub()
+            self._send_json({"commands": hub.poll_commands(since, device),
+                             "status": hub.status()})
+        except Exception as e:
+            self._send_error(f"phone poll failed: {e}", 500)
+
+    def _handle_phone_result(self):
+        """手機端回傳命令執行結果。"""
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = json.loads(self.rfile.read(content_length).decode('utf-8'))
+        except Exception as e:
+            self._send_error(f"Invalid JSON body: {e}")
+            return
+        cmd_id = body.get("id") if isinstance(body, dict) else None
+        result = body.get("result") if isinstance(body, dict) else None
+        if cmd_id is None or not isinstance(result, dict):
+            self._send_error("body must contain 'id' and 'result' object", 400)
+            return
+        try:
+            ok = self._phone_hub().post_result(cmd_id, result)
+            self._send_json({"success": bool(ok)})
+        except Exception as e:
+            self._send_error(f"phone result failed: {e}", 500)
+
+    def _handle_phone_command(self):
+        """本機測試/外部下發命令給手機（與 phone-shell 技能同通道）。"""
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = json.loads(self.rfile.read(content_length).decode('utf-8'))
+        except Exception as e:
+            self._send_error(f"Invalid JSON body: {e}")
+            return
+        command = str(body.get("command", "")).strip() if isinstance(body, dict) else ""
+        if not command:
+            self._send_error("command is required", 400)
+            return
+        try:
+            hub = self._phone_hub()
+            cmd_id = hub.push_command(command, body.get("timeout", 30))
+            wait = float(body.get("wait", 0) or 0)
+            if wait > 0:
+                result = hub.wait_result(cmd_id, min(wait, 120))
+                self._send_json({"success": True, "id": cmd_id, "result": result})
+            else:
+                self._send_json({"success": True, "id": cmd_id})
+        except Exception as e:
+            self._send_error(f"phone command failed: {e}", 500)
 
     # 聊天附件大小不限（用戶要求移除 20MB 上限）
     _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
