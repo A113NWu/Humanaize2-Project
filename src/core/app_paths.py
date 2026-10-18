@@ -13,6 +13,7 @@ onedir 對應 ``_internal`` 只讀緩存——導致網頁/GUI 保存的設置�
 """
 
 import os
+import re
 import shutil
 import sys
 
@@ -107,10 +108,29 @@ def _bundled_dirs(*rel_parts) -> list:
     return [c for c in candidates if os.path.isdir(c)]
 
 
-def seed_from_bundled(target_dir: str, bundled_dirs) -> int:
-    """把捆綁目錄中的文件種植到 target_dir（已存在的不覆蓋，保留用戶修改）。
+def _prompt_ver(path: str) -> int:
+    """讀取種植文件首行的版本標記 @@PROMPT_VER:N@@，無標記視為 0（舊版種植）"""
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            first = f.readline(64)
+        m = re.match(r"\s*@@PROMPT_VER:(\d+)@@", first)
+        return int(m.group(1)) if m else 0
+    except OSError:
+        return 0
 
-    返回新複製的文件數。
+
+def seed_from_bundled(target_dir: str, bundled_dirs) -> int:
+    """把捆綁目錄中的文件種植到 target_dir。
+
+    規則：
+    - 目標不存在 → 複製；
+    - 目標已存在但捆綁版帶更高版本標記（@@PROMPT_VER:N@@ 首行）→
+      先把舊文件備份為 <name>.user.bak（用戶若有自定義可找回），再覆蓋。
+      這樣新版本附帶的提示詞更新能自動到達已安裝的用戶，而不會
+      被「永不覆蓋」策略永久攔住（歷史 bug：Live2D motion 指令因此失傳）；
+    - 其餘情況不動，保留用戶修改。
+
+    返回新複製/更新的文件數。
     """
     copied = 0
     os.makedirs(target_dir, exist_ok=True)
@@ -122,12 +142,30 @@ def seed_from_bundled(target_dir: str, bundled_dirs) -> int:
         for name in names:
             src = os.path.join(src_dir, name)
             dst = os.path.join(target_dir, name)
-            if os.path.isfile(src) and not os.path.exists(dst):
-                try:
+            if not os.path.isfile(src):
+                continue
+            try:
+                if not os.path.exists(dst):
                     shutil.copy2(src, dst)
                     copied += 1
-                except OSError:
-                    pass
+                    continue
+                src_ver = _prompt_ver(src)
+                dst_ver = _prompt_ver(dst)
+                if src_ver > dst_ver:
+                    with open(src, "rb") as f:
+                        src_bytes = f.read()
+                    with open(dst, "rb") as f:
+                        dst_bytes = f.read()
+                    if src_bytes != dst_bytes:
+                        try:
+                            shutil.copy2(dst, os.path.join(target_dir, name + ".user.bak"))
+                        except OSError:
+                            pass
+                        with open(dst, "wb") as f:
+                            f.write(src_bytes)
+                        copied += 1
+            except OSError:
+                pass
     return copied
 
 
