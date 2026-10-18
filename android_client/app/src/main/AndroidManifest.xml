@@ -14,10 +14,8 @@
     <!-- Android 14 (API 34) 要求：dataSync 前台服务类型需要声明此权限 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     
-    <!-- Shizuku 權限宣告（Shizuku 會在 appops 中授予 shell 級別權限） -->
-    <permission
-        android:name="moe.shizuku.manager.permission.API_V23"
-        android:protectionLevel="signature" />
+    <!-- Shizuku 權限：只能 uses-permission 引用（權限由 Shizuku 定義，
+         自行 <permission> 宣告會導致 INSTALL_FAILED_DUPLICATE_PERMISSION (-112)） -->
     <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
 
     <!-- 向 Shizuku 查詢服務的 manifest 宣告（必須在 <application> 外部） -->
