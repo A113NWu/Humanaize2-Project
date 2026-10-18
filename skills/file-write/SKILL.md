@@ -59,6 +59,14 @@ Returns success status and file path.
 - Use "append" mode to add to existing files
 - Requires approval for safety
 
+## 數學公式
+- 寫 .docx 時，公式用 LaTeX 語法：行內 `$...$`，獨立公式行 `$$...$$`。
+  生成 Word 時會自動轉為原生公式（OMML），Word/WPS 可正確渲染
+  分數 \frac、上下標 ^ _、根號 \sqrt、希臘字母、∑∫∞≤ 等。
+- .md / .txt 文件保持 LaTeX 原文（標準做法，不做轉換）。
+- .html 需自行在內容中引入 MathJax/KaTeX 才能渲染公式。
+- 不要用圖片或純文字描述代替公式；直接寫 LaTeX 即可。
+
 ## Examples
 
 **Create a new file:**

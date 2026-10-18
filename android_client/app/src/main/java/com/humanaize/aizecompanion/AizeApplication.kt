@@ -7,6 +7,7 @@ import android.os.Build
 import com.humanaize.aizecompanion.data.SettingsRepository
 import com.humanaize.aizecompanion.network.AizeApiClient
 import com.humanaize.aizecompanion.service.PhoneCommandPoller
+import com.humanaize.aizecompanion.shell.ShizukuShellExecutor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -36,6 +37,9 @@ class AizeApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+
+        // 儘早註冊 Shizuku sticky binder 監聽，避免 checkSelfPermission 誤報未授權
+        ShizukuShellExecutor.ensureInit()
 
         settingsRepository = SettingsRepository(this)
         apiClient = AizeApiClient("", "")

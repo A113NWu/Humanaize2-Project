@@ -64,7 +64,7 @@ fun ShizukuScreen(viewModel: MainViewModel) {
                 Text("Shizuku 授權", style = MaterialTheme.typography.titleMedium)
                 val statusText = when (permissionState) {
                     null -> "未檢測到 Shizuku 服務（請先安裝並啟動 Shizuku）"
-                    false -> "已檢測到 Shizuku，但尚未授權"
+                    false -> "已檢測到 Shizuku，但本應用尚未授權。若 Shizuku 應用內顯示已授權，可能是授給了舊版（debug 包名不同）或應用雙開副本，請點「請求授權」重新彈窗授權"
                     true -> "已授權，可以 shell 身份執行命令"
                 }
                 Text(statusText, color = when (permissionState) {

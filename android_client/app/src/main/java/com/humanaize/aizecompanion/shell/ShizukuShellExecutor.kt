@@ -47,6 +47,33 @@ object ShizukuShellExecutor {
     @Volatile
     private var newProcessMethod: Method? = null
 
+    /** sticky binder 監聽是否已註冊 */
+    @Volatile
+    private var binderHooked = false
+
+    /**
+     * 註冊 sticky binder 監聽（冪等）。
+     * 必須在任何 checkSelfPermission / requestPermission 之前調用：
+     * transceiver 未就緒時檢查權限會誤報「未授權」，導致已授權卻顯示被拒。
+     */
+    fun ensureInit() {
+        if (binderHooked) return
+        synchronized(this) {
+            if (binderHooked) return
+            try {
+                Shizuku.addBinderReceivedListenerSticky {
+                    Log.i(TAG, "Shizuku binder received")
+                }
+                Shizuku.addBinderDeadListener {
+                    Log.w(TAG, "Shizuku binder dead")
+                }
+                binderHooked = true
+            } catch (t: Throwable) {
+                Log.w(TAG, "ensureInit failed: ${t.message}")
+            }
+        }
+    }
+
     private fun getNewProcessMethod(): Method? {
         newProcessMethod?.let { return it }
         return try {
@@ -69,6 +96,7 @@ object ShizukuShellExecutor {
      * 檢查 Shizuku 服務是否可用（已安裝、已啟動、已授予權限）
      */
     fun isAvailable(): Boolean {
+        ensureInit()
         return try {
             Shizuku.pingBinder()
         } catch (t: Throwable) {
@@ -82,6 +110,7 @@ object ShizukuShellExecutor {
      * @return true=已授予；false=未授予；null=Shizuku 服務不存在
      */
     fun checkPermission(): Boolean? {
+        ensureInit()
         return try {
             if (!Shizuku.pingBinder()) {
                 Log.w(TAG, "Shizuku binder not reachable")
@@ -100,6 +129,7 @@ object ShizukuShellExecutor {
      * 此處僅提供一次性的異步請求接口
      */
     suspend fun requestPermission(): Boolean = withContext(Dispatchers.IO) {
+        ensureInit()
         suspendCancellableCoroutine { cont ->
             try {
                 if (!Shizuku.pingBinder()) {
