@@ -21,6 +21,8 @@ AllowNoIcons=yes
 ; 靜默升級時自動關閉運行中的舊版（自動更新走 /VERYSILENT）
 CloseApplications=force
 RestartApplications=no
+; 靜默升級沿用上次選擇會導致新勾選的桌面捷徑不建立
+UsePreviousTasks=no
 ; 所有 Source 路徑相對於專案根目錄
 SourceDir=..\..\
 OutputDir=installer\windows\output
