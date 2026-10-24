@@ -990,8 +990,8 @@ class SelfOptimizer:
         self.pattern_analyzer.record_interaction(user_input, topic, sentiment)
         self.conversation_learner.record_conversation(user_input, ai_response, success, sentiment)
         
-        # 保存到经验数据库
-        self.experience.record_problem_solution(user_input, ai_response, success)
+        # 日常閒聊只進記憶庫，不進經驗庫：否則每句回覆都會變成「解決方案」，
+        # 下次遇到相似字面就被 Solve 當成標準答案回放，導致答非所問。
         
         # 保存到情感数据库
         self.memory.record_sentiment(user_input, sentiment)
@@ -1035,12 +1035,8 @@ class SelfOptimizer:
         solution = self.experience.find_solution(problem)
         if solution:
             return solution
-        
-        # 尝试查找模式匹配
-        pattern_match = self.experience.find_pattern_match(problem)
-        if pattern_match:
-            return pattern_match
-        
+        # 不再做寬鬆的模式匹配：舊寫法只要命中任何一個詞就返回半年內的舊答案，
+        # 是「調用經驗庫後答非所問」的主因。
         return None
     
     def add_quick_fix(self, problem_keyword: str, solution: str):

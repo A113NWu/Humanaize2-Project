@@ -449,6 +449,13 @@ class SkillInstaller:
         Returns:
             Dict with uninstallation result
         """
+        # 系統內置技能不允許卸載
+        if str(skill_name).strip().lower() in ("memory-search",):
+            return {
+                "success": False,
+                "error": f"Skill '{skill_name}' 是系統內置技能，無法卸載"
+            }
+
         skill_dir = os.path.join(self.skills_dir, skill_name)
         
         if not os.path.exists(skill_dir):

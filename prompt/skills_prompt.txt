@@ -57,11 +57,7 @@
 - 用于：获取特定网页的信息
 - input: 网页URL
 
-### 6. memory - 记忆管理
-- 用于：保存和检索重要信息
-- input格式: "save: 键=值" 或 "get: 键"
-
-### 7. reminder - 设置提醒
+### 6. reminder - 设置提醒
 - 用于：提醒用户重要事项
 - input格式: "时间::提醒内容"
 
@@ -93,9 +89,9 @@ AI响应: {"skill": "web-search", "input": "今天最新新闻 2024"}
 用户请求："查看一下当前的日期和时间"
 AI响应: {"skill": "shell", "input": "date"}
 
-### 示例3：保存记忆
-用户请求："我需要记住我的密码是abc123"
-AI响应: {"skill": "memory", "input": "save: password=abc123"}
+### 示例3：设置提醒
+用户请求："明天早上九点提醒我开会"
+AI响应: {"skill": "reminder", "input": "明天 09:00::开会"}
 
 ### 示例4：读取文件
 用户请求："帮我读取config.json文件的内容"

@@ -1,5 +1,5 @@
 {
-  "version": "2.3.15",
-  "last_updated": "2026-10-18T00:00:00.000000",
-  "release_notes": "v2.3.15：安卓客戶端全面改造——Material3 四頁（對話 SSE 流式氣泡、Live2D WebView、Shizuku 遠程 Shell、設定）；PC 後端新增手機命令通道（/api/phone/*）與 phone-shell 技能，Aize 可遠程在手機執行 shell 並回收結果；修復雲端 API 預設輸出 1024 token 導致長內容被截斷（改為 16384）。"
+  "version": "2.3.16",
+  "last_updated": "2026-10-24T00:00:00.000000",
+  "release_notes": "v2.3.16：新增 MCP 客戶端技能——Aize 可直接接入 Tulpa 等外部 MCP 伺服器，列出並調用其工具；技能配置頁支援多伺服器管理、逐台測試連線與通配符 Token 脫敏；技能管理新增「重新掃描技能」按鈕與 /api/skills/reload 介面，新增或刪除技能後無需重啟進程。"
 }

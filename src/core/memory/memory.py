@@ -50,6 +50,16 @@ def add(mem, role, content, source=None):
         get_memory_db().add(role, content, timestamp=entry["time"])
     except Exception:
         pass
+    # 系統級經驗沉澱：每輪對話自動抽取偏好/思路，不再依賴 Skill
+    if role in ("user", "assistant") and source not in ("system",):
+        try:
+            try:
+                from ..tools.experience_db import capture_message
+            except ImportError:
+                from tools.experience_db import capture_message
+            capture_message(role, content)
+        except Exception:
+            pass
     return mem  # 返回更新后的memory对象
 
 def add_message(mem, role, content):

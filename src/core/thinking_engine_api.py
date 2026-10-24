@@ -272,6 +272,7 @@ def publish_engine_event(response):
 # 它們只能由模型通過 JSON 協議調用）
 _SKILL_EXECUTE_WHITELIST = {
     "misskey-bot": {"status", "configure", "set_bot"},
+    "mcp-client": {"list_servers", "list_tools", "ping", "refresh", "status"},
 }
 
 
@@ -306,8 +307,8 @@ def _skill_subpath(root: str, rel: str):
 
 
 def _get_secret_path(secret: str):
-    """脱敏点路径拆段；拒绝数组下标等复杂路径。"""
-    parts = [p for p in str(secret).split(".") if p and p.isidentifier()]
+    """脱敏点路径拆段；拒绝数组下标等复杂路径，支持 '*' 通配一層鍵。"""
+    parts = [p for p in str(secret).split(".") if p and (p.isidentifier() or p == "*")]
     return parts or None
 
 
@@ -315,6 +316,10 @@ def _mask_secrets(node, parts):
     if not parts or not isinstance(node, dict):
         return
     key = parts[0]
+    if key == "*":
+        for child in list(node.keys()):
+            _mask_secrets(node, [child] + parts[1:])
+        return
     if key not in node:
         return
     if len(parts) == 1:
@@ -324,6 +329,20 @@ def _mask_secrets(node, parts):
     _mask_secrets(node[key], parts[1:])
 
 
+def _is_secret_path(path: str, secret_dotted) -> bool:
+    """判斷併合中的點路徑是否命中秘密字段（支持 '*' 通配）。"""
+    if path in secret_dotted:
+        return True
+    pk = path.split(".")
+    for secret in secret_dotted:
+        if "*" not in secret:
+            continue
+        sk = secret.split(".")
+        if len(sk) == len(pk) and all(a == "*" or a == b for a, b in zip(sk, pk)):
+            return True
+    return False
+
+
 def _merge_config(dst: dict, patch: dict, secret_dotted, prefix=""):
     """深合併補丁到配置；秘密字段寫入空值或 'configured' 視為不修改。"""
     for key, value in patch.items():
@@ -331,7 +350,7 @@ def _merge_config(dst: dict, patch: dict, secret_dotted, prefix=""):
         if isinstance(value, dict) and isinstance(dst.get(key), dict):
             _merge_config(dst[key], value, secret_dotted, path + ".")
             continue
-        if path in secret_dotted and (value in (None, "", "configured")):
+        if _is_secret_path(path, secret_dotted) and (value in (None, "", "configured")):
             continue  # 留空 / 脫敏佔位符 → 保留原值
         dst[key] = value
 
@@ -614,10 +633,51 @@ class ResponseCollector:
 # ============================================================
 _CHAT_TIMELINE = collections.deque(maxlen=60)
 _CHAT_TIMELINE_LOCK = threading.Lock()
+_CHAT_TIMELINE_FILE = None
 
 
-def _timeline_add_turn(user_text, items):
-    """記錄一輪對話。items: [{k: text|thought|cmd_start|cmd_result, t: str, c: str}]"""
+def _timeline_file_path():
+    """時間線落盤路徑（與記憶庫同目錄），刷新/重啟後排版與用量都還在。"""
+    global _CHAT_TIMELINE_FILE
+    if _CHAT_TIMELINE_FILE:
+        return _CHAT_TIMELINE_FILE
+    base = None
+    for mod in ("app_paths", "core.app_paths"):
+        try:
+            m = __import__(mod, fromlist=["app_data_dir"])
+            base = m.app_data_dir()
+            break
+        except Exception:
+            continue
+    if not base:
+        base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+    os.makedirs(base, exist_ok=True)
+    _CHAT_TIMELINE_FILE = os.path.join(base, "chat_timeline.json")
+    return _CHAT_TIMELINE_FILE
+
+
+def _timeline_load():
+    try:
+        with open(_timeline_file_path(), "r", encoding="utf-8") as f:
+            data = json.load(f)
+        for turn in (data.get("turns") or [])[-_CHAT_TIMELINE.maxlen:]:
+            if isinstance(turn, dict) and turn.get("items"):
+                _CHAT_TIMELINE.append(turn)
+    except Exception:
+        pass
+
+
+def _timeline_save():
+    try:
+        with open(_timeline_file_path(), "w", encoding="utf-8") as f:
+            json.dump({"turns": list(_CHAT_TIMELINE)}, f, ensure_ascii=False)
+    except Exception as e:
+        logger.warning(f"[Timeline] save failed: {e}")
+
+
+def _timeline_add_turn(user_text, items, usage=None, display_user=None, attachments=None):
+    """記錄一輪對話。items: [{k: text|thought|cmd_start|cmd_result, t: str, c: str}]
+    usage/attachments/display_user 一起落盤，刷新後用量腳註、附件名和技能框都能重建。"""
     # 壓縮：去掉空塊；正文合併後若整輪無內容則不記錄
     clean_items = []
     for it in items:
@@ -632,12 +692,23 @@ def _timeline_add_turn(user_text, items):
             clean_items.append({"k": it.get("k"), "t": it.get("t", ""), "c": c})
     if not (user_text or "").strip() and not clean_items:
         return
+    turn = {
+        "user": user_text or "",
+        "display_user": (display_user if display_user is not None else (user_text or "")),
+        "items": clean_items,
+        "ts": int(time.time()),
+    }
+    if usage:
+        turn["usage"] = usage
+    if attachments:
+        turn["attachments"] = [
+            {"name": str(a.get("name", ""))[:120],
+             "is_image": bool(a.get("is_image"))}
+            for a in attachments if isinstance(a, dict)
+        ]
     with _CHAT_TIMELINE_LOCK:
-        _CHAT_TIMELINE.append({
-            "user": user_text or "",
-            "items": clean_items,
-            "ts": int(time.time()),
-        })
+        _CHAT_TIMELINE.append(turn)
+        _timeline_save()
 
 
 def _timeline_snapshot():
@@ -645,10 +716,121 @@ def _timeline_snapshot():
         return list(_CHAT_TIMELINE)
 
 
+_timeline_load()
+
+
 EMPTY_REPLY_ERROR = "錯誤：AI 沒有產生任何有效內容"
 
 # fix1：Aize 拒絕回覆時客戶端唯一可見的內容
 REFUSAL_TEXT = "Aize不想回答你的问题"
+
+_THOUGHT_BLOCK_RE = re.compile(
+    r"(?:^|\n)\s*THOUGHT\s*[:：]\s*(.*?)(?=\n\s*RESPONSE\s*[:：]|\Z)", re.S | re.I)
+_RESPONSE_BLOCK_RE = re.compile(
+    r"(?:^|\n)\s*RESPONSE\s*[:：]\s*(.*)\Z", re.S | re.I)
+_MOTION_TAG_RE = re.compile(
+    r"\[\s*motion\s*:\s*[A-Za-z]+\s*(?::\s*\d+\s*)?\]", re.I)
+
+
+def _split_thought_response(content):
+    """把記憶庫裡的原始回覆拆成 (thought, reply)。
+
+    歷史接口直接讀 memory.json，裡面保存的是模型原文（含 THOUGHT:/RESPONSE:
+    標籤）。不清洗就返回，網頁刷新後會把整段標籤原樣顯示出來。
+    """
+    text = content or ""
+    m_thought = _THOUGHT_BLOCK_RE.search(text)
+    m_reply = _RESPONSE_BLOCK_RE.search(text)
+    if m_reply:
+        reply = m_reply.group(1)
+        thought = m_thought.group(1) if m_thought else text[:m_reply.start()]
+    else:
+        reply = text
+        thought = m_thought.group(1) if m_thought else ""
+        if m_thought:
+            reply = text[:m_thought.start()] + text[m_thought.end():]
+    reply = _MOTION_TAG_RE.sub("", reply).strip()
+    thought = _MOTION_TAG_RE.sub("", thought).strip()
+    return thought, reply
+
+
+def _topic_switch_reply(raw_decision):
+    """從 should_answer 判定結果裡取出 switch_topic 的自發台詞。"""
+    try:
+        data = json.loads(raw_decision) if raw_decision else {}
+    except Exception:
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    if str(data.get("decision", "")).strip().lower() != "switch_topic":
+        return ""
+    return str(data.get("reply") or "").strip()[:300]
+
+
+# 中斷判斷子 Agent 的系統提示：判斷是否打斷，並安排後續話題走向。
+_INTERRUPT_JUDGE_SYSTEM = """你是對話調度判斷器。使用者（主人）正在和 AI 助手對話，AI 還在輸出回覆時，主人又發來一條新消息。
+你的任務有兩步：
+1. 判斷是否應該中斷 AI 當前的輸出，先回答主人的新消息 interrupt。
+   應該中斷（true）：
+   - 新消息提出了不同的問題、改變了要求、或包含糾正/否定（如「不是」「停」「算了」「不對」「等一下」）
+   - 新消息有時效性、很緊急，或補充了會改變答案的關鍵信息
+   - 當前回覆已經明顯跑題或答非所問
+   不該中斷（false）：
+   - 新消息只是補充說明、延續同一話題，等當前回覆說完就能解決
+   - 新消息是對當前回覆的期待（如「繼續」「然後呢」「說下去」）
+2. 判斷新消息是不是對原問題的「補充」merge。
+   - merge=true：新消息在補充原問題的條件、細節、背景，或是修正/澄清（如「呃，其實是…」「等一下，我是說…」「還有，它要…」），
+     應該把它和原問題合併成一個請求一起回答。
+   - merge=false：新消息是獨立的新問題或新話題。
+3. 決定後續安排 post_action：
+   - "resume_prev"：先回答新消息，答完再回到剛才被打斷的話題繼續做
+   - "drop_prev"：先回答新消息，剛才的話題不用再提
+   - "decline_switch"：新消息不值得現在切換，先把手上的回覆做完，再告訴主人「暫且不換話題」
+   選 decline_switch 時 interrupt 必須是 false；merge=true 時 interrupt 必須是 true、post_action 填 "drop_prev"
+   （因為合併後的請求已包含原問題，不需要再單獨續接）。其餘情況按第 1 步的判斷填 interrupt。
+只輸出一個 JSON，不要任何其他文字：{"interrupt": true 或 false, "merge": true 或 false, "post_action": "resume_prev"/"drop_prev"/"decline_switch", "reason": "20字以內的原因"}"""
+
+
+def _judge_chat_interrupt(question: str, partial: str, new_text: str) -> dict:
+    """子 Agent：判斷新消息要不要打斷當前回覆，以及之後是否回到原話題。
+
+    返回 {"interrupt": bool, "post_action": str, "reason": str,
+          "source": "judge"|"fallback"}。
+    判斷器本身失敗時默認中斷——主人新發的消息優先，避免被 409 卡住。
+    """
+    judge_input = (
+        f"【AI 正在回答的問題】\n{(question or '(未知)')[:300]}\n\n"
+        f"【AI 已經說出的內容】\n{(partial or '(還沒開始說)')[-600:]}\n\n"
+        f"【主人新發的消息】\n{new_text[:500]}\n\n只輸出 JSON。"
+    )
+    try:
+        from llm import chat
+        raw = (chat(judge_input, max_tokens=240, temperature=0.1, timeout=10,
+                    max_retries=0, system=_INTERRUPT_JUDGE_SYSTEM) or "").strip()
+        m = re.search(r'"interrupt"\s*:\s*(true|false)', raw, re.I)
+        if m:
+            interrupt = m.group(1).lower() == "true"
+        else:
+            low = raw.lower()
+            interrupt = ("yes" in low) or ("中斷" in raw) or ("中断" in raw)
+        mm = re.search(r'"merge"\s*:\s*(true|false)', raw, re.I)
+        merge = mm.group(1).lower() == "true" if mm else False
+        pm = re.search(r'"post_action"\s*:\s*"(resume_prev|drop_prev|decline_switch)"', raw, re.I)
+        post_action = pm.group(1).lower() if pm else ("drop_prev" if interrupt else "decline_switch")
+        if merge:
+            # 合併成一個請求：一定要先停下當前輸出，原問題已包含在合併內容裡
+            interrupt = True
+            post_action = "drop_prev"
+        elif post_action == "decline_switch":
+            interrupt = False
+        rm = re.search(r'"reason"\s*:\s*"([^"]{0,80})"', raw)
+        reason = rm.group(1) if rm else ("子 Agent 判定中斷" if interrupt else "子 Agent 判定不中斷")
+        return {"interrupt": interrupt, "merge": merge, "post_action": post_action,
+                "reason": reason, "source": "judge"}
+    except Exception as e:
+        logger.warning(f"[Chat] interrupt judge failed: {e}")
+        return {"interrupt": True, "merge": False, "post_action": "drop_prev",
+                "reason": f"判斷器失敗，默認中斷: {e}", "source": "fallback"}
 
 
 class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
@@ -658,6 +840,11 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
     # 若允許第二個聊天請求進入，它的 collector 會熱頂替引擎的全局 on_response，
     # 從而把前一個任務正在生成的內容串給新客戶端（且新任務的回答無人接收）。
     _chat_lock = threading.Lock()
+
+    # 中斷判斷：主聊天請求進行中時，新請求可先問子 Agent「要不要打斷」。
+    # 這裡保存當前回合的取消事件、原問題與已輸出內容，供 /api/chat/interrupt 讀取。
+    _active_chat_lock = threading.Lock()
+    _active_chat = None
 
     def log_message(self, format, *args):
         logger.info(f"[HTTP] client={self.client_address[0]} request={args[0]}")
@@ -706,7 +893,11 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
     _LOCAL_CLIENTS = ("127.0.0.1", "::1", "localhost")
     _AUTH_EXEMPT_PATHS = ("/api/login", "/health", "/live2d",
                           "/api/live2d/poll", "/api/live2d/command",
-                          "/api/live2d/chat", "/api/tts")
+                          "/api/live2d/chat", "/api/live2d/pose",
+                          "/api/live2d/mocap/start", "/api/live2d/mocap/stop",
+                          "/api/live2d/mocap/status", "/api/live2d/mocap/preview",
+                          "/api/live2d/mocap/recalibrate", "/Selfuse_Capture",
+                          "/Selfuse_Capture/", "/api/tts")
     # OBS 瀏覽源無法登錄，Live2D 頁面資源與攝像頭背景圖免登錄（仍受局域網門禁限制）
     _AUTH_EXEMPT_PREFIXES = ("/live2d/", "/asset/")
 
@@ -831,6 +1022,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._send_json(self._status_payload())
         elif parsed.path == '/api/chat/history':
             self._handle_chat_history()
+        elif parsed.path == '/api/prompt':
+            self._handle_get_prompt()
         elif parsed.path == '/api/chat/timeline':
             self._handle_chat_timeline()
         elif parsed.path == '/api/voice/capabilities':
@@ -849,8 +1042,18 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._handle_live2d_static(parsed.path)
         elif parsed.path == '/api/live2d/poll':
             self._handle_live2d_poll(parsed)
+        elif parsed.path == '/api/live2d/pose':
+            self._handle_live2d_pose_stream()
+        elif parsed.path == '/api/live2d/mocap/status':
+            self._send_json(self._mocap().status())
+        elif parsed.path == '/api/live2d/mocap/preview':
+            self._handle_mocap_preview()
+        elif parsed.path in ('/Selfuse_Capture', '/Selfuse_Capture/'):
+            self._send_static_file("Selfuse_Capture/index.html", "text/html; charset=utf-8")
         elif parsed.path == '/api/phone/poll':
             self._handle_phone_poll(parsed)
+        elif parsed.path.startswith('/api/meeting/'):
+            self._handle_meeting_get(parsed, parsed.path.rsplit('/', 1)[-1])
         elif parsed.path == '/api/phone/status':
             try:
                 self._send_json(self._phone_hub().status())
@@ -961,8 +1164,12 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
 
         if parsed.path in ('/api/chat', '/v1/chat/completions'):
             self._handle_chat_completions()
+        elif parsed.path == '/api/chat/interrupt':
+            self._handle_chat_interrupt()
         elif parsed.path == '/api/settings':
             self._handle_save_settings()
+        elif parsed.path == '/api/prompt':
+            self._handle_save_prompt()
         elif parsed.path == '/api/login':
             self._handle_login()
         elif parsed.path == '/api/logout':
@@ -971,6 +1178,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._handle_tts()
         elif parsed.path == '/api/skills/toggle':
             self._handle_skill_toggle()
+        elif parsed.path == '/api/skills/reload':
+            self._handle_skills_reload()
         elif parsed.path == '/api/skills/execute':
             self._handle_skill_execute()
         elif parsed.path.startswith('/api/skills/'):
@@ -981,6 +1190,15 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._handle_live2d_command()
         elif parsed.path == '/api/live2d/chat':
             self._handle_live2d_chat()
+        elif parsed.path in ('/api/live2d/mocap/start', '/api/live2d/mocap/stop',
+                             '/api/live2d/mocap/recalibrate'):
+            mc = self._mocap()
+            if parsed.path.endswith('start'):
+                self._send_json(mc.start())
+            elif parsed.path.endswith('stop'):
+                self._send_json(mc.stop())
+            else:
+                self._send_json(mc.recalibrate())
         elif parsed.path == '/api/phone/result':
             self._handle_phone_result()
         elif parsed.path == '/api/phone/command':
@@ -1112,7 +1330,6 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             personality_prompt = ""
             if personality:
                 personality_prompt = getattr(personality, 'description', '') or str(personality)
-            context = build_context_from_memory(memory) if memory else ""
             system_block_parts = []
             try:
                 from data.prompts_manager import load_system_prompt, load_agent_prompt
@@ -1127,11 +1344,23 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                     pass
             if personality_prompt:
                 system_block_parts.append(personality_prompt)
+            try:
+                _recent_ctx = build_context_from_memory(memory, max_messages=12)
+                if _recent_ctx:
+                    system_block_parts.append(_recent_ctx)
+            except Exception:
+                pass
+            if os.name == "nt":
+                system_block_parts.append(
+                    "【運行環境】Windows。shell 技能由 cmd.exe 執行，不是 PowerShell/bash。"
+                    "臨時目錄用 %TEMP%；禁止 /tmp、/Skills、$env:TEMP、New-Item；"
+                    "下載用 curl.exe，解壓用 tar -xf（失敗再用 powershell -Command Expand-Archive），寫入前先 mkdir。")
+            else:
+                system_block_parts.append(
+                    "【運行環境】Linux。shell 技能由 /bin/sh 執行，臨時目錄用 /tmp，解壓用 unzip 或 tar。")
             _skills_text = _get_skills_prompt_cached()
             if _skills_text:
                 system_block_parts.append(_skills_text)
-            if context:
-                system_block_parts.append(context)
 
             messages = [{"role": "user", "content": text}]
             full_prompt = build_prompt_from_messages(messages, "\n\n".join(system_block_parts))
@@ -1211,6 +1440,83 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         except ImportError:
             from core.tools.phone_hub import get_phone_hub
         return get_phone_hub()
+
+    @staticmethod
+    def _mocap():
+        try:
+            from voice.mocap import get_motion_capture
+        except ImportError:
+            from core.voice.mocap import get_motion_capture
+        return get_motion_capture()
+
+    def _handle_live2d_pose_stream(self):
+        """SSE：以 30fps 推送面部動作捕捉姿態，供 Live2D 頁面實時套用。"""
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/event-stream; charset=utf-8')
+        self.send_header('Cache-Control', 'no-cache')
+        self.send_header('Connection', 'keep-alive')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        mc = self._mocap()
+        try:
+            while True:
+                pose = mc.get_pose()
+                self.wfile.write(f"data: {json.dumps(pose)}\n\n".encode('utf-8'))
+                self.wfile.flush()
+                time.sleep(1.0 / 30)
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+
+    def _handle_mocap_preview(self):
+        """MJPEG 推流：帶人臉框與姿態數值的鏡像預覽，供 Selfuse_Capture 頁面顯示。"""
+        self.send_response(200)
+        self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=frame')
+        self.send_header('Cache-Control', 'no-cache')
+        self.send_header('Connection', 'close')
+        self.end_headers()
+        mc = self._mocap()
+        try:
+            while True:
+                jpg = mc.get_jpeg()
+                if jpg:
+                    self.wfile.write(b'--frame\r\nContent-Type: image/jpeg\r\n'
+                                     b'Content-Length: ' + str(len(jpg)).encode() + b'\r\n\r\n')
+                    self.wfile.write(jpg)
+                    self.wfile.write(b'\r\n')
+                    self.wfile.flush()
+                time.sleep(1.0 / 15)
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+
+    @staticmethod
+    def _meeting():
+        try:
+            from voice.meeting_listener import get_meeting_listener
+        except ImportError:
+            from core.voice.meeting_listener import get_meeting_listener
+        return get_meeting_listener()
+
+    def _handle_meeting_get(self, parsed, action):
+        """會議旁聽控制：/api/meeting/start|stop|status|transcript|summary"""
+        ml = self._meeting()
+        try:
+            if action == "start":
+                self._send_json(ml.start())
+            elif action == "stop":
+                self._send_json(ml.stop())
+            elif action == "status":
+                self._send_json(ml.status())
+            elif action == "summary":
+                self._send_json(ml.summarize_now())
+            elif action == "transcript":
+                qs = parse_qs(parsed.query or "")
+                limit = int(qs.get("limit", ["500"])[0] or 500)
+                self._send_json(ml.transcript(limit=max(1, min(limit, 3000))))
+            else:
+                self._send_error("Not found", 404)
+        except Exception as e:
+            self._send_error(f"meeting {action} failed: {e}", 500)
+
 
     def _handle_phone_poll(self, parsed):
         """手機端輪詢待執行命令。"""
@@ -1475,13 +1781,72 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             content = (msg.get("content") or "").strip()
             if not content:
                 continue
-            items.append({"role": out_role, "content": content, "time": msg.get("time", "")})
+            if out_role == "assistant":
+                thought, reply = _split_thought_response(content)
+                if not reply:
+                    reply, thought = thought, ""
+                entry = {"role": "assistant", "content": reply, "time": msg.get("time", "")}
+                if thought:
+                    entry["thought"] = thought
+                items.append(entry)
+            else:
+                items.append({"role": "user", "content": content, "time": msg.get("time", "")})
         self._send_json({"messages": items})
 
     def _handle_chat_timeline(self):
         """返回進程級結構化對話時間線（思考/命令/正文分離），
         供網頁刷新後原樣重建思考框與技能輸出框。"""
         self._send_json({"turns": _timeline_snapshot()})
+
+    def _agent_prompt_path(self):
+        """用戶可編輯的人設提示詞文件路徑（打包態為 exe 旁 Prompt/）"""
+        try:
+            from app_paths import prompts_dir
+        except ImportError:
+            from core.app_paths import prompts_dir
+        return os.path.join(prompts_dir(), "agent_prompt.txt")
+
+    def _handle_get_prompt(self):
+        """讀取當前生效的人設提示詞，供網頁設置頁直接編輯"""
+        path = self._agent_prompt_path()
+        content = ""
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+        except OSError:
+            pass
+        # 首行版本標記只用於升級比對，不展示給用戶
+        content = re.sub(r"\A\s*@@PROMPT_VER:\d+@@[^\n]*\n?", "", content, count=1)
+        self._send_json({"ok": True, "content": content, "path": path})
+
+    def _handle_save_prompt(self):
+        """保存人設提示詞；保留版本標記，保存後下一句回覆立即生效"""
+        data = self._read_json_body() or {}
+        content = data.get("content")
+        if not isinstance(content, str) or not content.strip():
+            self._send_json({"ok": False, "error": "提示詞不能為空"}, status=400)
+            return
+        path = self._agent_prompt_path()
+        marker = ""
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                first = f.readline(64)
+            m = re.match(r"\s*(@@PROMPT_VER:\d+@@)", first)
+            if m:
+                marker = m.group(1) + "\n"
+        except OSError:
+            pass
+        body = content.lstrip("\ufeff").strip()
+        # 用戶若把標記一起貼進來，先去掉，避免重複
+        body = re.sub(r"\A@@PROMPT_VER:\d+@@[^\n]*\n?", "", body, count=1)
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8", newline="\n") as f:
+                f.write(marker + body + "\n")
+        except OSError as exc:
+            self._send_json({"ok": False, "error": f"寫入失敗：{exc}"}, status=500)
+            return
+        self._send_json({"ok": True, "path": path})
 
     def _status_payload(self):
         memory = ThinkingEngineState().get_memory() or {}
@@ -1719,10 +2084,14 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             and os.path.isfile(_skill_subpath(skill.skill_dir, meta["config_ui"]))
         )
         has_service = bool((meta.get("service") or {}).get("command"))
+        builtin = bool(meta.get("builtin")) or skill.name.lower() in ("memory-search",)
         return {
             "name": skill.name,
             "description": (skill.description or "")[:300],
             "enabled": bool(skill.enabled),
+            "builtin": builtin,
+            "can_disable": not builtin,
+            "can_delete": not builtin,
             "executable": bool(skill.executor),
             "has_config_ui": has_config_ui,
             "has_service": has_service,
@@ -1763,6 +2132,9 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             if not manager.get_skill(name):
                 self._send_error(f"未找到技能: {name}", 404)
                 return
+            if not enabled and manager._is_builtin_skill(name):
+                self._send_error(f"「{name}」是系統內置技能，無法關閉", 403)
+                return
             if enabled:
                 manager.enable_skill(name)
             else:
@@ -1779,6 +2151,25 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             })
         except (OSError, ValueError, json.JSONDecodeError) as e:
             self._send_error(f"Invalid request: {e}")
+
+    def _handle_skills_reload(self):
+        """重新掃描 skills 目錄：新增/刪除技能後不必重啟進程。"""
+        try:
+            manager = _get_skills_manager()
+            count = manager.reload_skills()
+            _invalidate_skills_prompt_cache()
+            logger.info(f"[Skills] reloaded, total={count}")
+            self._send_json({
+                "status": "ok",
+                "count": count,
+                "skills": [self._skill_payload(skill) for skill in
+                           sorted(manager.get_all_skills(),
+                                  key=lambda item: item.name.lower())],
+                "all_enabled": bool(manager.skills_config.get("all_enabled", True)),
+            })
+        except Exception as e:
+            logger.error(f"[Skills] reload failed: {e}\n{traceback.format_exc()}")
+            self._send_error(f"重新扫描技能失败: {e}", 500)
 
     def _handle_skill_execute(self):
         """執行白名單內的安全技能動作用於網頁配置（目前僅 misskey-bot）。
@@ -1810,6 +2201,10 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                 # 空串或脫敏佔位符都視為「不修改現有 token」
                 if token and token != "configured":
                     clean_params["token"] = token
+            elif name == "mcp-client":
+                server = str(params.get("server", "")).strip()
+                if server:
+                    clean_params["server"] = server
 
             manager = _get_skills_manager()
             result = manager.execute_skill(
@@ -2151,6 +2546,42 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         ]
         self._send_json({"object": "list", "data": models})
 
+    def _handle_chat_interrupt(self):
+        """新消息到達時由子 Agent 判斷是否打斷當前回覆。
+
+        請求：{"text": "主人新發的消息"}
+        響應：{"interrupt": bool, "reason": str, "idle": bool}
+        判定打斷時只 set 取消事件，實際的新問題由客戶端在同一個回合結束後重發。
+        """
+        try:
+            body = self._read_json_body()
+        except Exception as e:
+            self._send_error(f"Invalid JSON body: {e}")
+            return
+        new_text = str(body.get("text", "")).strip()
+        with self._active_chat_lock:
+            active = dict(type(self)._active_chat) if type(self)._active_chat else None
+        if not active:
+            self._send_json({"interrupt": True, "merge": False, "idle": True,
+                             "post_action": "drop_prev", "prev_question": "",
+                             "reason": "no_active_chat"})
+            return
+        if not new_text:
+            self._send_json({"interrupt": False, "merge": False, "idle": False, "reason": "empty_text"})
+            return
+        verdict = _judge_chat_interrupt(
+            active.get("question", ""), active.get("partial", ""), new_text)
+        if verdict["interrupt"]:
+            ev = active.get("cancel")
+            if ev is not None:
+                ev.set()
+            with self._active_chat_lock:
+                if type(self)._active_chat:
+                    type(self)._active_chat["interrupted"] = True
+            logger.info(f"[Chat] interrupt requested: {verdict.get('reason')} new_text={new_text[:60]}")
+        self._send_json({**verdict, "idle": False, "prev_question": active.get("question", ""),
+                         "partial": str(active.get("partial") or "")[-600:]})
+
     def _handle_chat_completions(self):
         """处理聊天完成请求 - OpenAI兼容格式
         QQ-bot和客户端共用同样的处理函数和逻辑，都通过ThinkingEngine队列处理"""
@@ -2167,6 +2598,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         stream = body.get('stream', False)
         max_tokens = body.get('max_tokens', 512)
         temperature = body.get('temperature', 0.7)
+        # 本回合臨時系統指令（如「先拒絕換話題再繼續」），只進 system 塊，不寫入記憶
+        system_hint = (body.get('system_hint') or '').strip()
 
         logger.info(
             f"[Chat] parsed path={urlparse(self.path).path} messages={len(messages)} "
@@ -2212,6 +2645,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             if msg.get('role') == 'user':
                 user_text = msg.get('content', '')
                 break
+        # 時間線只存主人真正打的字（附件上下文/視覺描述不進聊天氣泡）
+        display_user_text = (user_text or "").strip()
 
         # 上傳附件分流：圖片→視覺模型分析；其他文件→引導 Aize 寫代碼閉環分析。
         # 在佔用 _chat_lock 之前完成（視覺調用是外部 HTTP，不阻塞其他聊天排隊）。
@@ -2231,9 +2666,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                         msg['content'] = user_text
                         break
 
-        # 构建完整prompt（系統/人格/記憶上下文統一進入模型的 system 塊，
-        # 再按當前模型家族的對話模板渲染，避免特殊標記前混入裸文本）
-        context = build_context_from_memory(memory) if memory else ""
+        # 构建完整prompt（記憶不再自動附加，模型需要時自己調用 memory-search）
         system_block_parts = []
         # 載入用戶可編輯的 system_prompt.txt（角色扮演/人設提示詞）。
         # 歷史 bug：load_system_prompt() 定義了但從未被調用，用戶改了
@@ -2256,13 +2689,30 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         _agent_prompt_text = (load_agent_prompt() or "").strip()
         if _agent_prompt_text:
             system_block_parts.append(_agent_prompt_text)
+        # 近期對話短窗口：多步任務（下載/安裝/排錯）需要知道前幾句做到哪，
+        # 否則她會忘任務、只會空泛答應。更早的內容仍靠 memory-search 按需檢索。
+        try:
+            _recent_ctx = build_context_from_memory(memory, max_messages=12)
+            if _recent_ctx:
+                system_block_parts.append(_recent_ctx)
+        except Exception as e:
+            logger.warning(f"[Chat] recent context build failed: {e}")
+        if system_hint:
+            system_block_parts.append(system_hint[:2000])
+        # 系統資訊：每次調用技能前先讓她知道 OS / shell 差異，避免拿 Linux 寫法在 Windows 上跑
+        if os.name == "nt":
+            system_block_parts.append(
+                "【運行環境】Windows。shell 技能由 cmd.exe 執行，不是 PowerShell/bash。"
+                "臨時目錄用 %TEMP%；禁止 /tmp、/Skills、$env:TEMP、New-Item；"
+                "下載用 curl.exe，解壓用 tar -xf（失敗再用 powershell -Command Expand-Archive），寫入前先 mkdir。")
+        else:
+            system_block_parts.append(
+                "【運行環境】Linux。shell 技能由 /bin/sh 執行，臨時目錄用 /tmp，解壓用 unzip 或 tar。")
         # 運行時實際可用的技能清單（安裝目錄 skills/ 下已啟用的技能），
         # 讓模型知道「什麼時候該用、具體叫什麼名字」，而不是只記得 JSON 格式
         _skills_text = _get_skills_prompt_cached()
         if _skills_text:
             system_block_parts.append(_skills_text)
-        if context:
-            system_block_parts.append(context)
         full_prompt = build_prompt_from_messages(messages, "\n\n".join(system_block_parts))
 
         logger.info(
@@ -2307,6 +2757,14 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         # 判定不回覆則掐斷生成線程，客戶端只看到「Aize不想回答你的问题」。
         cancel_event = threading.Event()
         thinking_engine._chat_cancel_event = cancel_event
+        # 登記當前回合：/api/chat/interrupt 需要原問題、已輸出內容與取消事件
+        with self._active_chat_lock:
+            type(self)._active_chat = {
+                "cancel": cancel_event,
+                "question": user_text,
+                "partial": "",
+                "started": time.time(),
+            }
         decision_holder = {}
         decision_done = threading.Event()
 
@@ -2348,10 +2806,14 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                                       "thought_type": "gan_decision"})
                 if not should_answer:
                     cancel_event.set()
+                    switch_reply = _topic_switch_reply(decision_reason)
                     logger.info(f"[Chat] refused to answer: {str(decision_reason)[:200]}")
-                    self._send_refusal_stream()
+                    self._send_refusal_stream(switch_reply or None)
                 else:
-                    self._handle_stream_response(collector, state, user_text=user_text)
+                    self._handle_stream_response(collector, state, user_text=user_text,
+                                                 prompt_chars=len(full_prompt),
+                                                 display_user=display_user_text,
+                                                 attachments=attachments)
             else:
                 # 通过ThinkingEngine队列提交聊天任务
                 thinking_engine.queue_chat_task(
@@ -2368,8 +2830,9 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                                       "thought_type": "gan_decision"})
                 if not should_answer:
                     cancel_event.set()
+                    switch_reply = _topic_switch_reply(decision_reason)
                     logger.info(f"[Chat] refused to answer: {str(decision_reason)[:200]}")
-                    self._send_refusal_json()
+                    self._send_refusal_json(switch_reply or None)
                 else:
                     self._handle_sync_response(collector, user_text, memory, state)
         finally:
@@ -2379,6 +2842,9 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                 thinking_engine._chat_cancel_event = None
             except Exception:
                 pass
+            # 回合結束：清空中斷登記，之後的新消息直接正常發送
+            with self._active_chat_lock:
+                type(self)._active_chat = None
             # 对话结束：让闲置引擎继续暂停 60 秒后自动恢复，避免争抢本地推理
             try:
                 from ui import idle as idle_mod
@@ -2472,8 +2938,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             "usage": data.get("usage", {})
         })
 
-    def _send_refusal_stream(self):
-        """拒答（流式）：只發一條「Aize不想回答你的问题」後立即結束。"""
+    def _send_refusal_stream(self, text=None):
+        """拒答（流式）：默認只發一條「Aize不想回答你的问题」；切換話題時發她自發的台詞。"""
         self.send_response(200)
         self.send_header('Content-Type', 'text/event-stream; charset=utf-8')
         self.send_header('Cache-Control', 'no-cache')
@@ -2488,7 +2954,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             "choices": [
                 {
                     "index": 0,
-                    "delta": {"content": REFUSAL_TEXT},
+                    "delta": {"content": text or REFUSAL_TEXT},
                     "finish_reason": "stop"
                 }
             ]
@@ -2500,8 +2966,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         except BrokenPipeError:
             pass
 
-    def _send_refusal_json(self):
-        """拒答（同步）：OpenAI 格式，content 固定為拒答語。"""
+    def _send_refusal_json(self, text=None):
+        """拒答（同步）：OpenAI 格式，默認拒答語；切換話題時發自發台詞。"""
         self._send_json({
             "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
             "object": "chat.completion",
@@ -2510,7 +2976,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             "choices": [
                 {
                     "index": 0,
-                    "message": {"role": "assistant", "content": REFUSAL_TEXT},
+                    "message": {"role": "assistant", "content": text or REFUSAL_TEXT},
                     "finish_reason": "stop"
                 }
             ],
@@ -2616,7 +3082,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                 "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
             })
 
-    def _handle_stream_response(self, collector, state, user_text=""):
+    def _handle_stream_response(self, collector, state, user_text="", prompt_chars=0,
+                                display_user="", attachments=None):
         """处理流式响应 - SSE格式
         通过ResponseCollector收集ThinkingEngine的响应，实现QQ-bot和客户端共用同样的处理逻辑"""
         self.send_response(200)
@@ -2630,6 +3097,15 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
 
         chat_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
         created = int(time.time())
+        t_start = time.time()
+
+        # 每次回覆至少觸發一個動作：模型偶爾漏發 [motion:] 時，形象也不會一動不動
+        try:
+            from tools.live2d_hub import get_live2d_hub
+            get_live2d_hub().push_command(
+                {"type": "motion", "group": "Idle", "index": created % 9})
+        except Exception:
+            pass
 
         # 結構化事件時間線：刷新頁面後原樣重建思考框/命令輸出框
         tl_items = []
@@ -2646,6 +3122,10 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                     content = chunk["content"]
                     full_reply += content
                     tl_items.append({"k": "text", "t": "", "c": content})
+                    # 供中斷判斷子 Agent 參考「已經說到哪」
+                    with self._active_chat_lock:
+                        if type(self)._active_chat:
+                            type(self)._active_chat["partial"] = full_reply[-1500:]
 
                     # 发送SSE块
                     sse_chunk = {
@@ -2666,6 +3146,13 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                         self.wfile.flush()
                     except BrokenPipeError:
                         logger.info("[ThinkingEngine API] Client disconnected")
+                        # 客戶端被新消息打斷而斷線時，同步取消生成，讓引擎盡快釋放聊天鎖
+                        try:
+                            ev = getattr(thinking_engine, "_chat_cancel_event", None)
+                            if ev is not None:
+                                ev.set()
+                        except Exception:
+                            pass
                         break
                         
                 elif chunk["type"] == "thought":
@@ -2809,6 +3296,14 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                     }
                 ]
             }
+            # 用量統計：跟最後一個 chunk 一起下發，前端據此顯示「完成」標誌
+            final_chunk["usage"] = {
+                "prompt_chars": int(prompt_chars or 0),
+                "completion_chars": len(full_reply or ""),
+                "prompt_tokens_est": max(1, int((prompt_chars or 0) / 1.6)) if prompt_chars else 0,
+                "completion_tokens_est": max(1, int(len(full_reply or "") / 1.6)) if full_reply else 0,
+                "elapsed": round(time.time() - t_start, 1),
+            }
             try:
                 self.wfile.write(f"data: {json.dumps(final_chunk, ensure_ascii=False)}\n\n".encode('utf-8'))
                 self.wfile.write(b"data: [DONE]\n\n")
@@ -2819,8 +3314,9 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             # 标记完成
             collector.set_finished()
 
-            # 保存本輪結構化時間線（刷新頁面後重建思考框/命令框用）
-            _timeline_add_turn(user_text, tl_items)
+            # 保存本輪結構化時間線（刷新頁面後重建思考框/命令框/用量/附件名）
+            _timeline_add_turn(user_text, tl_items, usage=final_chunk.get("usage"),
+                               display_user=display_user, attachments=attachments)
 
             # 通知QQ UI更新（显示Aize发送的消息）
             cleaned_reply = clean_reply(full_reply) if full_reply else ""
@@ -2863,7 +3359,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             except BrokenPipeError:
                 pass
             # 異常結束也保留已有時間線（思考過程可能已記錄）
-            _timeline_add_turn(user_text, tl_items)
+            _timeline_add_turn(user_text, tl_items, display_user=display_user,
+                               attachments=attachments)
 
 
 class ThinkingEngineAPIServer:

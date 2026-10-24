@@ -80,7 +80,6 @@
      - file-write: 写入文件内容
      - web-search: 网络搜索
      - web-fetch: 获取网页内容
-     - memory: 记忆管理
      - reminder: 设置提醒
 
 ## 对话示例

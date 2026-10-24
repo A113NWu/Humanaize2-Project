@@ -29,10 +29,11 @@
     flex: 1; background: transparent; border: none; outline: none;
     color: #fff; padding: 9px 10px; font-size: 13px;
   }
-  #mic-btn, #send-btn {
+  #mic-btn, #send-btn, #mocap-btn {
     background: transparent; border: none; color: #ccc; cursor: pointer;
     padding: 0 12px; font-size: 16px;
   }
+  #mocap-btn.active { color: #4ade80; }
   #mic-btn.listening { color: #ff5b5b; animation: pulse 1s infinite; }
   @keyframes pulse { 50% { opacity: .35; } }
   #status {
@@ -56,6 +57,7 @@
   <div id="chat-log"></div>
   <div id="chat-bar">
     <input id="chat-input" placeholder="跟 Aize 說話…" autocomplete="off">
+    <button id="mocap-btn" title="動作捕捉（攝像頭）">🎭</button>
     <button id="mic-btn" title="語音輸入">🎤</button>
     <button id="send-btn" title="發送">➤</button>
   </div>
@@ -80,6 +82,7 @@
   if (WIDGET) document.body.classList.add('widget');
   if (CAMERA) document.body.classList.add('camera');
   const MODEL_URL = qs.get('model') || '/live2d/model/hiyori/Hiyori.model3.json';
+  const MOCAP_AUTO = qs.get('mocap') === '1';
 
   const statusEl = document.getElementById('status');
   const logEl = document.getElementById('chat-log');
@@ -110,6 +113,7 @@
 
   let model = null;
   let audioCtx = null;
+  let mocapPose = null;   // 動作捕捉姿態（服務端 30fps SSE 推送）
 
   async function loadModel() {
     setStatus('模型加載中…');
@@ -120,9 +124,47 @@
     model.internalModel.on('hit', (areas) => {
       if (areas && areas.length) playMotion('TapBody');
     });
+    // 動捕姿態在模型更新前套用，權重 1 覆蓋動作層的頭部角度
+    model.internalModel.on('beforeModelUpdate', applyMocapPose);
     const groups = Object.keys((model.internalModel.settings || {}).motions || {});
     setStatus('就緒 | 動作組: ' + (groups.join(', ') || '無'));
     scheduleIdleMotion();
+  }
+
+  function applyMocapPose() {
+    if (!model) return;
+    const cm = model.internalModel.coreModel;
+    const set = (id, v) => {
+      try { cm.setParameterValueById(id, v, 1); } catch (e) { /* 舊模型無此參數 */ }
+    };
+    const add = (id, v) => {
+      try { cm.addParameterValueById(id, v, 1); } catch (e) { /* 舊模型無此參數 */ }
+    };
+    // 動捕絕對覆蓋：只有真正偵測到臉時才接管，否則交還給內建待機動作與眨眼
+    if (mocapPose && mocapPose.face) {
+      set('ParamAngleX', mocapPose.x || 0);
+      set('ParamAngleY', mocapPose.y || 0);
+      set('ParamAngleZ', mocapPose.z || 0);
+      set('ParamBodyAngleX', mocapPose.body || 0);
+      set('ParamEyeBallX', Math.max(-1, Math.min(1, (mocapPose.x || 0) / 30)));
+      set('ParamEyeBallY', Math.max(-1, Math.min(1, (mocapPose.y || 0) / 30)));
+      if (typeof mocapPose.eye === 'number') {
+        set('ParamEyeLOpen', mocapPose.eye);
+        set('ParamEyeROpen', mocapPose.eye);
+      }
+    }
+    // 動作手勢：在動作之上疊加可見的點頭/歪頭，讓 Idle 不再像沒反應
+    if (gesture) {
+      const t = (performance.now() - gesture.t0) / gesture.dur;
+      if (t >= 1) {
+        gesture = null;
+      } else {
+        const s = Math.sin(Math.PI * t);
+        add('ParamAngleX', gesture.ax * s);
+        add('ParamAngleY', gesture.ay * s);
+        add('ParamAngleZ', gesture.az * s);
+      }
+    }
   }
   function fitModel() {
     if (!model) return;
@@ -157,6 +199,7 @@
      模型自帶的眨眼/呼吸物理仍在，閒置時不會是僵死狀態 */
   function scheduleIdleMotion() { /* 已停用：保留函數名避免調用點報錯 */ }
 
+  let gesture = null;   // 疊加在動作上的可見手勢（點頭/歪頭）
   function playMotion(group, index) {
     if (!model) return;
     try {
@@ -166,6 +209,15 @@
       // 未指定編號時固定播第一個：動作選擇權完全交給 Aize，頁面不做隨機
       const idx = (typeof index === 'number' && index >= 0) ? index : 0;
       model.motion(group, idx);
+      // 每次收到動作命令都疊一個明顯的小手勢，避免 Idle 動作太細看不出來
+      const i = idx || 0;
+      gesture = {
+        t0: performance.now(),
+        dur: group === 'TapBody' ? 1000 : 1300,
+        ax: ((i % 3) - 1) * 10,
+        ay: group === 'TapBody' ? -16 : -8,
+        az: (i % 2 === 0 ? -8 : 8),
+      };
     } catch (e) { console.warn('motion failed', e); }
   }
 
@@ -209,14 +261,21 @@
 
   // ---------- 命令輪詢 ----------
   let lastId = 0;
+  let pollStarted = false;
   async function poll() {
     try {
       const r = await fetch('/api/live2d/poll?since=' + lastId);
       if (r.ok) {
         const data = await r.json();
-        for (const cmd of (data.commands || [])) {
-          lastId = Math.max(lastId, cmd.id || 0);
-          handleCommand(cmd);
+        if (!pollStarted) {
+          // 首次輪詢只對齊游標，不回放歷史命令（避免刷新頁面重播舊台詞與舊動作）
+          pollStarted = true;
+          lastId = Math.max(0, ((data.status && data.status.next_id) || 1) - 1);
+        } else {
+          for (const cmd of (data.commands || [])) {
+            lastId = Math.max(lastId, cmd.id || 0);
+            handleCommand(cmd);
+          }
         }
       }
     } catch (e) { /* 服務重啟時靜默 */ }
@@ -293,6 +352,40 @@
   }
   micBtn.addEventListener('click', toggleMic);
 
+  // ---------- 動作捕捉（攝像頭 → 頭部姿態） ----------
+  const mocapBtn = document.getElementById('mocap-btn');
+  let mocapOn = false, poseES = null;
+
+  function startPoseStream() {
+    if (poseES) return;
+    poseES = new EventSource('/api/live2d/pose');
+    poseES.onmessage = (ev) => {
+      try {
+        // 服務端已做平滑與回中，這裡直接採用
+        mocapPose = JSON.parse(ev.data);
+      } catch (e) { /* 忽略壞帧 */ }
+    };
+    poseES.onerror = () => { /* 斷線自動重連 */ };
+  }
+  async function toggleMocap(force) {
+    const want = (typeof force === 'boolean') ? force : !mocapOn;
+    try {
+      const r = await fetch('/api/live2d/mocap/' + (want ? 'start' : 'stop'), { method: 'POST' });
+      const data = await r.json();
+      if (want && !data.ok) {
+        addMsg('系統', '動作捕捉啟動失敗: ' + (data.error || '未知原因'), '');
+        return;
+      }
+      mocapOn = want;
+      mocapBtn.classList.toggle('active', mocapOn);
+      // 姿態串流常駐：停止捕捉只關攝像頭，仍保持訂閱（之後從 Selfuse_Capture 重開也能同步）
+      if (mocapOn) startPoseStream();
+    } catch (e) {
+      addMsg('系統', '動作捕捉請求失敗: ' + e.message, '');
+    }
+  }
+  mocapBtn.addEventListener('click', () => toggleMocap());
+
   // ---------- 啟動 ----------
   // widget/透明（OBS 瀏覽源）模式：無法點擊覆蓋層，直接啟動；
   // 首次點擊畫面時恢復 AudioContext（瀏覽器自動播放策略）
@@ -305,6 +398,15 @@
       console.error(e);
     });
     poll();
+    // 常駐訂閱姿態串流：只要服務端在捕捉（Selfuse_Capture 或 🎭 按鈕啟動），
+    // 這個頁面（網頁浮窗 / OBS 虛擬攝像頭 / 透明瀏覽源）都會同步，不再依賴 mocap=1
+    startPoseStream();
+    // 同步按鈕狀態：捕捉可能是從 Selfuse_Capture 頁面啟動的
+    fetch('/api/live2d/mocap/status').then(r => r.json()).then(d => {
+      mocapOn = !!d.running;
+      mocapBtn.classList.toggle('active', mocapOn);
+    }).catch(() => {});
+    if (MOCAP_AUTO) toggleMocap(true);
   }
   if (WIDGET || CAMERA || document.body.classList.contains('transparent')) {
     overlay.style.display = 'none';

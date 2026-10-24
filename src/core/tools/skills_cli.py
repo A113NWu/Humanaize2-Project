@@ -391,6 +391,10 @@ class SkillsCLI:
     
     def uninstall_skill(self, skill_name: str) -> bool:
         """Uninstall a skill"""
+        # 系統內置技能不允許卸載
+        if str(skill_name).strip().lower() in ("memory-search",):
+            print(f"[SkillsCLI] Error: '{skill_name}' is a built-in skill and cannot be uninstalled")
+            return False
         skill_path = os.path.join(self.skills_dir, skill_name)
         
         if not os.path.exists(skill_path):

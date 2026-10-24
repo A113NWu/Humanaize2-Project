@@ -36,8 +36,9 @@ _VCAM_GUIDE = """虛擬攝像頭設置（讓 Aize 的 Live2D 進入會議/直播
 
 方案 A — OBS Studio（推薦）：
 1. 安裝 OBS Studio（https://obsproject.com/ 免費）
-2. 在 OBS 添加來源 → 瀏覽器(Browser) → URL 填 http://localhost:8082/live2d?camera=1
-   （camera 模式只顯示 Aize 上半身，自帶背景圖）
+2. 在 OBS 添加來源 → 瀏覽器(Browser) → URL 填 http://localhost:8082/live2d?camera=1&mocap=1
+   （camera 模式只顯示 Aize 上半身，自帶背景圖；mocap=1 開啟動作捕捉——
+     攝像頭由後端 Python 打開，瀏覽源不需要攝像頭權限）
    勾選「關閉時關閉來源」、寬高填 1280x720
 3. 右鍵來源 → 濾鏡 → 色度鍵(Chroma Key) 可去背（頁面已是透明底時可跳过）
 4. 點「啟動虛擬攝像頭」
@@ -116,6 +117,22 @@ def execute(input_data: Any) -> Dict:
 
     if action == "vcam_guide":
         return {"success": True, "guide": _VCAM_GUIDE}
+
+    if action in ("mocap_start", "mocap_stop", "mocap_status"):
+        try:
+            _ensure_src_path()
+            try:
+                from voice.mocap import get_motion_capture
+            except ImportError:
+                from core.voice.mocap import get_motion_capture
+            mc = get_motion_capture()
+            if action == "mocap_start":
+                return {"success": True, **mc.start()}
+            if action == "mocap_stop":
+                return {"success": True, **mc.stop()}
+            return {"success": True, **mc.status()}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
     if action == "start_obs":
         for path in _OBS_CANDIDATES:

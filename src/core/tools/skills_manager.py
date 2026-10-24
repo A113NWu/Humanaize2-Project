@@ -69,7 +69,21 @@ class Skill:
 
 class SkillsManager:
     """Manages all skills, OpenClaw-compatible with full execution support"""
-    
+
+    # 系統內置底層技能：常駐啟用，網頁/CLI 都不能關閉或刪除
+    BUILTIN_SKILLS = {"memory-search"}
+
+    def _is_builtin_skill(self, name: str) -> bool:
+        """判斷是否為內置技能（名稱白名單或 SKILL.md 的 metadata.builtin）。"""
+        if not name:
+            return False
+        if str(name).strip().lower() in self.BUILTIN_SKILLS:
+            return True
+        skill = self.skills.get(name)
+        if skill is not None and isinstance(skill.metadata, dict):
+            return bool(skill.metadata.get("builtin"))
+        return False
+
     def __init__(self, skills_dir: str = None):
         self.skills: Dict[str, Skill] = {}
         
@@ -189,6 +203,15 @@ class SkillsManager:
                     skill_file = os.path.join(skill_path, "SKILL.md")
                     if os.path.exists(skill_file):
                         self._load_skill_from_path(skill_path, skill_file)
+
+    def reload_skills(self) -> int:
+        """重新掃描技能目錄與開關配置，返回掃描到的技能總數。
+
+        新增或刪除技能目錄後可調用，無需重啟進程。
+        """
+        self._load_skills_config()
+        self.load_skills()
+        return len(self.skills)
     
     def _setup_skill_executor(self, skill: Skill):
         """Setup executor for a skill - try loading from module first, then use default executors"""
@@ -218,6 +241,10 @@ class SkillsManager:
                 if config_name.lower() == skill.name.lower():
                     skill.enabled = config_data.get('enabled', False) or all_enabled
                     break
+
+            # 內置技能不受任何開關影響，永遠啟用
+            if self._is_builtin_skill(skill.name):
+                skill.enabled = True
 
             self.skills[skill.name] = skill
 
@@ -363,9 +390,11 @@ class SkillsManager:
             self._save_skills_config()
     
     def disable_skill(self, name: str):
-        """Disable a skill"""
+        """Disable a skill（內置技能拒絕停用）"""
         actual_name = self._find_skill_name(name)
         if actual_name and actual_name in self.skills:
+            if self._is_builtin_skill(actual_name):
+                return False
             self.skills[actual_name].enabled = False
             
             if 'skills' not in self.skills_config:
@@ -387,8 +416,10 @@ class SkillsManager:
         self._save_skills_config()
     
     def disable_all_skills(self):
-        """Disable all skills"""
+        """Disable all skills（內置技能保持啟用）"""
         for name in self.skills:
+            if self._is_builtin_skill(name):
+                continue
             self.skills[name].enabled = False
         
         self.skills_config['all_enabled'] = False
@@ -433,13 +464,17 @@ class SkillsManager:
             f.write(content)
     
     def delete_skill(self, name: str):
-        """Delete a skill"""
+        """Delete a skill（內置技能拒絕刪除）"""
+        if self._is_builtin_skill(name):
+            return False
         if name in self.skills:
             del self.skills[name]
             skill_dir = os.path.join(self.skills_dir, name)
             if os.path.exists(skill_dir):
                 import shutil
                 shutil.rmtree(skill_dir)
+            return True
+        return False
     
     def _platform_environment_block(self, language: str) -> str:
         """運行環境說明：告訴模型當前操作系統與 shell，避免按 Linux 慣性下命令"""

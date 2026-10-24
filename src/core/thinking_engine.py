@@ -1,6 +1,6 @@
 import os
 import sys
-import threading, queue, re, json
+import threading, queue, re, json, time
 from datetime import datetime
 
 # Add core directory to path
@@ -23,6 +23,24 @@ try:
     from app_paths import get_settings_path
 except ImportError:
     from core.app_paths import get_settings_path
+
+
+def _runtime_env_text():
+    """每次生成前注入的系統資訊：明確 OS 與 shell，避免把 Linux 寫法帶到 Windows。"""
+    if os.name == "nt":
+        return (
+            "作業系統：Windows。shell 技能由 cmd.exe 執行（不是 PowerShell，也不是 Linux bash）。\n"
+            "- 臨時目錄用 %TEMP%，安裝目錄用 %LOCALAPPDATA%\\Programs。\n"
+            "- 禁止使用 /tmp、/Skills、$env:TEMP、New-Item，這些在 cmd 裡會失敗。\n"
+            "- 下載用 curl.exe -L -o \"%TEMP%\\文件名\" 網址。\n"
+            "- 解壓用 tar -xf，失敗再用 powershell -NoProfile -Command Expand-Archive。\n"
+            "- 寫文件前先 mkdir，例如 mkdir \"%TEMP%\\目錄\"。"
+        )
+    return (
+        "作業系統：Linux。shell 技能由 /bin/sh 執行。\n"
+        "- 臨時目錄用 /tmp。\n"
+        "- 解壓用 unzip 或 tar。"
+    )
 
 from memory import add, add_thought, save_memory
 from llm.llm_enhanced import generate_with_emotion_feedback, generate_with_emotion_feedback_stream
@@ -131,8 +149,10 @@ class ThinkingEngine:
             motions.append((group, idx))
             return " "
         cleaned = cls._MOTION_TAG_RE.sub(_sub, text)
-        cleaned = re.sub(r"[ \t]{2,}", " ", cleaned).strip(" \t\r\n，,。.；;、")
-        return cleaned, motions
+        cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+        # 標籤貼在中文標點後面時會留下一個空格，收掉；英文逗號後的空格保留
+        cleaned = re.sub(r"([，。；、])\s+", r"\1", cleaned)
+        return cleaned.strip(), motions
 
     def _push_live2d_motions(self, motions):
         """把動作命令推給 Live2D hub；任何失敗都靜默，絕不影響聊天。"""
@@ -142,10 +162,17 @@ class ThinkingEngine:
             except ImportError:
                 from core.tools.live2d_hub import get_live2d_hub
             hub = get_live2d_hub()
+            now = time.time()
             for group, idx in motions:
                 cmd = {"type": "motion", "group": group}
                 if idx is not None:
                     cmd["index"] = max(0, min(8, idx))
+                # 流式出口和 on_response 出口可能各推一次，1 秒內同一個動作只播一次
+                key = (group, idx)
+                last = getattr(type(self), "_last_motion_push", None)
+                if last and last[0] == key and now - last[1] < 1.0:
+                    continue
+                type(self)._last_motion_push = (key, now)
                 hub.push_command(cmd)
         except Exception:
             pass
@@ -168,12 +195,32 @@ class ThinkingEngine:
         if callback in self._stream_callbacks:
             self._stream_callbacks.remove(callback)
     
-    def _notify_stream_callbacks(self, sentence, target_info=None):
-        """通知所有注册的流式回调函数（剝除動作標籤；動作已由 on_response 出口推過，這裡不重複推）"""
-        if isinstance(sentence, str) and "[motion" in sentence.lower():
-            sentence, _ = self._extract_motion_tags(sentence)
+    def _notify_stream_callbacks(self, sentence, target_info=None, memory=None):
+        """通知所有注册的流式回调函数（剝除動作標籤並即時推送，動畫不必等到回覆結束）"""
+        # 技能 JSON 絕不進聊天畫面：命令內容與未打完的調用都藏掉，只留 Skill 狀態框
+        if isinstance(sentence, str) and '"skill"' in sentence:
+            sentence = self._strip_skill_json(sentence)
             if not sentence.strip():
                 return
+        if isinstance(sentence, str) and "[motion" in sentence.lower():
+            sentence, motions = self._extract_motion_tags(sentence)
+            if motions:
+                self._push_live2d_motions(motions)
+            if not sentence.strip():
+                return
+        # 每一句話都寫入記憶庫：不再依賴整段回覆結束後才落庫，
+        # 也讓「記憶不強制附加」後模型仍能靠檢索找回細節
+        if memory is not None and isinstance(sentence, str) and sentence.strip():
+            s = sentence.strip()
+            # 串流切句會在網址/技能 JSON 的句點處誤切，這些碎片不是「一句話」，不進記憶庫
+            looks_fragment = ('{"skill"' in s or "http" in s or "www." in s or
+                              (not re.search(r'[\u4e00-\u9fff]', s) and len(s) < 20))
+            if not looks_fragment:
+                try:
+                    add(memory, "assistant", s, source="ai_response")
+                    save_memory(memory)
+                except Exception as e:
+                    logger.warning(f"Stream memory add failed: {e}")
         for callback in self._stream_callbacks:
             try:
                 callback(sentence, target_info)
@@ -240,7 +287,8 @@ class ThinkingEngine:
             raw_decision = str(decision.get("decision", "")).strip().lower() if decision else ""
             if raw_decision == "answer":
                 should_answer = True
-            elif raw_decision == "continue_gan":
+            elif raw_decision in ("continue_gan", "switch_topic"):
+                # continue_gan：直接不理；switch_topic：不回答但主動換話題
                 should_answer = False
             elif not response:
                 # 模型返回空內容（常見於本地推理被佔用或思考模型吃光 token 預算）
@@ -418,61 +466,25 @@ class ThinkingEngine:
                     c.startswith("Command output:") or
                     c.startswith("[Skill]"))
 
-        memory_messages = (memory or {}).get("messages", []) if isinstance(memory, dict) else []
-        # 最近 4 輪對話（約 8 條）常駐，保證短期上下文連貫
-        recent_lines = []
-        seen_contents = set()
-        for message in memory_messages[-8:]:
-            if not isinstance(message, dict):
-                continue
-            role = message.get("role", "unknown")
-            content = message.get("content", "")
-            if content and not _is_machine_message(content):
-                recent_lines.append(f"{role}: {content}")
-                seen_contents.add(content)
-
-        # 長期記憶：用當前問題到向量記憶庫檢索相關記憶，不再全量疊加
-        recalled_lines = []
-        try:
-            try:
-                from tools.memory_db import get_memory_db
-            except ImportError:
-                from core.tools.memory_db import get_memory_db
-            for hit in get_memory_db().search(str(user_question or ""), top_k=5):
-                c = hit.get("content", "")
-                if c and c not in seen_contents:
-                    recalled_lines.append(f"{hit.get('role', 'unknown')}: {c}")
-                    seen_contents.add(c)
-        except Exception:
-            pass
-
-        memory_parts = []
-        if recent_lines:
-            memory_parts.append("[Recent]\n" + "\n".join(recent_lines))
-        if recalled_lines:
-            memory_parts.append("[Recalled]\n" + "\n".join(recalled_lines))
-        memory_text = "\n\n".join(memory_parts) or "No previous memory."
+        # 記憶不再強制附加：每句話都已寫入記憶庫，模型需要時自己用 memory-search 檢索，
+        # 避免每次請求都灌入大量歷史把上下文撐爆、或被舊話題帶偏。
+        memory_text = ("No memory is attached automatically. "
+                       "If this message continues an ongoing task or refers to earlier turns, "
+                       "you MUST call the memory-search skill first and check what you were doing; "
+                       "never pretend to remember. Call it whenever unsure.")
         other_text = "\n\n".join(str(item).strip() for item in (other_prompts or []) if str(item).strip())
         other_text = other_text or "None."
         gan_text = str(gan_prompt or "").strip() or "None."
         tail_text = str(tail).strip() if tail else "Respond concisely. Respond in the same language as the user's input."
 
-        # 經驗數據庫：檢索與當前問題相關的過往思考方式/見聞，注入提示詞
+        # 經驗數據庫屬於 Solve 模式專用，日常聊天不再檢索/注入，避免答非所問
         exp_text = "None."
-        try:
-            try:
-                from tools.experience_db import get_experience_db
-            except ImportError:
-                from core.tools.experience_db import get_experience_db
-            hits = get_experience_db().format_for_prompt(str(user_question or ""), top_k=3)
-            if hits:
-                exp_text = hits
-        except Exception:
-            pass
 
         return (
             "MAIN PROMPT:\n"
             f"{str(main_prompt or '').strip()}\n\n"
+            "RUNTIME ENVIRONMENT:\n"
+            f"{_runtime_env_text()}\n\n"
             "MEMORY DATABASE:\n"
             f"{memory_text}\n\n"
             "RELEVANT EXPERIENCE:\n"
@@ -602,28 +614,7 @@ class ThinkingEngine:
         # First check if web search is needed
         user_text = self._extract_user_text_from_prompt(prompt)
         
-        # Solve模式：先尝试从经验数据库快速查找解决方案
-        quick_solution = None
-        if self._should_use_solve_sync(user_text):
-            quick_solution = self.optimizer.solve_problem(user_text)
-        if quick_solution:
-            logger.info(f"Solve mode: Found quick solution for '{user_text[:30]}'")
-            if self.on_response:
-                self.on_response({"type": "internal_thought", "thought": "[Solve Mode] 使用经验数据库快速解决问题", "thought_type": "solve_mode"})
-            
-            # 只保存到经验数据库（Solve模式）
-            self.optimizer.record_solve_interaction(user_text, quick_solution, success=True)
-            
-            if memory is not None:
-                add(memory, "assistant", quick_solution, source="ai_response")
-                save_memory(memory)
-            if self.on_response:
-                self.on_response({"type": "chat_response", "reply": quick_solution})
-            notify_ai_response(quick_solution)
-            
-            # 记录学习（只记录到经验）
-            self._record_and_learn(user_text, quick_solution)
-            return
+        # 聊天不再走「經驗庫快速答案」短路：會唸出舊答案並跳過技能調用。
         
         # 检查是否有蒸馏知识可用
         distilled_prompt = self.optimizer.conversation_learner.prompt_distiller.generate_training_prompt(user_text)
@@ -919,27 +910,9 @@ class ThinkingEngine:
 
         user_text = user_text or self._extract_user_text_from_prompt(prompt)
         
-        quick_solution = None
-        if self._should_use_solve_sync(user_text):
-            quick_solution = self.optimizer.solve_problem(user_text)
-        if quick_solution:
-            logger.info(f"Solve mode: Found quick solution for '{user_text[:30]}'")
-            if self.on_response:
-                self.on_response({"type": "internal_thought", "thought": "[Solve Mode] 使用经验数据库快速解决问题", "thought_type": "solve_mode"})
-            self.optimizer.record_solve_interaction(user_text, quick_solution, success=True)
-            if memory is not None:
-                add(memory, "assistant", quick_solution, source="ai_response")
-                save_memory(memory)
-            
-            sentences = self._split_sentences(quick_solution)
-            for sentence in sentences:
-                if self.on_response:
-                    self.on_response({"type": "chat_response", "reply": sentence})
-                self._notify_stream_callbacks(sentence, target_info)
-            
-            notify_ai_response(quick_solution)
-            self._record_and_learn(user_text, quick_solution)
-            return
+        # 不再在聊天裡走「經驗庫快速答案」短路：那條路徑會把舊答案直接念出來、
+        # 跳過技能調用（表現為她說「我來幫你下載」卻不動手），也是答非所問的來源。
+        # Solve 模式只在明確的求解流程中使用。
         
         distilled_prompt = self.optimizer.conversation_learner.prompt_distiller.generate_training_prompt(user_text)
         if distilled_prompt:
@@ -1014,7 +987,7 @@ class ThinkingEngine:
                                 logger.info(f"Streaming sentence: {cleaned[:50]}...")
                                 if self.on_response:
                                     self.on_response({"type": "chat_response", "reply": cleaned})
-                                self._notify_stream_callbacks(cleaned, target_info)
+                                self._notify_stream_callbacks(cleaned, target_info, memory)
 
                     current_buffer = self._get_remaining_buffer(current_buffer)
 
@@ -1047,9 +1020,17 @@ class ThinkingEngine:
                         logger.info(f"Final streaming sentence: {cleaned[:50]}...")
                         if self.on_response:
                             self.on_response({"type": "chat_response", "reply": cleaned})
-                        self._notify_stream_callbacks(cleaned, target_info)
+                        self._notify_stream_callbacks(cleaned, target_info, memory)
             
             thought, target_reply = self._extract_thought_and_response(full_reply)
+            logger.info(f"[Chat] raw reply head: {(full_reply or '')[:240]!r}")
+            # 收尾再清一次：記憶、歷史與語音裡絕不保留動作標籤
+            if "[motion" in full_reply.lower():
+                full_reply, final_motions = self._extract_motion_tags(full_reply)
+                if final_motions:
+                    self._push_live2d_motions(final_motions)
+            if target_reply and "[motion" in target_reply.lower():
+                target_reply, _ = self._extract_motion_tags(target_reply)
             if thought:
                 if self.on_response:
                     self.on_response({"type": "internal_thought", "thought": thought, "thought_type": "internal"})
@@ -1057,17 +1038,22 @@ class ThinkingEngine:
                     add_thought(memory, thought, thought_type="internal")
                     save_memory(memory)
             
-            if memory is not None:
-                add(memory, "assistant", full_reply, source="ai_response")
-                save_memory(memory)
-            
+            # 逐句記憶已在 _notify_stream_callbacks 裡完成，這裡不再重複寫入整段回覆
+
             try:
                 agent = Agent('!')
                 agent.set_language(self.language)
                 if agent.has_actions(full_reply):
                     logger.info("Agent has actions to execute")
                     if self.on_response:
-                        self.on_response({"type": "command_start", "message": "AI is executing a command...\n"})
+                        _names = []
+                        try:
+                            _, _calls = self._extract_skill_calls(full_reply)
+                            _names = list(dict.fromkeys(n for n, _ in _calls))
+                        except Exception:
+                            pass
+                        _label = ("正在執行 " + "、".join(_names) + " Skill…") if _names else "正在執行 Skill…"
+                        self.on_response({"type": "command_start", "message": _label + "\n"})
                     
                     out = agent.agent('!', full_reply)
                     logger.info(f"Agent output: {out[:200] if out else 'Empty'}")
@@ -1098,12 +1084,13 @@ class ThinkingEngine:
                                 # 含技能調用 JSON 的句子已在流式階段處理（JSON 隱藏、命令已執行），
                                 # 這裡不再重複發送
                                 cleaned_sentence, _post_calls = self._extract_skill_calls(cleaned_sentence)
-                                if _post_calls and not cleaned_sentence:
+                                cleaned_sentence = self._strip_skill_json(cleaned_sentence)
+                                if not cleaned_sentence:
                                     continue
                                 logger.info(f"Command result sentence: {cleaned_sentence[:50]}...")
                                 if self.on_response:
                                     self.on_response({"type": "chat_response", "reply": cleaned_sentence})
-                                self._notify_stream_callbacks(cleaned_sentence, target_info)
+                                self._notify_stream_callbacks(cleaned_sentence, target_info, memory)
                     
                     try:
                         # 閉環：執行完技能後，把結果餵回 Aize，讓她自己決定下一步。
@@ -1133,10 +1120,6 @@ class ThinkingEngine:
                                 logger.warning("Followup reply is empty, stopping loop")
                                 break
 
-                            if memory is not None:
-                                add(memory, "assistant", freply, source="ai_response")
-                                save_memory(memory)
-
                             fthought, ftarget_reply = self._extract_thought_and_response(freply)
                             fresponse_content = self._extract_response_content(ftarget_reply or freply)
                             ffinal_reply = fresponse_content or (ftarget_reply or freply)
@@ -1158,7 +1141,7 @@ class ThinkingEngine:
                                         cleaned_sentence = self._clean_and_humanize_reply(sentence)
                                         if cleaned_sentence and self.on_response:
                                             self.on_response({"type": "chat_response", "reply": cleaned_sentence})
-                                            self._notify_stream_callbacks(cleaned_sentence, target_info)
+                                            self._notify_stream_callbacks(cleaned_sentence, target_info, memory)
                                 break
 
                             # 進度檢查：同一輪內若所有調用都已執行過，視為停滯，強制收尾
@@ -1644,6 +1627,16 @@ class ThinkingEngine:
         return visible.strip(" \t\r\n，,。.；;、"), calls
 
     @staticmethod
+    def _strip_skill_json(text):
+        """把技能 JSON（含尚未打完的殘片）從要顯示/記憶的文本裡清掉。"""
+        if not text or '"skill"' not in text:
+            return text
+        t = re.sub(r'\{[^{}]*"skill"[^{}]*\}', '', text)
+        # 還沒閉合的 JSON 尾巴：從 {"skill" 起全部丟棄
+        t = re.sub(r'\{[^{}]*"skill".*$', '', t, flags=re.S)
+        return re.sub(r'[ \t]{2,}', ' ', t).strip(" \t\r\n，,。.；;、")
+
+    @staticmethod
     def _drain_think_event(st, callback):
         """把緩衝的推理文本按行發到思考區，返回剩餘未發部分。"""
         text = st.get("thought", "")
@@ -1676,6 +1669,29 @@ class ThinkingEngine:
             return is_response, text[last_mark.end():]
         return in_response_section, text
 
+    @staticmethod
+    def _split_long_sentences(text, limit=30):
+        """把過長的中文句子在逗號處拆成短句，避免一整段長句顯得很 AI。"""
+        if not text or len(text) <= limit or '```' in text or '{"skill"' in text:
+            return text
+        if not re.search(r'[\u4e00-\u9fff]', text):
+            return text
+        out = []
+        for sentence in re.split(r'(?<=[。！？!?~～])', text):
+            if not sentence or len(sentence) <= limit:
+                out.append(sentence)
+                continue
+            buf = ""
+            for part in re.split(r'(?<=[，,；;])', sentence):
+                if buf and len(buf) + len(part) > limit:
+                    out.append(buf.rstrip("，,；;") + "。")
+                    buf = part
+                else:
+                    buf += part
+            if buf:
+                out.append(buf)
+        return "".join(out)
+
     def _clean_and_humanize_reply(self, reply):
         """清理并人性化回复内容"""
         from utils.reply_cleaner import clean_reply
@@ -1687,6 +1703,14 @@ class ThinkingEngine:
 
         if not cleaned or cleaned.lower() in ['none', 'null', 'undefined', 'empty']:
             return None
+
+        # 動作標籤統一在這裡剝離並立即推送：網頁、CLI、語音、記憶都不會看到 [motion:...]
+        if "[motion" in cleaned.lower():
+            cleaned, motions = self._extract_motion_tags(cleaned)
+            if motions:
+                self._push_live2d_motions(motions)
+            if not cleaned:
+                return None
 
         # 移除思考模型（MiniMax-M3/R1）的推理塊，含未閉合的殘留
         _think_open = re.escape(chr(60) + "think" + chr(62))
@@ -1700,6 +1724,8 @@ class ThinkingEngine:
         cleaned = re.sub(r'(?i)\bTHOUGHT\s*:\s*', '', cleaned)
         cleaned = re.sub(r'(?i)\bRESPONSE\s*:\s*', '', cleaned)
 
+        # 長句拆短句：系統層面統一處理，不靠提示詞
+        cleaned = self._split_long_sentences(cleaned)
         return cleaned.strip()
 
     def _handle_gan_task(self, task, memory):
@@ -1849,7 +1875,7 @@ class ThinkingEngine:
             raw = str(decision.get("decision", "")).strip().lower() if decision else ""
             if raw == "answer":
                 should_answer = True
-            elif raw == "continue_gan":
+            elif raw in ("continue_gan", "switch_topic"):
                 should_answer = False
             elif not response:
                 should_answer = True

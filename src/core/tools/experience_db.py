@@ -22,6 +22,37 @@ _MAX_ENTRIES = 500
 
 _KIND_LABELS = {"thinking": "思考方式", "observation": "見聞", "fact": "事實"}
 
+# 系統自動沉澱：用戶偏好（事實）/ AI 的思路（思考方式）
+_USER_CUES = ("以後", "之后", "记住", "記住", "不要", "必須", "必须",
+              "我喜歡", "我喜歡", "我不喜歡", "偏好", "一律", "總是", "總是")
+_AI_CUES = ("應該", "不應該", "下次", "原則", "規律", "判斷", "避免",
+            "優先", "取捨", "經驗", "权衡", "權衡")
+
+
+def _clean_for_capture(content):
+    text = str(content or "")
+    text = re.sub(r"\[motion:[^\]]*\]", "", text)
+    text = re.sub(r"```[\s\S]*?```", "", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def capture_message(role, content):
+    """系統級自動沉澱：不依賴 Skill，每輪對話由 memory.add 調用。
+
+    用戶話語裡出現長期偏好 → 存為 fact；
+    AI 回覆裡出現明確的判斷/取捨表述 → 存為 thinking。
+    相似內容由 save() 自動覆蓋，不會無限堆積。
+    """
+    text = _clean_for_capture(content)
+    if len(text) < 24 or len(text) > 500:
+        return
+    if '{"skill"' in text or text.startswith("[Skill]"):
+        return
+    if role == "user" and any(c in text for c in _USER_CUES):
+        get_experience_db().save(text, kind="fact", tags=["auto", "preference"])
+    elif role == "assistant" and len(text) >= 30 and any(c in text for c in _AI_CUES):
+        get_experience_db().save(text, kind="thinking", tags=["auto"])
+
 
 def _normalize(text):
     return re.sub(r"[^\w\u4e00-\u9fff]+", "", str(text or "").lower())

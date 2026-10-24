@@ -33,6 +33,9 @@ Aize 的 Live2D 形象運行在 `http://localhost:8082/live2d`（免費默認模
 - `danmu_start`: 接入 B 站彈幕 `{action:"danmu_start", room_id:12345}`
 - `danmu_stop`: 停止彈幕
 - `start_obs`: 啟動 OBS 並開虛擬攝像頭
+- `mocap_start`: 開啟動作捕捉（後端攝像頭追蹤你的頭部，形象跟隨轉頭）
+- `mocap_stop`: 關閉動作捕捉
+- `mocap_status`: 查看動作捕捉狀態（running/face/pose）
 - `vcam_guide`: 查看虛擬攝像頭/直播接入完整設置說明
 - `status`: 查看中樞與彈幕狀態
 

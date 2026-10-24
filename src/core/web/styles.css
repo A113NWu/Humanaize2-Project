@@ -283,6 +283,7 @@ select option{background:#14262f;color:var(--text)}
 .checks label input[type="checkbox"]{flex:0 0 auto;order:2;margin-left:auto}
 .save-row{display:flex;align-items:center;justify-content:flex-end;gap:15px;margin-top:25px;padding-top:18px;border-top:1px solid var(--line)}
 .notice{color:var(--accent);font-size:12px;margin-right:auto}
+.prompt-editor{width:100%;box-sizing:border-box;min-height:420px;font-family:Consolas,'Cascadia Mono',monospace;font-size:12.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word;overflow:auto;resize:vertical}
 
 /* ============================================================
    聊天氣泡內的思考/日誌區（按 thought_type 分色，顏色不可合併）
@@ -306,7 +307,21 @@ select option{background:#14262f;color:var(--text)}
 .thought-line.t-solve_mode{color:#3fd6e0}
 .thought-line.t-error{color:#ff5b5b;font-weight:600}
 .reply-text{white-space:pre-wrap;word-break:break-word}
+/* 歷史記錄與刷新後同樣保留 Markdown 排版 */
+.rich-text{white-space:normal;word-break:break-word}
+.rich-text pre{background:#0d0e12;border:1px solid #2a2b34;border-radius:8px;padding:10px 12px;overflow:auto;margin:8px 0;font-size:12.5px;line-height:1.55}
+.rich-text code{background:#20222b;border-radius:4px;padding:1px 5px;font-family:Consolas,'Cascadia Mono',monospace;font-size:.92em}
+.rich-text pre code{background:none;padding:0;font-size:inherit}
+.rich-text .md-h{font-weight:700;color:#f0e6ff;margin:8px 0 2px;font-size:1.02em}
+.rich-text .md-li{margin:2px 0 2px 2px;color:#d8d8e4}
+.rich-text strong{color:#fff}
+.rich-text a{color:#8ab4ff;text-decoration:underline}
 .message.assistant.busy-notice{color:#ffb36b;font-weight:600}
+/* 被新消息打斷的回覆：保留已輸出內容，並在末尾標記已中斷 */
+.message.assistant.interrupted{opacity:.75}
+.message.assistant.interrupted::after{content:'（已中斷）';display:block;margin-top:6px;font-size:11px;color:#ffb36b;opacity:.85}
+/* 回合結束的用量腳註：用來確認 Aize 到底輸出完了沒有 */
+.usage-info{margin-top:8px;padding-top:6px;border-top:1px dashed rgba(255,255,255,.12);font-size:11px;color:#8b8b9e;letter-spacing:.2px}
 
 /* ---------- 響應式 ---------- */
 @media(max-width:760px){

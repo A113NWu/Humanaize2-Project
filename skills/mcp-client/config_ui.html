@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root{--accent:#5fc7b4;--accent-deep:#3ea393;--text:#f0ebe4;--muted:#9a9187;--line:rgba(255,255,255,.12);--danger:#ff7a7a}
+  *{box-sizing:border-box}
+  body{margin:0;padding:16px;background:transparent;color:var(--text);font-family:"Segoe UI",sans-serif;font-size:13px}
+  h3{margin:0 0 4px;font-size:14px}
+  .muted{color:var(--muted);font-size:12px;margin:0 0 14px;line-height:1.5}
+  fieldset{border:1px solid var(--line);border-radius:10px;padding:12px;margin:0 0 12px}
+  legend{padding:0 6px;font-size:12px;color:var(--muted)}
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:10px}
+  label.check{display:flex;align-items:center;gap:6px;color:var(--text);margin:0}
+  label.check input{width:auto;margin:0}
+  input{display:block;width:100%;margin-top:4px;padding:7px 9px;border-radius:8px;border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--text);font-size:13px}
+  input:focus{outline:none;border-color:var(--accent)}
+  .row{display:flex;gap:10px}
+  .row label{flex:1}
+  .srv{border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px;background:rgba(255,255,255,.03)}
+  .srv-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+  .srv-head strong{font-size:13px}
+  .srv-head .spacer{flex:1}
+  .actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:6px 0 12px}
+  button{padding:8px 16px;border:0;border-radius:10px;cursor:pointer;font-weight:700;font-size:12px;color:#0d2428;background:linear-gradient(145deg,#acf0e2,var(--accent-deep))}
+  button:hover{filter:brightness(1.07)}
+  button.ghost{background:rgba(255,255,255,.08);color:var(--text);border:1px solid var(--line);box-shadow:none;font-weight:600}
+  button.danger{background:rgba(255,122,122,.16);color:var(--danger);border:1px solid rgba(255,122,122,.35);font-weight:600}
+  #notice{min-height:16px;font-size:12px;color:var(--accent);margin-bottom:8px}
+  #notice.err{color:var(--danger)}
+</style>
+</head>
+<body>
+<h3>MCP 客戶端</h3>
+<p class="muted">接入外部 MCP 服務器（如 Tulpa）。地址需保留末尾 <code>/mcp</code>；Token 在對應服務器側創建連接後取得。留空表示不修改已保存的 Token。</p>
+
+<div id="notice"></div>
+<div id="servers"></div>
+
+<div class="actions">
+  <button type="button" class="ghost" id="btn-add">+ 新增服務器</button>
+  <button type="button" id="btn-save">保存</button>
+  <span class="muted" id="save-state" style="margin:0"></span>
+</div>
+
+<fieldset><legend>通用</legend>
+  <label>單次調用結果最大字符數<input id="max-chars" type="number" min="1000" step="1000"></label>
+</fieldset>
+
+<script>
+(function () {
+  const SKILL = "mcp-client";
+  const serversBox = document.getElementById("servers");
+  const notice = document.getElementById("notice");
+  const saveState = document.getElementById("save-state");
+  let originalNames = [];
+
+  function setNotice(text, isError) {
+    notice.textContent = text || "";
+    notice.className = isError ? "err" : "";
+  }
+
+  function card(name, spec) {
+    const el = document.createElement("div");
+    el.className = "srv";
+    const tokenConfigured = !!(spec.token && spec.token !== "");
+    el.innerHTML = `
+      <div class="srv-head">
+        <strong data-role="title"></strong>
+        <span class="spacer"></span>
+        <label class="check"><input type="checkbox" data-f="enabled"> 启用</label>
+      </div>
+      <div class="row">
+        <label>名称<input data-f="name"></label>
+        <label>地址<input data-f="url" placeholder="http://127.0.0.1:18777/mcp"></label>
+      </div>
+      <div class="row">
+        <label>Token<input data-f="token" type="password" autocomplete="new-password"></label>
+        <label>超时（秒）<input data-f="timeout" type="number" min="5"></label>
+      </div>
+      <label>备注<input data-f="note"></label>
+    `;
+    const get = (f) => el.querySelector(`[data-f="${f}"]`);
+    get("name").value = name || "";
+    get("url").value = spec.url || "";
+    get("token").value = "";
+    get("token").placeholder = tokenConfigured ? "已配置（留空不修改）" : "粘贴 Bearer Token";
+    get("timeout").value = spec.timeout || 240;
+    get("note").value = spec.note || "";
+    get("enabled").checked = spec.enabled !== false;
+    el.querySelector('[data-role="title"]').textContent = name || "新服务器";
+    get("name").addEventListener("input", () => {
+      el.querySelector('[data-role="title"]').textContent = get("name").value.trim() || "新服务器";
+    });
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "danger";
+    del.textContent = "删除";
+    del.addEventListener("click", () => el.remove());
+    const test = document.createElement("button");
+    test.type = "button";
+    test.className = "ghost";
+    test.textContent = "测试";
+    test.addEventListener("click", () => ping(get("name").value.trim()));
+    el.querySelector(".srv-head").appendChild(test);
+    el.querySelector(".srv-head").appendChild(del);
+    return el;
+  }
+
+  async function ping(server) {
+    if (!server) {
+      setNotice("请先填写并保存服务器名称再测试", true);
+      return;
+    }
+    setNotice("正在测试 " + server + " …", false);
+    try {
+      const res = await fetch("/api/skills/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "mcp-client", action: "ping", params: { server } })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || data.message || "请求失败");
+      const item = ((data.result || {}).servers || [])[0] || data.result || {};
+      if (item.success) {
+        setNotice(`${server} 连接成功：${item.tool_count} 个工具，${item.latency_ms} ms`, false);
+      } else {
+        setNotice(`${server} 连接失败：${item.error || "未知错误"}（改动请先保存）`, true);
+      }
+    } catch (e) {
+      setNotice("测试失败：" + e.message, true);
+    }
+  }
+
+  function render() {
+    serversBox.innerHTML = "";
+    const servers = (current.servers && typeof current.servers === "object") ? current.servers : {};
+    originalNames = Object.keys(servers).filter((k) => servers[k] && servers[k].url);
+    if (originalNames.length === 0) {
+      serversBox.appendChild(card("tulpa", { url: "http://127.0.0.1:18777/mcp", timeout: 240 }));
+      return;
+    }
+    originalNames.forEach((name) => serversBox.appendChild(card(name, servers[name])));
+  }
+
+  let current = {};
+
+  async function load() {
+    try {
+      const res = await fetch(`/api/skills/${SKILL}/config`, { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || data.message || "读取失败");
+      current = data.config || {};
+      document.getElementById("max-chars").value = current.max_result_chars || 20000;
+      render();
+    } catch (e) {
+      setNotice("读取配置失败：" + e.message, true);
+    }
+  }
+
+  async function save() {
+    const servers = {};
+    document.querySelectorAll(".srv").forEach((el) => {
+      const val = (f) => el.querySelector(`[data-f="${f}"]`).value;
+      const name = val("name").trim();
+      if (!name) return;
+      const token = val("token").trim();
+      servers[name] = {
+        url: val("url").trim(),
+        timeout: parseInt(val("timeout"), 10) || 240,
+        note: val("note"),
+        enabled: el.querySelector('[data-f="enabled"]').checked
+      };
+      if (token) servers[name].token = token;
+    });
+    originalNames.forEach((name) => { if (!(name in servers)) servers[name] = null; });
+
+    try {
+      const res = await fetch(`/api/skills/${SKILL}/config`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          config: {
+            servers,
+            max_result_chars: parseInt(document.getElementById("max-chars").value, 10) || 20000
+          }
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || data.message || "保存失败");
+      saveState.textContent = "已保存";
+      setNotice("配置已保存。技能配置需重启服务后生效；聊天里可先让 Aize 执行 mcp-client 的 refresh。", false);
+      await load();
+    } catch (e) {
+      setNotice("保存失败：" + e.message, true);
+    }
+  }
+
+  document.getElementById("btn-add").addEventListener("click", () => {
+    serversBox.appendChild(card("", { timeout: 240 }));
+  });
+  document.getElementById("btn-save").addEventListener("click", save);
+  load();
+})();
+</script>
+</body>
+</html>

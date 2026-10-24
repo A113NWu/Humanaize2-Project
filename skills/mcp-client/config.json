@@ -1,0 +1,13 @@
+{
+  "servers": {
+    "tulpa": {
+      "url": "http://127.0.0.1:18777/mcp",
+      "token": "",
+      "headers": {},
+      "timeout": 240,
+      "enabled": false,
+      "note": "填好 Token 後啟用；Token 在 Tulpa 的外部 Agent / MCP 頁面創建連接取得"
+    }
+  },
+  "max_result_chars": 20000
+}

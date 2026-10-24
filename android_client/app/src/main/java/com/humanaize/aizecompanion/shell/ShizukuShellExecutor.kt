@@ -51,6 +51,30 @@ object ShizukuShellExecutor {
     @Volatile
     private var binderHooked = false
 
+    /** binder 是否已收到（由監聽回調維護，供 UI/診斷使用） */
+    @Volatile
+    var binderAlive = false
+        private set
+
+    /** binder 狀態變化監聽（UI 用來即時刷新狀態） */
+    private val binderStateListeners = java.util.concurrent.CopyOnWriteArrayList<(Boolean) -> Unit>()
+
+    fun addBinderStateListener(l: (Boolean) -> Unit) {
+        ensureInit()
+        binderStateListeners.add(l)
+    }
+
+    fun removeBinderStateListener(l: (Boolean) -> Unit) {
+        binderStateListeners.remove(l)
+    }
+
+    private fun notifyBinderState(alive: Boolean) {
+        binderAlive = alive
+        binderStateListeners.forEach {
+            try { it(alive) } catch (_: Throwable) {}
+        }
+    }
+
     /**
      * 註冊 sticky binder 監聽（冪等）。
      * 必須在任何 checkSelfPermission / requestPermission 之前調用：
@@ -63,15 +87,34 @@ object ShizukuShellExecutor {
             try {
                 Shizuku.addBinderReceivedListenerSticky {
                     Log.i(TAG, "Shizuku binder received")
+                    notifyBinderState(true)
                 }
                 Shizuku.addBinderDeadListener {
                     Log.w(TAG, "Shizuku binder dead")
+                    notifyBinderState(false)
                 }
                 binderHooked = true
             } catch (t: Throwable) {
                 Log.w(TAG, "ensureInit failed: ${t.message}")
             }
         }
+    }
+
+    /** 診斷信息：把 Shizuku 各層狀態原樣暴露出來，定位「已授權卻顯示被拒」 */
+    fun diagnostics(): String {
+        ensureInit()
+        fun <T> probe(name: String, block: () -> T): String =
+            "$name=" + try { block().toString() } catch (t: Throwable) {
+                "THROW ${t.javaClass.simpleName}: ${t.message}"
+            }
+        return listOf(
+            "pingBinder=" + try { Shizuku.pingBinder().toString() } catch (t: Throwable) { "THROW ${t.javaClass.simpleName}: ${t.message}" },
+            "binderAlive(flag)=$binderAlive",
+            probe("isPreV11") { Shizuku.isPreV11() },
+            probe("serverVersion") { Shizuku.getVersion() },
+            probe("checkSelfPermission") { Shizuku.checkSelfPermission() },
+            probe("shouldShowRequestPermissionRationale") { Shizuku.shouldShowRequestPermissionRationale() }
+        ).joinToString("\n")
     }
 
     private fun getNewProcessMethod(): Method? {
@@ -112,8 +155,14 @@ object ShizukuShellExecutor {
     fun checkPermission(): Boolean? {
         ensureInit()
         return try {
+            // 冷啟動時 binder 可能還在路上，短暫等待而不是立即判定「服務不存在」
+            var waited = 0L
+            while (!Shizuku.pingBinder() && waited < 1500L) {
+                Thread.sleep(100L)
+                waited += 100L
+            }
             if (!Shizuku.pingBinder()) {
-                Log.w(TAG, "Shizuku binder not reachable")
+                Log.w(TAG, "Shizuku binder not reachable after wait")
                 return null
             }
             // Shizuku.checkSelfPermission: 0=GRANTED, -1=DENIED

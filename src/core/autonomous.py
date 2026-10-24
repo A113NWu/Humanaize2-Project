@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 import threading
 import time
+import re
 import random
 from typing import Optional
 
@@ -108,6 +109,24 @@ def _calculate_confidence(memory, elapsed_seconds=60):
     return min(1.0, confidence)
 
 
+def _recent_dialogue(memory, n=10):
+    """取最近 n 句對話作為主動搭話的上下文，避免開口就是空話套話。"""
+    rows = []
+    for msg in (memory or {}).get("messages", [])[-n:]:
+        text = str(msg.get("content") or "").strip()
+        if not text:
+            continue
+        if "RESPONSE:" in text:
+            text = text.split("RESPONSE:", 1)[1].strip()
+        text = re.sub(r"\[\s*motion\s*:[^\]]*\]", "", text, flags=re.I).strip()
+        if not text:
+            continue
+        if msg.get("role") == "assistant":
+            text = text[:120]
+        rows.append(("主人" if msg.get("role") == "user" else "Aize") + "：" + text)
+    return "\n".join(rows)
+
+
 def generate_autonomous_message(memory, name="Aize"):
     """生成自主消息内容"""
     messages = memory.get("messages", [])
@@ -180,6 +199,9 @@ class AutonomousEngine:
         self._last_action_time = None
         self.name = "Aize"  # AI名字
         self.thinking_engine = None
+        # 空闲小动作：不对话时也隔一段时间让 Live2D 身体动一动
+        self._last_motion_time = 0.0
+        self._next_motion_gap = random.uniform(8, 20)
 
     def set_name(self, name):
         """设置AI名字"""
@@ -206,6 +228,7 @@ class AutonomousEngine:
     def _run(self):
         while self.running:
             try:
+                self._maybe_idle_motion()
                 if not self.auto_break_silence:
                     time.sleep(self.interval_seconds)
                     continue
@@ -222,6 +245,29 @@ class AutonomousEngine:
                 pass
             time.sleep(self.interval_seconds)
 
+    def _maybe_idle_motion(self):
+        """不对话时让 Aize 自己挑一个小动作，Live2D 画面不会一直僵着"""
+        if not self.running:
+            return
+        # 正在回答时由回复里的动作标签控制身体，避免两套动作打架
+        engine = self.thinking_engine
+        if engine is not None and getattr(engine, "_chat_cancel_event", None) is not None:
+            return
+        now = time.time()
+        if now - self._last_motion_time < self._next_motion_gap:
+            return
+        self._last_motion_time = now
+        self._next_motion_gap = random.uniform(15, 30)
+        try:
+            from tools.live2d_hub import get_live2d_hub
+            if random.random() < 0.25:
+                command = {"type": "motion", "group": "TapBody", "index": 0}
+            else:
+                command = {"type": "motion", "group": "Idle", "index": random.randint(0, 8)}
+            get_live2d_hub().push_command(command)
+        except Exception:
+            pass
+
     def _initiate_conversation(self):
         """主动发起对话"""
         if self._last_action_time and (datetime.now() - self._last_action_time).total_seconds() < 300:
@@ -230,6 +276,9 @@ class AutonomousEngine:
 
         try:
             message = generate_autonomous_message(self.memory, self.name)
+            recent = _recent_dialogue(self.memory, 10)
+            if recent:
+                message = (f"{message}\n\n【最近10句對話（接話要具體，別說空話套話）】\n{recent}")
 
             if self.thinking_engine and message:
                 # 通过思考引擎发送消息

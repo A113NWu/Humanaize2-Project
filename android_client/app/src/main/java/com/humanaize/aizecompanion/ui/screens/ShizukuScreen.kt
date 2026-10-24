@@ -46,10 +46,32 @@ fun ShizukuScreen(viewModel: MainViewModel) {
     val pollerActivity by viewModel.pollerActivity.collectAsState()
     val scope = rememberCoroutineScope()
 
-    var permissionState by remember { mutableStateOf(ShizukuShellExecutor.checkPermission()) }
+    var permissionState by remember { mutableStateOf<Boolean?>(null) }
+    var diagInfo by remember { mutableStateOf("") }
     var testCmd by remember { mutableStateOf("") }
     var testOutput by remember { mutableStateOf("") }
     var running by remember { mutableStateOf(false) }
+
+    // 異步初檢 + binder 事件即時刷新（binder 晚到時狀態自動更正，不再誤報）
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        val listener: (Boolean) -> Unit = {
+            scope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                permissionState = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    ShizukuShellExecutor.checkPermission()
+                }
+            }
+        }
+        ShizukuShellExecutor.addBinderStateListener(listener)
+        permissionState = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            ShizukuShellExecutor.checkPermission()
+        }
+        // 離開頁面時移除監聽
+        try {
+            kotlinx.coroutines.awaitCancellation()
+        } finally {
+            ShizukuShellExecutor.removeBinderStateListener(listener)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -82,8 +104,24 @@ fun ShizukuScreen(viewModel: MainViewModel) {
                         }
                     }) { Text("請求授權") }
                     OutlinedButton(onClick = {
-                        permissionState = ShizukuShellExecutor.checkPermission()
+                        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                            val s = ShizukuShellExecutor.checkPermission()
+                            permissionState = s
+                        }
                     }) { Text("刷新狀態") }
+                    OutlinedButton(onClick = {
+                        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                            diagInfo = ShizukuShellExecutor.diagnostics()
+                        }
+                    }) { Text("診斷") }
+                }
+                if (diagInfo.isNotEmpty()) {
+                    Text(
+                        diagInfo,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
