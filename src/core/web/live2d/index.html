@@ -113,6 +113,8 @@
 
   let model = null;
   let audioCtx = null;
+  let watchdogTimer = null;
+  let watchdogShown = false;
   let mocapPose = null;   // 動作捕捉姿態（服務端 30fps SSE 推送）
 
   async function loadModel() {
@@ -129,6 +131,9 @@
     const groups = Object.keys((model.internalModel.settings || {}).motions || {});
     setStatus('就緒 | 動作組: ' + (groups.join(', ') || '無'));
     scheduleIdleMotion();
+    // 模型最終加載成功：撤掉 watchdog 的提示
+    if (watchdogTimer) { clearTimeout(watchdogTimer); watchdogTimer = null; }
+    if (watchdogShown) { overlay.style.display = 'none'; watchdogShown = false; }
   }
 
   function applyMocapPose() {
@@ -399,16 +404,21 @@
       overlay.style.display = 'flex';
       console.error(e);
     });
-    // watchdog：10 秒還沒模型就顯示原因，避免永遠白屏（WebView/WebGL 常見）
-    setTimeout(() => {
-      if (!model) {
-        const gl = (() => { try { return !!(app.renderer && app.renderer.gl); } catch (e) { return false; } })();
-        overlayText.textContent = gl
-          ? '模型尚未加載完成，請檢查與伺服器的連線'
-          : '當前 WebView 不支援 WebGL，無法顯示 Live2D';
-        overlay.style.display = 'flex';
+    // watchdog：模型遲遲沒就緒時給原因；加載成功後會自動撤掉提示
+    const checkModel = () => {
+      if (model) {
+        if (watchdogShown) { overlay.style.display = 'none'; watchdogShown = false; }
+        return;
       }
-    }, 10000);
+      const gl = (() => { try { return !!(app.renderer && app.renderer.gl); } catch (e) { return false; } })();
+      overlayText.textContent = gl
+        ? '模型尚未加載完成，請檢查與伺服器的連線'
+        : '當前 WebView 不支援 WebGL，無法顯示 Live2D';
+      overlay.style.display = 'flex';
+      watchdogShown = true;
+      watchdogTimer = setTimeout(checkModel, 5000);
+    };
+    watchdogTimer = setTimeout(checkModel, 15000);
     poll();
     // 常駐訂閱姿態串流：只要服務端在捕捉（Selfuse_Capture 或 🎭 按鈕啟動），
     // 這個頁面（網頁浮窗 / OBS 虛擬攝像頭 / 透明瀏覽源）都會同步，不再依賴 mocap=1

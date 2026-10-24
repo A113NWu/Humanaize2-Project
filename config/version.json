@@ -1,5 +1,5 @@
 {
-  "version": "2.3.18",
-  "last_updated": "2026-10-24T23:59:56.532555",
-  "release_notes": "v2.3.18：修復安卓 Live2D 頁白屏——WebView 改硬體渲染、補 WebGL/資源失敗提示與逾時偵測；Shizuku 頁改為每 3 秒自動複查授權，區分「未安裝」「服務未啟動/連不上」，顯示本應用包名並可一鍵開啟 Shizuku；Solve 模式在已配置雲端 API Key 時不再等待本地模型；安裝時預設建立桌面捷徑，可直接雙擊圖示或 Humanaize2.exe 啟動，無需 humanaize2.bat。"
+  "version": "2.3.19",
+  "last_updated": "2026-10-25T00:36:59.030541",
+  "release_notes": "v2.3.19：安卓 Shizuku 頁修正按鈕擠成直排的問題，新增「重啟應用」——Shizuku 服務晚於本應用啟動時，進程需重啟才能收到 binder；狀態說明改為明確指引（先確認 Shizuku 頂部顯示服務正在運行，再點重啟應用）。"
 }

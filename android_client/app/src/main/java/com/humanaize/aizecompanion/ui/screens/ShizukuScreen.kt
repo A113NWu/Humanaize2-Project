@@ -109,6 +109,21 @@ fun ShizukuScreen(viewModel: MainViewModel) {
         }
     }
 
+    // binder 只在進程啟動時接收一次：若先開本應用、之後才啟動 Shizuku 服務，
+    // 必須重啟進程才會重新綁定，否則會一直顯示「服務未運行」。
+    fun restartApp() {
+        try {
+            val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+            if (intent != null) {
+                context.startActivity(
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                )
+            }
+        } catch (_: Throwable) {
+        }
+        android.os.Process.killProcess(android.os.Process.myPid())
+    }
+
     // 持續輪詢：使用者可能在 Shizuku 裡啟動服務/開授權，狀態要能自己變綠
     LaunchedEffect(Unit) {
         while (true) {
@@ -181,8 +196,9 @@ fun ShizukuScreen(viewModel: MainViewModel) {
                                 null -> if (!shizukuInstalled) {
                                     "未檢測到 Shizuku，請先安裝並啟動 Shizuku"
                                 } else {
-                                    "Shizuku 已安裝，但服務未啟動或本應用連不上。" +
-                                            "請先打開 Shizuku 啟動服務，並確認授權列表中的包名是 ${context.packageName}"
+                                    "Shizuku 已安裝，但本應用沒收到它的服務。" +
+                                            "請確認 Shizuku 應用頂部顯示「服務正在運行」；" +
+                                            "若是剛剛才啟動服務，請點下方「重啟應用」重新連接（包名 ${context.packageName}）"
                                 }
                             },
                             style = MaterialTheme.typography.bodySmall,
@@ -245,7 +261,11 @@ fun ShizukuScreen(viewModel: MainViewModel) {
                         Spacer(Modifier.width(6.dp))
                         Text("刷新狀態")
                     }
-                    if (shizukuInstalled) {
+                }
+
+                // 第二行：避免三個按鈕擠在一行被壓成直排文字
+                if (shizukuInstalled) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = { openShizukuApp() }) {
                             Icon(
                                 Icons.Default.PlayArrow,
@@ -254,6 +274,17 @@ fun ShizukuScreen(viewModel: MainViewModel) {
                             )
                             Spacer(Modifier.width(6.dp))
                             Text("開啟 Shizuku")
+                        }
+                        if (permissionState == null) {
+                            OutlinedButton(onClick = { restartApp() }) {
+                                Icon(
+                                    Icons.Default.Refresh,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text("重啟應用")
+                            }
                         }
                     }
                 }
