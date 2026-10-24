@@ -536,14 +536,21 @@ pause
 """
         zf.writestr("Humanaize2/humanaize2.bat", bat_content)
 
-        # Add skills
+        # Add skills（只打包真正的技能目录：顶层必须含 SKILL.md，避免把第三方工具目录塞进包里）
         skills_dir = os.path.join(PROJECT_ROOT, "skills")
         if os.path.exists(skills_dir):
-            for root, dirs, files in os.walk(skills_dir):
-                for f in files:
-                    full_path = os.path.join(root, f)
-                    arc_name = "Humanaize2/skills/" + os.path.relpath(full_path, skills_dir)
-                    zf.write(full_path, arc_name)
+            for entry in sorted(os.listdir(skills_dir)):
+                skill_path = os.path.join(skills_dir, entry)
+                if not os.path.isdir(skill_path):
+                    continue
+                if not os.path.exists(os.path.join(skill_path, "SKILL.md")):
+                    print(f"  [SKIP] 非技能目录，不打包: skills/{entry}")
+                    continue
+                for root, dirs, files in os.walk(skill_path):
+                    for f in files:
+                        full_path = os.path.join(root, f)
+                        arc_name = "Humanaize2/skills/" + os.path.relpath(full_path, skills_dir)
+                        zf.write(full_path, arc_name)
 
         # Add config
         config_dir = os.path.join(PROJECT_ROOT, "config")

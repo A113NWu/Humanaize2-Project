@@ -51,7 +51,8 @@ Source: "installer\windows\humanaize2.cmd"; DestDir: "{app}"; Flags: ignoreversi
 ; 由 mc-bot 首次運行時自行 npm install / 下載）及運行日誌（會被運行中的
 ; bot.js 鎖定，曾導致靜默安裝中止回滾），保持安裝包體積合理。
 ; noregerror：個別文件被占用時跳過而非中止整個安裝。
-Source: "skills\*"; DestDir: "{app}\skills"; Excludes: "venv\*,mc-bot\node_modules\*,mc-bot\models\*,mc-bot\vendor\*,mc-bot\logs\*"; Flags: ignoreversion recursesubdirs createallsubdirs noregerror
+; 只包含真正的技能目录；Tulpa-MCP-* 等第三方工具目录不随包分发
+Source: "skills\*"; DestDir: "{app}\skills"; Excludes: "venv\*,mc-bot\node_modules\*,mc-bot\models\*,mc-bot\vendor\*,mc-bot\logs\*,Tulpa-MCP-*\*"; Flags: ignoreversion recursesubdirs createallsubdirs noregerror
 ; 配置與運行時資料
 Source: "config\version.json"; DestDir: "{app}\config"; Flags: ignoreversion
 Source: "data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs noregerror
