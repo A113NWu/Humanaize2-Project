@@ -3,7 +3,7 @@
 ; 版本號可由構建腳本覆蓋：ISCC /DAppVersion=2.3.14
 
 #ifndef AppVersion
-  #define AppVersion "2.3.17"
+  #define AppVersion "2.3.18"
 #endif
 
 [Setup]

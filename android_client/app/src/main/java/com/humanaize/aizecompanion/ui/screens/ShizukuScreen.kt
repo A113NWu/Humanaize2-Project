@@ -1,5 +1,7 @@
 package com.humanaize.aizecompanion.ui.screens
 
+import android.content.Context
+import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -40,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.humanaize.aizecompanion.service.PhoneCommandPoller
 import com.humanaize.aizecompanion.shell.ShizukuShellExecutor
@@ -53,6 +56,7 @@ import com.humanaize.aizecompanion.ui.components.SettingRow
 import com.humanaize.aizecompanion.ui.components.StatusChip
 import com.humanaize.aizecompanion.ui.viewmodel.MainViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -66,6 +70,16 @@ fun ShizukuScreen(viewModel: MainViewModel) {
     val pollerState by viewModel.pollerState.collectAsState()
     val pollerActivity by viewModel.pollerActivity.collectAsState()
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    // Shizuku 是否安裝（用來區分「沒裝」和「裝了但服務沒起/沒授權」）
+    val shizukuInstalled = remember {
+        try {
+            context.packageManager.getPackageInfo("moe.shizuku.privileged.api", 0)
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
 
     var permissionState by remember { mutableStateOf<Boolean?>(null) }
     var requesting by remember { mutableStateOf(false) }
@@ -84,10 +98,24 @@ fun ShizukuScreen(viewModel: MainViewModel) {
         }
     }
 
-    // 異步初檢
+    fun openShizukuApp() {
+        try {
+            val intent = context.packageManager
+                .getLaunchIntentForPackage("moe.shizuku.privileged.api")
+            if (intent != null) {
+                context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
+        } catch (_: Throwable) {
+        }
+    }
+
+    // 持續輪詢：使用者可能在 Shizuku 裡啟動服務/開授權，狀態要能自己變綠
     LaunchedEffect(Unit) {
-        permissionState = withContext(Dispatchers.IO) {
-            ShizukuShellExecutor.checkPermission()
+        while (true) {
+            permissionState = withContext(Dispatchers.IO) {
+                ShizukuShellExecutor.checkPermission()
+            }
+            delay(3000)
         }
     }
 
@@ -107,7 +135,10 @@ fun ShizukuScreen(viewModel: MainViewModel) {
     // 展開診斷時自動取一次
     LaunchedEffect(diagExpanded) {
         if (diagExpanded) {
-            diagInfo = withContext(Dispatchers.IO) { ShizukuShellExecutor.diagnostics() }
+            val raw = withContext(Dispatchers.IO) { ShizukuShellExecutor.diagnostics() }
+            diagInfo = raw +
+                    "\npackageName=${context.packageName}" +
+                    "\nshizukuInstalled=$shizukuInstalled"
         }
     }
 
@@ -147,7 +178,12 @@ fun ShizukuScreen(viewModel: MainViewModel) {
                             when (permissionState) {
                                 true -> "已取得權限，可執行 shell 命令"
                                 false -> "已檢測到 Shizuku 服務，但本應用尚未授權"
-                                null -> "未檢測到 Shizuku 服務，請先安裝並啟動 Shizuku"
+                                null -> if (!shizukuInstalled) {
+                                    "未檢測到 Shizuku，請先安裝並啟動 Shizuku"
+                                } else {
+                                    "Shizuku 已安裝，但服務未啟動或本應用連不上。" +
+                                            "請先打開 Shizuku 啟動服務，並確認授權列表中的包名是 ${context.packageName}"
+                                }
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -208,6 +244,17 @@ fun ShizukuScreen(viewModel: MainViewModel) {
                         )
                         Spacer(Modifier.width(6.dp))
                         Text("刷新狀態")
+                    }
+                    if (shizukuInstalled) {
+                        OutlinedButton(onClick = { openShizukuApp() }) {
+                            Icon(
+                                Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text("開啟 Shizuku")
+                        }
                     }
                 }
 

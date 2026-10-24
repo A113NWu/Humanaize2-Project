@@ -204,12 +204,12 @@ object ShizukuShellExecutor {
      *
      * @return true=已授予；false=未授予；null=Shizuku 服務不存在
      */
-    fun checkPermission(): Boolean? {
+    fun checkPermission(waitMs: Long = 1500L): Boolean? {
         ensureInit()
         return try {
             // 冷啟動時 binder 可能還在路上，短暫等待而不是立即判定「服務不存在」
             var waited = 0L
-            while (!Shizuku.pingBinder() && waited < 1500L) {
+            while (!Shizuku.pingBinder() && waited < waitMs) {
                 Thread.sleep(100L)
                 waited += 100L
             }
@@ -236,8 +236,9 @@ object ShizukuShellExecutor {
     suspend fun requestPermission(): PermissionRequestResult {
         ensureInit()
 
-        // 1. 初始化 + 前置檢查（含等待 binder）放在 IO
-        val pre = withContext(Dispatchers.IO) { checkPermission() }
+        // 1. 初始化 + 前置檢查（含等待 binder）放在 IO。
+        //    點「請求授權」時多等 8 秒：使用者可能剛打開 Shizuku，服務還在啟動。
+        val pre = withContext(Dispatchers.IO) { checkPermission(8_000L) }
         when (pre) {
             null -> return PermissionRequestResult(
                 PermissionOutcome.SERVICE_UNAVAILABLE,
