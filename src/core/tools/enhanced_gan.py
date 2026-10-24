@@ -261,6 +261,15 @@ class EnhancedGAN:
     def _check_llm_server(self, max_wait: int = 60) -> bool:
         """Check if LLM server is available, wait if needed"""
         try:
+            # 已配置雲端 API Key 時不依賴本地模型
+            try:
+                from llm import has_cloud_provider
+                if has_cloud_provider():
+                    self._print_color("Cloud API configured, skip local model check", "\033[38;5;46m")
+                    return True
+            except Exception:
+                pass
+
             from tools.tools import check_llm_server
             import time
             

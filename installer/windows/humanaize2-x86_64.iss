@@ -38,7 +38,7 @@ WizardStyle=modern
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 Name: "addtopath"; Description: "Add to PATH environment variable (use 'humanaize2' command anywhere)"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]

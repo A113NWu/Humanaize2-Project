@@ -2059,6 +2059,18 @@ Continue the code now:
     def _check_llm_server(self, max_wait: int = 60) -> bool:
         """Check if LLM server is available, wait if needed"""
         try:
+            # 已配置雲端 API Key 時不依賴本地模型，直接放行
+            try:
+                from llm import has_cloud_provider
+                if has_cloud_provider():
+                    if self._use_color:
+                        print(f"{Colors.GREEN}[OK]{Colors.RESET} 已配置雲端 API，跳過本地模型檢查")
+                    else:
+                        print("[OK] 已配置雲端 API，跳過本地模型檢查")
+                    return True
+            except Exception:
+                pass
+
             from tools.tools import check_llm_server
             import time
             

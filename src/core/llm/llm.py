@@ -124,6 +124,14 @@ def _provider_settings():
         return None
 
 
+def has_cloud_provider() -> bool:
+    """是否已啟用雲端 API（有 Key 就不依賴本地 llama-server）"""
+    try:
+        return _provider_settings() is not None
+    except Exception:
+        return False
+
+
 def _vision_provider():
     """读取视觉模型配置：优先独立 vision_model，缺省沿用对话模型。
     未启用云端 API、或 vision_model 显式为空字符串时返回 None（走本地视觉）。"""
