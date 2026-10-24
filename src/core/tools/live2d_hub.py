@@ -24,6 +24,7 @@ class Live2DHub:
         self._commands = deque(maxlen=_MAX_BUFFER)
         self._next_id = 1
         self.started_at = time.time()
+        self._last_command_ts = 0.0
 
     # ---------- 命令 ----------
 
@@ -36,6 +37,7 @@ class Live2DHub:
             cmd["ts"] = time.time()
             self._next_id += 1
             self._commands.append(cmd)
+            self._last_command_ts = cmd["ts"]
             return cmd["id"]
 
     def poll_commands(self, since_id=0):
@@ -61,11 +63,17 @@ class Live2DHub:
 
     # ---------- 狀態 ----------
 
+    @property
+    def last_command_ts(self):
+        """最近一次推送命令的时间戳（闲置动作据此避让正在进行的回覆）。"""
+        return self._last_command_ts
+
     def status(self):
         with self._lock:
             return {
                 "buffered_commands": len(self._commands),
                 "next_id": self._next_id,
+                "last_command_ts": self._last_command_ts,
                 "uptime_seconds": int(time.time() - self.started_at),
             }
 

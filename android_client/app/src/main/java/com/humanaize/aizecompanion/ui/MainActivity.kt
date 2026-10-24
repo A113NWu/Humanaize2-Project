@@ -8,16 +8,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Terminal
-import androidx.compose.material.icons.filled.Wifi
-import androidx.compose.material.icons.filled.WifiOff
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -25,8 +22,6 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -34,9 +29,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.humanaize.aizecompanion.R
 import com.humanaize.aizecompanion.ui.screens.ChatScreen
@@ -79,7 +72,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainTabs(viewModel: MainViewModel) {
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -91,15 +83,9 @@ fun MainTabs(viewModel: MainViewModel) {
     )
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Aize Companion", color = Color.White) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary
-                ),
-                actions = { ConnectionDot(viewModel) }
-            )
-        },
+        // 頁面內部各自有 Scaffold + TopAppBar，外層只負責底部導航
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
             NavigationBar {
                 tabs.forEachIndexed { index, title ->
@@ -120,7 +106,8 @@ fun MainTabs(viewModel: MainViewModel) {
                         onClick = { selectedTab = index },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = MaterialTheme.colorScheme.primary,
-                            selectedTextColor = MaterialTheme.colorScheme.primary
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
                         )
                     )
                 }
@@ -136,16 +123,4 @@ fun MainTabs(viewModel: MainViewModel) {
             }
         }
     }
-}
-
-/** 頂欄連接指示：服務器可達性（進入頁面即已登錄，僅作提示） */
-@Composable
-private fun ConnectionDot(viewModel: MainViewModel) {
-    val settings by viewModel.settings.collectAsState()
-    Icon(
-        imageVector = if (settings.loggedIn) Icons.Default.Wifi else Icons.Default.WifiOff,
-        contentDescription = null,
-        tint = if (settings.loggedIn) Color(0xFF7CFC98) else Color.Gray,
-        modifier = Modifier.size(22.dp)
-    )
 }

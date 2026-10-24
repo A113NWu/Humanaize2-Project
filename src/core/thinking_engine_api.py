@@ -3100,10 +3100,13 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         t_start = time.time()
 
         # 每次回覆至少觸發一個動作：模型偶爾漏發 [motion:] 時，形象也不會一動不動
+        # 動作依當下主導情緒挑選（不再用 created % 9 亂抽），低落時寧可先不動
         try:
             from tools.live2d_hub import get_live2d_hub
-            get_live2d_hub().push_command(
-                {"type": "motion", "group": "Idle", "index": created % 9})
+            from tools.motion_policy import pick_reply_motion
+            _motion = pick_reply_motion()
+            if _motion:
+                get_live2d_hub().push_command(_motion)
         except Exception:
             pass
 

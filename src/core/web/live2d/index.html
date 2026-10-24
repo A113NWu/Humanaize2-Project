@@ -200,7 +200,7 @@
   function scheduleIdleMotion() { /* 已停用：保留函數名避免調用點報錯 */ }
 
   let gesture = null;   // 疊加在動作上的可見手勢（點頭/歪頭）
-  function playMotion(group, index) {
+  function playMotion(group, index, opts) {
     if (!model) return;
     try {
       const motions = (model.internalModel.settings || {}).motions || {};
@@ -209,14 +209,16 @@
       // 未指定編號時固定播第一個：動作選擇權完全交給 Aize，頁面不做隨機
       const idx = (typeof index === 'number' && index >= 0) ? index : 0;
       model.motion(group, idx);
-      // 每次收到動作命令都疊一個明顯的小手勢，避免 Idle 動作太細看不出來
+      // 幅度由後端下發的 energy 決定；micro 表示閒置微動，不疊手勢免得動太誇張
+      const energy = (opts && typeof opts.energy === 'number') ? Math.max(0, Math.min(1, opts.energy)) : 1;
+      if (opts && opts.micro) { gesture = null; return; }
       const i = idx || 0;
       gesture = {
         t0: performance.now(),
         dur: group === 'TapBody' ? 1000 : 1300,
-        ax: ((i % 3) - 1) * 10,
-        ay: group === 'TapBody' ? -16 : -8,
-        az: (i % 2 === 0 ? -8 : 8),
+        ax: ((i % 3) - 1) * 10 * energy,
+        ay: (group === 'TapBody' ? -16 : -8) * energy,
+        az: (i % 2 === 0 ? -8 : 8) * energy,
       };
     } catch (e) { console.warn('motion failed', e); }
   }
@@ -288,7 +290,7 @@
         speak(cmd.text || '');
         addMsg('Aize', cmd.text || '', 'aize');
         break;
-      case 'motion': playMotion(cmd.group, cmd.index); break;
+      case 'motion': playMotion(cmd.group, cmd.index, cmd); break;
       case 'expression': playExpression(cmd.name); break;
       case 'chat_in':
         addMsg(cmd.user || cmd.source || 'ext', cmd.text || '', 'ext');

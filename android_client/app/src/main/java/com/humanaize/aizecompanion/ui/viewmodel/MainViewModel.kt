@@ -18,7 +18,8 @@ data class ChatItem(
     val id: Long,
     val role: Role,
     var text: String,
-    val logKind: String? = null
+    val logKind: String? = null,
+    val time: Long = System.currentTimeMillis()
 ) {
     enum class Role { USER, ASSISTANT, LOG }
 }

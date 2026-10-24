@@ -1,24 +1,36 @@
 package com.humanaize.aizecompanion.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Divider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,13 +39,22 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.humanaize.aizecompanion.service.PhoneCommandPoller
 import com.humanaize.aizecompanion.shell.ShizukuShellExecutor
+import com.humanaize.aizecompanion.ui.components.AizeCard
+import com.humanaize.aizecompanion.ui.components.AizeLayout
+import com.humanaize.aizecompanion.ui.components.AizePageScaffold
+import com.humanaize.aizecompanion.ui.components.CardSectionTitle
+import com.humanaize.aizecompanion.ui.components.CodeBlock
+import com.humanaize.aizecompanion.ui.components.InlineNotice
+import com.humanaize.aizecompanion.ui.components.SettingRow
+import com.humanaize.aizecompanion.ui.components.StatusChip
 import com.humanaize.aizecompanion.ui.viewmodel.MainViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Shizuku 頁：授權管理 + 手動測試執行 + 遠程命令開關。
@@ -47,123 +68,220 @@ fun ShizukuScreen(viewModel: MainViewModel) {
     val scope = rememberCoroutineScope()
 
     var permissionState by remember { mutableStateOf<Boolean?>(null) }
+    var requesting by remember { mutableStateOf(false) }
+    var lastFailure by remember { mutableStateOf<String?>(null) }
+    var diagExpanded by remember { mutableStateOf(false) }
     var diagInfo by remember { mutableStateOf("") }
     var testCmd by remember { mutableStateOf("") }
     var testOutput by remember { mutableStateOf("") }
     var running by remember { mutableStateOf(false) }
 
-    // 異步初檢 + binder 事件即時刷新（binder 晚到時狀態自動更正，不再誤報）
-    androidx.compose.runtime.LaunchedEffect(Unit) {
+    fun refreshPermission() {
+        scope.launch {
+            permissionState = withContext(Dispatchers.IO) {
+                ShizukuShellExecutor.checkPermission()
+            }
+        }
+    }
+
+    // 異步初檢
+    LaunchedEffect(Unit) {
+        permissionState = withContext(Dispatchers.IO) {
+            ShizukuShellExecutor.checkPermission()
+        }
+    }
+
+    // binder 事件即時刷新（binder 晚到時狀態自動更正，不再誤報）
+    DisposableEffect(Unit) {
         val listener: (Boolean) -> Unit = {
-            scope.launch(kotlinx.coroutines.Dispatchers.Main) {
-                permissionState = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            scope.launch {
+                permissionState = withContext(Dispatchers.IO) {
                     ShizukuShellExecutor.checkPermission()
                 }
             }
         }
         ShizukuShellExecutor.addBinderStateListener(listener)
-        permissionState = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            ShizukuShellExecutor.checkPermission()
-        }
-        // 離開頁面時移除監聽
-        try {
-            kotlinx.coroutines.awaitCancellation()
-        } finally {
-            ShizukuShellExecutor.removeBinderStateListener(listener)
+        onDispose { ShizukuShellExecutor.removeBinderStateListener(listener) }
+    }
+
+    // 展開診斷時自動取一次
+    LaunchedEffect(diagExpanded) {
+        if (diagExpanded) {
+            diagInfo = withContext(Dispatchers.IO) { ShizukuShellExecutor.diagnostics() }
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // ---- Shizuku 狀態卡 ----
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Shizuku 授權", style = MaterialTheme.typography.titleMedium)
-                val statusText = when (permissionState) {
-                    null -> "未檢測到 Shizuku 服務（請先安裝並啟動 Shizuku）"
-                    false -> "已檢測到 Shizuku，但本應用尚未授權。若 Shizuku 應用內顯示已授權，可能是授給了舊版（debug 包名不同）或應用雙開副本，請點「請求授權」重新彈窗授權"
-                    true -> "已授權，可以 shell 身份執行命令"
+    val statusLabel = when (permissionState) {
+        true -> "已授權"
+        false -> "未授權"
+        null -> "服務未運行"
+    }
+    val statusColor: Color = when (permissionState) {
+        true -> MaterialTheme.colorScheme.tertiary
+        else -> MaterialTheme.colorScheme.error
+    }
+
+    AizePageScaffold(
+        title = "Shizuku",
+        statusText = statusLabel,
+        statusColor = statusColor
+    ) { innerPadding ->
+
+        Column(
+            modifier = Modifier
+                .padding(innerPadding)
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(AizeLayout.ScreenPadding),
+            verticalArrangement = Arrangement.spacedBy(AizeLayout.CardSpacing)
+        ) {
+            // ---- 授權狀態 ----
+            AizeCard {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        CardSectionTitle("授權狀態")
+                        Text(
+                            when (permissionState) {
+                                true -> "已取得權限，可執行 shell 命令"
+                                false -> "已檢測到 Shizuku 服務，但本應用尚未授權"
+                                null -> "未檢測到 Shizuku 服務，請先安裝並啟動 Shizuku"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    StatusChip(statusLabel, statusColor)
                 }
-                Text(statusText, color = when (permissionState) {
-                    true -> MaterialTheme.colorScheme.tertiary
-                    else -> MaterialTheme.colorScheme.error
-                })
+
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = {
-                        scope.launch {
-                            val granted = ShizukuShellExecutor.requestPermission()
-                            permissionState = ShizukuShellExecutor.checkPermission()
-                            if (!granted && permissionState != true) {
-                                testOutput = "授權被拒絕或超時"
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                requesting = true
+                                lastFailure = null
+                                val result = ShizukuShellExecutor.requestPermission()
+                                // 請求結束後統一刷新一次狀態
+                                permissionState = withContext(Dispatchers.IO) {
+                                    ShizukuShellExecutor.checkPermission()
+                                }
+                                requesting = false
+                                if (!result.granted) {
+                                    lastFailure = when (result.outcome) {
+                                        ShizukuShellExecutor.PermissionOutcome.DENIED ->
+                                            "授權被拒絕。如屬誤點，請重新請求授權。"
+                                        ShizukuShellExecutor.PermissionOutcome.TIMEOUT ->
+                                            "等待授權超時（120 秒）。若已在 Shizuku 中允許，請點「刷新狀態」。"
+                                        ShizukuShellExecutor.PermissionOutcome.SERVICE_UNAVAILABLE ->
+                                            "Shizuku 服務未啟動或不可達，請先在 Shizuku 應用中啟動服務。"
+                                        ShizukuShellExecutor.PermissionOutcome.ERROR ->
+                                            result.detail ?: "請求授權失敗"
+                                        ShizukuShellExecutor.PermissionOutcome.GRANTED -> null
+                                    }
+                                }
                             }
+                        },
+                        enabled = !requesting
+                    ) {
+                        if (requesting) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("等待授權…")
+                        } else {
+                            Text("請求授權")
                         }
-                    }) { Text("請求授權") }
-                    OutlinedButton(onClick = {
-                        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                            val s = ShizukuShellExecutor.checkPermission()
-                            permissionState = s
-                        }
-                    }) { Text("刷新狀態") }
-                    OutlinedButton(onClick = {
-                        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                            diagInfo = ShizukuShellExecutor.diagnostics()
-                        }
-                    }) { Text("診斷") }
+                    }
+                    OutlinedButton(
+                        onClick = { refreshPermission() },
+                        enabled = !requesting
+                    ) {
+                        Icon(
+                            Icons.Default.Refresh,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("刷新狀態")
+                    }
                 }
-                if (diagInfo.isNotEmpty()) {
-                    Text(
-                        diagInfo,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+
+                lastFailure?.let { msg ->
+                    InlineNotice(text = msg, icon = Icons.Default.ErrorOutline)
+                }
+
+                TextButton(onClick = { diagExpanded = !diagExpanded }) {
+                    Icon(
+                        imageVector = if (diagExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
                     )
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (diagExpanded) "收起診斷信息" else "顯示診斷信息")
+                }
+                AnimatedVisibility(visible = diagExpanded) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CodeBlock(if (diagInfo.isEmpty()) "讀取中…" else diagInfo)
+                        TextButton(onClick = {
+                            scope.launch {
+                                diagInfo = withContext(Dispatchers.IO) {
+                                    ShizukuShellExecutor.diagnostics()
+                                }
+                            }
+                        }) {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text("重新檢測")
+                        }
+                    }
                 }
             }
-        }
 
-        // ---- 遠程命令開關（說明在左、開關固定最右） ----
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("允許 Aize 遠程執行命令", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "開啟後 PC 端 Aize 可下發 shell 命令到本機執行（需 Shizuku 已授權）",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            // ---- 遠程命令開關（說明在左、開關固定最右） ----
+            AizeCard {
+                CardSectionTitle("遠程命令")
+                SettingRow(
+                    title = "允許 Aize 遠程執行命令",
+                    subtitle = "開啟後 PC 端 Aize 可下發 shell 命令到本機執行（需 Shizuku 已授權）",
+                    control = {
+                        Switch(
+                            checked = settings.enableRemoteShell,
+                            onCheckedChange = { viewModel.setRemoteShell(it) }
+                        )
+                    }
+                )
+                Divider(color = MaterialTheme.colorScheme.outlineVariant)
+                val pollerText = when (pollerState) {
+                    PhoneCommandPoller.State.RUNNING -> "輪詢運行中"
+                    PhoneCommandPoller.State.NO_SHIZUKU -> "等待 Shizuku 服務"
+                    PhoneCommandPoller.State.NO_PERMISSION -> "等待 Shizuku 授權"
+                    PhoneCommandPoller.State.SESSION_EXPIRED -> "會話過期"
+                    PhoneCommandPoller.State.STOPPED -> "未啟動"
                 }
-                Switch(
-                    checked = settings.enableRemoteShell,
-                    onCheckedChange = { viewModel.setRemoteShell(it) }
+                val pollerColor = when (pollerState) {
+                    PhoneCommandPoller.State.RUNNING -> MaterialTheme.colorScheme.tertiary
+                    PhoneCommandPoller.State.STOPPED -> MaterialTheme.colorScheme.onSurfaceVariant
+                    else -> MaterialTheme.colorScheme.error
+                }
+                SettingRow(
+                    title = "輪詢狀態",
+                    subtitle = pollerActivity.ifEmpty { "尚無執行記錄" },
+                    control = { StatusChip(pollerText, pollerColor) }
                 )
             }
-            val pollerText = when (pollerState) {
-                PhoneCommandPoller.State.RUNNING -> "輪詢運行中"
-                PhoneCommandPoller.State.NO_SHIZUKU -> "等待 Shizuku 服務…"
-                PhoneCommandPoller.State.NO_PERMISSION -> "等待 Shizuku 授權…"
-                PhoneCommandPoller.State.SESSION_EXPIRED -> "會話過期，請重新登錄"
-                PhoneCommandPoller.State.STOPPED -> "未啟動"
-            }
-            Text(
-                "狀態：$pollerText" + if (pollerActivity.isNotEmpty()) "｜$pollerActivity" else "",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
-            )
-        }
 
-        // ---- 手動測試 ----
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("手動測試", style = MaterialTheme.typography.titleMedium)
+            // ---- 手動測試 ----
+            AizeCard {
+                CardSectionTitle("手動測試")
                 OutlinedTextField(
                     value = testCmd,
                     onValueChange = { testCmd = it },
@@ -188,16 +306,27 @@ fun ShizukuScreen(viewModel: MainViewModel) {
                     },
                     enabled = testCmd.isNotBlank() && !running && permissionState == true
                 ) {
-                    if (running) CircularProgressIndicator(
-                        modifier = Modifier.height(16.dp).padding(end = 8.dp), strokeWidth = 2.dp)
-                    Text("執行")
+                    if (running) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                        Spacer(Modifier.width(8.dp))
+                    } else {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                    }
+                    Text(if (running) "執行中…" else "執行")
                 }
                 if (testOutput.isNotEmpty()) {
-                    Text(
-                        testOutput,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    CodeBlock(
+                        text = testOutput,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }

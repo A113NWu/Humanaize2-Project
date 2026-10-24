@@ -1,17 +1,16 @@
 package com.humanaize.aizecompanion.shell
 
+import android.content.pm.PackageManager
 import android.util.Log
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import rikka.shizuku.Shizuku
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.lang.reflect.Method
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 /**
  * 執行結果封裝
@@ -41,7 +40,27 @@ object ShizukuShellExecutor {
     private const val DEFAULT_TIMEOUT_MS = 30_000L
     private const val PERMISSION_REQUEST_CODE = 10001
 
-    private val permissionCallbackInvoked = AtomicBoolean(false)
+    /**
+     * 授權等待窗口。用戶常常需要切到 Shizuku 應用再點「允許」，
+     * 15 秒過短會導致回調被移除、明明已允許卻回報失敗。
+     */
+    private const val PERMISSION_TIMEOUT_MS = 120_000L
+
+    /** 一次授權請求的結果（比 Boolean 多帶失敗原因，方便 UI 區分展示） */
+    enum class PermissionOutcome {
+        GRANTED,
+        DENIED,
+        TIMEOUT,
+        SERVICE_UNAVAILABLE,
+        ERROR
+    }
+
+    data class PermissionRequestResult(
+        val outcome: PermissionOutcome,
+        val detail: String? = null
+    ) {
+        val granted: Boolean get() = outcome == PermissionOutcome.GRANTED
+    }
 
     /** 緩存反射得到的 Shizuku.newProcess(String[], String[], String) 方法 */
     @Volatile
@@ -58,6 +77,33 @@ object ShizukuShellExecutor {
 
     /** binder 狀態變化監聽（UI 用來即時刷新狀態） */
     private val binderStateListeners = java.util.concurrent.CopyOnWriteArrayList<(Boolean) -> Unit>()
+
+    // ---------- 授權請求 ----------
+
+    private val permissionLock = Any()
+
+    /** 當前進行中的授權請求；同一時刻只允許一個，避免重複點擊疊加 listener */
+    private var pendingPermission: CompletableDeferred<PermissionOutcome>? = null
+
+    /**
+     * 單例授權回調：只在 [ensureInit] 註冊一次。
+     * 舊實現每次請求都 new 一個 listener 且從不移除舊的，重複點擊會不斷疊加。
+     */
+    private val permissionResultListener = object : Shizuku.OnRequestPermissionResultListener {
+        override fun onRequestPermissionResult(requestCode: Int, grantResult: Int) {
+            if (requestCode != PERMISSION_REQUEST_CODE) return
+            val granted = grantResult == PackageManager.PERMISSION_GRANTED
+            Log.i(TAG, "onRequestPermissionResult: requestCode=$requestCode grantResult=$grantResult granted=$granted")
+            completePending(if (granted) PermissionOutcome.GRANTED else PermissionOutcome.DENIED)
+        }
+    }
+
+    private fun completePending(outcome: PermissionOutcome) {
+        val deferred = synchronized(permissionLock) {
+            pendingPermission.also { pendingPermission = null }
+        }
+        deferred?.complete(outcome)
+    }
 
     fun addBinderStateListener(l: (Boolean) -> Unit) {
         ensureInit()
@@ -76,7 +122,7 @@ object ShizukuShellExecutor {
     }
 
     /**
-     * 註冊 sticky binder 監聽（冪等）。
+     * 註冊 sticky binder 監聽與授權回調（冪等）。
      * 必須在任何 checkSelfPermission / requestPermission 之前調用：
      * transceiver 未就緒時檢查權限會誤報「未授權」，導致已授權卻顯示被拒。
      */
@@ -93,6 +139,8 @@ object ShizukuShellExecutor {
                     Log.w(TAG, "Shizuku binder dead")
                     notifyBinderState(false)
                 }
+                // 全局只註冊這一個 listener，之後所有請求共用
+                Shizuku.addRequestPermissionResultListener(permissionResultListener)
                 binderHooked = true
             } catch (t: Throwable) {
                 Log.w(TAG, "ensureInit failed: ${t.message}")
@@ -110,8 +158,10 @@ object ShizukuShellExecutor {
         return listOf(
             "pingBinder=" + try { Shizuku.pingBinder().toString() } catch (t: Throwable) { "THROW ${t.javaClass.simpleName}: ${t.message}" },
             "binderAlive(flag)=$binderAlive",
+            "pendingPermission=${synchronized(permissionLock) { pendingPermission != null }}",
             probe("isPreV11") { Shizuku.isPreV11() },
             probe("serverVersion") { Shizuku.getVersion() },
+            probe("serverLatestVersion") { Shizuku.getLatestServiceVersion() },
             probe("checkSelfPermission") { Shizuku.checkSelfPermission() },
             probe("shouldShowRequestPermissionRationale") { Shizuku.shouldShowRequestPermissionRationale() }
         ).joinToString("\n")
@@ -149,7 +199,9 @@ object ShizukuShellExecutor {
     }
 
     /**
-     * 檢查當前是否已被授予 Shizuku 權限
+     * 檢查當前是否已被授予 Shizuku 權限。
+     * 阻塞等待 binder 屬 IO 操作，調用方應在 IO 線程執行。
+     *
      * @return true=已授予；false=未授予；null=Shizuku 服務不存在
      */
     fun checkPermission(): Boolean? {
@@ -165,8 +217,7 @@ object ShizukuShellExecutor {
                 Log.w(TAG, "Shizuku binder not reachable after wait")
                 return null
             }
-            // Shizuku.checkSelfPermission: 0=GRANTED, -1=DENIED
-            Shizuku.checkSelfPermission() == 0
+            Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
         } catch (t: Throwable) {
             Log.w(TAG, "checkPermission error: ${t.message}")
             null
@@ -174,57 +225,85 @@ object ShizukuShellExecutor {
     }
 
     /**
-     * 請求 Shizuku 權限（需要 Activity 上下文，實際在 UI 層調用）
-     * 此處僅提供一次性的異步請求接口
+     * 請求 Shizuku 權限。
+     *
+     * 初始化與權限檢查在 IO 線程；`Shizuku.requestPermission()` 與 listener 的
+     * 註冊/移除都放在主線程（`Dispatchers.Main.immediate`）執行，避免後台線程
+     * 啟動授權界面導致彈窗不出現或回調丟失。
+     *
+     * 超時 120 秒；超時不直接判失敗，先重新 checkSelfPermission，已授權則返回成功。
      */
-    suspend fun requestPermission(): Boolean = withContext(Dispatchers.IO) {
+    suspend fun requestPermission(): PermissionRequestResult {
         ensureInit()
-        suspendCancellableCoroutine { cont ->
-            try {
-                if (!Shizuku.pingBinder()) {
-                    cont.resume(false)
-                    return@suspendCancellableCoroutine
-                }
-                if (Shizuku.checkSelfPermission() == 0) {
-                    cont.resume(true)
-                    return@suspendCancellableCoroutine
-                }
-                permissionCallbackInvoked.set(false)
 
-                val listener = object : Shizuku.OnRequestPermissionResultListener {
-                    override fun onRequestPermissionResult(requestCode: Int, grantResult: Int) {
-                        if (requestCode != PERMISSION_REQUEST_CODE) return
-                        Shizuku.removeRequestPermissionResultListener(this)
-                        permissionCallbackInvoked.set(true)
-                        cont.resume(grantResult == 0)
-                    }
-                }
-                Shizuku.addRequestPermissionResultListener(listener)
+        // 1. 初始化 + 前置檢查（含等待 binder）放在 IO
+        val pre = withContext(Dispatchers.IO) { checkPermission() }
+        when (pre) {
+            null -> return PermissionRequestResult(
+                PermissionOutcome.SERVICE_UNAVAILABLE,
+                "pingBinder=false，Shizuku 服務未啟動"
+            )
+            true -> return PermissionRequestResult(PermissionOutcome.GRANTED)
+            false -> Unit
+        }
 
-                cont.invokeOnCancellation {
-                    try {
-                        Shizuku.removeRequestPermissionResultListener(listener)
-                    } catch (_: Throwable) {}
-                }
-
-                Shizuku.requestPermission(PERMISSION_REQUEST_CODE)
-
-                // 兜底：15 秒內未回調則視為失敗
-                Thread {
-                    try {
-                        Thread.sleep(15_000L)
-                        if (!permissionCallbackInvoked.getAndSet(true)) {
-                            try {
-                                Shizuku.removeRequestPermissionResultListener(listener)
-                            } catch (_: Throwable) {}
-                            if (cont.isActive) cont.resume(false)
-                        }
-                    } catch (_: Throwable) {}
-                }.start()
-            } catch (t: Throwable) {
-                Log.e(TAG, "requestPermission failed: ${t.message}")
-                cont.resumeWithException(t)
+        val deferred = CompletableDeferred<PermissionOutcome>()
+        val alreadyPending = synchronized(permissionLock) {
+            if (pendingPermission != null) {
+                true
+            } else {
+                pendingPermission = deferred
+                false
             }
+        }
+        if (alreadyPending) {
+            return PermissionRequestResult(PermissionOutcome.ERROR, "已有授權請求正在進行中")
+        }
+
+        // 2. 主線程發起授權請求（listener 已在 ensureInit 中註冊，這裡不再重複註冊）
+        try {
+            withContext(Dispatchers.Main.immediate) {
+                Shizuku.requestPermission(PERMISSION_REQUEST_CODE)
+            }
+        } catch (t: Throwable) {
+            Log.e(TAG, "requestPermission failed: ${t.message}", t)
+            synchronized(permissionLock) {
+                if (pendingPermission === deferred) pendingPermission = null
+            }
+            return PermissionRequestResult(
+                PermissionOutcome.ERROR,
+                "${t.javaClass.simpleName}: ${t.message ?: "未知錯誤"}"
+            )
+        }
+
+        // 3. 等待回調
+        val outcome = try {
+            withTimeoutOrNull(PERMISSION_TIMEOUT_MS) { deferred.await() }
+        } finally {
+            synchronized(permissionLock) {
+                if (pendingPermission === deferred) pendingPermission = null
+            }
+        }
+
+        if (outcome != null) {
+            return PermissionRequestResult(
+                outcome,
+                if (outcome == PermissionOutcome.DENIED) "用戶在彈窗中選擇了拒絕" else null
+            )
+        }
+
+        // 4. 超時：先重新檢查，用戶可能剛好在超時前點了「允許」
+        val recheck = withContext(Dispatchers.IO) { checkPermission() }
+        return when (recheck) {
+            true -> PermissionRequestResult(PermissionOutcome.GRANTED)
+            null -> PermissionRequestResult(
+                PermissionOutcome.SERVICE_UNAVAILABLE,
+                "等待 ${PERMISSION_TIMEOUT_MS / 1000} 秒後 Shizuku 服務不可達"
+            )
+            false -> PermissionRequestResult(
+                PermissionOutcome.TIMEOUT,
+                "等待 ${PERMISSION_TIMEOUT_MS / 1000} 秒未收到授權結果"
+            )
         }
     }
 

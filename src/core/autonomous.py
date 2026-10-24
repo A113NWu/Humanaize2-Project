@@ -246,27 +246,37 @@ class AutonomousEngine:
             time.sleep(self.interval_seconds)
 
     def _maybe_idle_motion(self):
-        """不对话时让 Aize 自己挑一个小动作，Live2D 画面不会一直僵着"""
+        """不对话时让 Aize 自己动一下，但只用轻微 Idle，且动作由当下情绪决定。
+
+        旧版是按 15~30 秒随机抽 Idle 0~8、还夹 25% TapBody，
+        既太频繁又毫无依据（难过时也可能点头傻笑）。
+        """
         if not self.running:
             return
-        # 正在回答时由回复里的动作标签控制身体，避免两套动作打架
+        # 正在回覆時由對話裡的動作控制身體，閒置動作不插隊
         engine = self.thinking_engine
         if engine is not None and getattr(engine, "_chat_cancel_event", None) is not None:
             return
         now = time.time()
         if now - self._last_motion_time < self._next_motion_gap:
             return
-        self._last_motion_time = now
-        self._next_motion_gap = random.uniform(15, 30)
         try:
             from tools.live2d_hub import get_live2d_hub
-            if random.random() < 0.25:
-                command = {"type": "motion", "group": "TapBody", "index": 0}
-            else:
-                command = {"type": "motion", "group": "Idle", "index": random.randint(0, 8)}
-            get_live2d_hub().push_command(command)
+            from tools.motion_policy import pick_idle_motion
+
+            hub = get_live2d_hub()
+            # 刚在说话/回覆（12 秒内推过命令）时不插闲置动作，避免两套动作打架
+            if now - getattr(hub, "last_command_ts", 0.0) < 12:
+                return
+            command = pick_idle_motion()
+            self._last_motion_time = now
+            # 闲置动作稀疏一点，别一直动个不停
+            self._next_motion_gap = random.uniform(30, 75)
+            if command:
+                hub.push_command(command)
         except Exception:
             pass
+
 
     def _initiate_conversation(self):
         """主动发起对话"""
