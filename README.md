@@ -95,7 +95,7 @@ humanaize2 skills -install skill.zip
 - **IoT / 守护 / GAN / 主动说话**：均在设置页对应分区开关（`iot_auto_start`、`guard_enabled`、`gan_enabled`、`auto_break_silence`）。
 - **语音**：点聊天输入框右下角麦克风（变红脉动=开启），说话自动发送，回复流式朗读；纯打字不会触发语音。语音识别用浏览器 Web Speech API（推荐 Chrome/Edge），朗读用微软 edge-tts（需联网）。
 
-## 常用命令~(不是，真的会有人去用命令行吗)~
+## 常用命令~ (不是，真的会有人去用命令行吗) ~
 
 ```
 humanaize2 boot [-m cli|gui|win-gui]   # 启动（默认网页面板）
