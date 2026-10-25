@@ -3200,6 +3200,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         tl_items = []
         pending_turn_id = _timeline_begin_turn(user_text, display_user=display_user,
                                                attachments=attachments)
+        turn_usage = None
 
         try:
             # 累积完整回复用于清理和UI更新
@@ -3409,9 +3410,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             collector.set_finished()
 
             # 保存本輪結構化時間線（刷新頁面後重建思考框/命令框/用量/附件名）
-            _timeline_add_turn(user_text, tl_items, usage=final_chunk.get("usage"),
-                               display_user=display_user, attachments=attachments,
-                               pending_id=pending_turn_id)
+            # 統一在 finally 中落盤，避免客戶端斷線時跳過
+            turn_usage = final_chunk.get("usage")
 
             # 通知QQ UI更新（显示Aize发送的消息）
             cleaned_reply = clean_reply(full_reply) if full_reply else ""
@@ -3453,9 +3453,16 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                 self.wfile.flush()
             except BrokenPipeError:
                 pass
-            # 異常結束也保留已有時間線（思考過程可能已記錄）
-            _timeline_add_turn(user_text, tl_items, display_user=display_user,
-                               attachments=attachments, pending_id=pending_turn_id)
+            except Exception:
+                pass
+        finally:
+            # 無論成功、出錯還是客戶端斷線，都把這一輪定稿，pending 不會殘留
+            try:
+                _timeline_add_turn(user_text, tl_items, usage=turn_usage,
+                                   display_user=display_user, attachments=attachments,
+                                   pending_id=pending_turn_id)
+            except Exception as e:
+                logger.warning(f"[Timeline] finalize failed: {e}")
 
 
 class ThinkingEngineAPIServer:
