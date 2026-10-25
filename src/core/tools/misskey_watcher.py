@@ -148,7 +148,12 @@ class MisskeyWatcher:
             interval = _DEFAULT_INTERVAL
             try:
                 cfg = _settings()
-                if cfg.get("misskey_watch_enabled", True):
+                # 技能被停用時完全不輪詢，避免停用後仍自動互動
+                try:
+                    from tools.skills_manager import is_skill_enabled
+                except ImportError:
+                    from core.tools.skills_manager import is_skill_enabled
+                if cfg.get("misskey_watch_enabled", True) and is_skill_enabled("misskey-bot"):
                     interval = max(30, int(cfg.get("misskey_watch_interval", _DEFAULT_INTERVAL)))
                     self._poll_once()
             except Exception as e:

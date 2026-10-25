@@ -281,7 +281,14 @@ class IdleEngine:
 
         platforms = self._available_social_platforms()
         if not platforms:
-            _thought("[Social] 想去社交网站逛逛，但还没有配置任何平台（可先用 misskey-bot 技能 configure）")
+            try:
+                from tools.skills_manager import is_skill_enabled
+            except ImportError:
+                from core.tools.skills_manager import is_skill_enabled
+            if not is_skill_enabled("misskey-bot"):
+                _thought("[Social] misskey-bot 技能已停用，跳過社交活動")
+            else:
+                _thought("[Social] 想去社交网站逛逛，但还没有配置任何平台（可先用 misskey-bot 技能 configure）")
             return
 
         platform = platforms[0]
@@ -567,8 +574,14 @@ class IdleEngine:
 
     @staticmethod
     def _available_social_platforms():
-        """已配置可用的社交平台列表（可寫入的才會列入）。"""
+        """已配置可用且技能未被停用的社交平台列表（可寫入的才會列入）。"""
         platforms = []
+        try:
+            from tools.skills_manager import is_skill_enabled
+        except ImportError:
+            from core.tools.skills_manager import is_skill_enabled
+        if not is_skill_enabled("misskey-bot"):
+            return platforms
         mod = IdleEngine._load_skill_module("misskey-bot")
         if mod is not None:
             try:

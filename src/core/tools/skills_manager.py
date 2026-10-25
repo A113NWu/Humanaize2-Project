@@ -1338,3 +1338,33 @@ class LanguageAdapter:
         """Determine if response should be in Chinese"""
         detected = self.detect_language(text)
         return detected in ["zh", "zh-TW"]
+# ---------- 模組級輕量查詢（供背景線程/閒置引擎判斷技能是否停用） ----------
+
+def resolve_skills_config_path() -> str:
+    """返回技能開關配置文件路徑，解析規則與 SkillsManager 保持一致。"""
+    if getattr(sys, "frozen", False):
+        try:
+            from app_paths import app_data_dir
+            return os.path.join(app_data_dir(), "skills_config.json")
+        except Exception:
+            pass
+    default_path = os.path.join(os.path.dirname(__file__), "data", "skills_config.json")
+    if os.path.exists(default_path):
+        return default_path
+    system_config = "/var/lib/humanaize/skills_config.json"
+    if os.path.exists(system_config):
+        return system_config
+    return os.path.join(os.path.expanduser("~"), ".humanaize", "skills_config.json")
+
+
+def is_skill_enabled(name: str, default: bool = True) -> bool:
+    """輕量讀取技能啟停狀態（不掃描技能目錄），供背景線程即時判斷。"""
+    try:
+        with open(resolve_skills_config_path(), "r", encoding="utf-8") as f:
+            config = json.load(f)
+    except Exception:
+        return default
+    entry = (config.get("skills") or {}).get(name)
+    if isinstance(entry, dict) and "enabled" in entry:
+        return bool(entry["enabled"])
+    return bool(config.get("all_enabled", default))
