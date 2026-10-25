@@ -633,6 +633,9 @@ class ResponseCollector:
 # ============================================================
 _CHAT_TIMELINE = collections.deque(maxlen=60)
 _CHAT_TIMELINE_LOCK = threading.Lock()
+
+# 正在生成中的那一輪（id + 上次落盤時間），刷新頁面後仍可從時間線看到
+_PENDING_TURN = {"id": None, "at": 0.0}
 _CHAT_TIMELINE_FILE = None
 
 
@@ -675,10 +678,8 @@ def _timeline_save():
         logger.warning(f"[Timeline] save failed: {e}")
 
 
-def _timeline_add_turn(user_text, items, usage=None, display_user=None, attachments=None):
-    """記錄一輪對話。items: [{k: text|thought|cmd_start|cmd_result, t: str, c: str}]
-    usage/attachments/display_user 一起落盤，刷新後用量腳註、附件名和技能框都能重建。"""
-    # 壓縮：去掉空塊；正文合併後若整輪無內容則不記錄
+def _clean_timeline_items(items):
+    """壓縮時間線：去掉空塊，相鄰同類事件合併。"""
     clean_items = []
     for it in items:
         c = (it.get("c") or "")
@@ -690,6 +691,90 @@ def _timeline_add_turn(user_text, items, usage=None, display_user=None, attachme
             clean_items[-1]["c"] += c
         else:
             clean_items.append({"k": it.get("k"), "t": it.get("t", ""), "c": c})
+    return clean_items
+
+
+def _timeline_attachment_list(attachments):
+    if not attachments:
+        return None
+    return [
+        {"name": str(a.get("name", ""))[:120],
+         "is_image": bool(a.get("is_image"))}
+        for a in attachments if isinstance(a, dict)
+    ]
+
+
+def _timeline_drop_pending_locked(pending_id=None):
+    """移除尚未完成的 pending 輪次（調用方需持有 _CHAT_TIMELINE_LOCK）。
+    指定 pending_id 時只處理該輪，避免中斷/並發時誤刪新一輪的 pending 記錄。"""
+    current_id = _PENDING_TURN.get("id")
+    if not current_id:
+        return
+    if pending_id is not None and pending_id != current_id:
+        return
+    for turn in list(_CHAT_TIMELINE):
+        if turn.get("id") == current_id:
+            try:
+                _CHAT_TIMELINE.remove(turn)
+            except ValueError:
+                pass
+    _PENDING_TURN["id"] = None
+
+
+def _timeline_begin_turn(user_text, display_user=None, attachments=None):
+    """收到使用者訊息就先落盤一個 pending 輪次。
+
+    以前只有回覆完成才寫時間線，刷新頁面時正在生成的那一輪直接消失。
+    現在先把這一輪（含附件）記下來，回覆內容邊生成邊更新，
+    完成後由 _timeline_add_turn 用正式輪次替換。
+    """
+    if not (user_text or "").strip() and not attachments:
+        return None
+    turn_id = uuid.uuid4().hex[:12]
+    turn = {
+        "id": turn_id,
+        "user": user_text or "",
+        "display_user": (display_user if display_user is not None else (user_text or "")),
+        "items": [],
+        "ts": int(time.time()),
+        "pending": True,
+    }
+    attach_list = _timeline_attachment_list(attachments)
+    if attach_list:
+        turn["attachments"] = attach_list
+    with _CHAT_TIMELINE_LOCK:
+        _timeline_drop_pending_locked()
+        _CHAT_TIMELINE.append(turn)
+        _timeline_save()
+    _PENDING_TURN["id"] = turn_id
+    _PENDING_TURN["at"] = 0.0
+    return turn_id
+
+
+def _timeline_update_pending(items):
+    """把正在生成的內容寫進 pending 輪次（最多每秒落盤一次）。"""
+    pending_id = _PENDING_TURN.get("id")
+    if not pending_id:
+        return
+    now = time.time()
+    if now - _PENDING_TURN.get("at", 0.0) < 1.0:
+        return
+    _PENDING_TURN["at"] = now
+    clean_items = _clean_timeline_items(items)
+    with _CHAT_TIMELINE_LOCK:
+        for turn in _CHAT_TIMELINE:
+            if turn.get("id") == pending_id:
+                turn["items"] = clean_items
+                break
+        _timeline_save()
+
+
+def _timeline_add_turn(user_text, items, usage=None, display_user=None, attachments=None,
+                       pending_id=None):
+    """記錄一輪對話。items: [{k: text|thought|cmd_start|cmd_result, t: str, c: str}]
+    usage/attachments/display_user 一起落盤，刷新後用量腳註、附件名和技能框都能重建。"""
+    # 壓縮：去掉空塊；正文合併後若整輪無內容則不記錄
+    clean_items = _clean_timeline_items(items)
     if not (user_text or "").strip() and not clean_items:
         return
     turn = {
@@ -700,13 +785,12 @@ def _timeline_add_turn(user_text, items, usage=None, display_user=None, attachme
     }
     if usage:
         turn["usage"] = usage
-    if attachments:
-        turn["attachments"] = [
-            {"name": str(a.get("name", ""))[:120],
-             "is_image": bool(a.get("is_image"))}
-            for a in attachments if isinstance(a, dict)
-        ]
+    attach_list = _timeline_attachment_list(attachments)
+    if attach_list:
+        turn["attachments"] = attach_list
     with _CHAT_TIMELINE_LOCK:
+        # 該輪若先前以 pending 形式記過，先移除，避免刷新後出現重複兩條
+        _timeline_drop_pending_locked(pending_id)
         _CHAT_TIMELINE.append(turn)
         _timeline_save()
 
@@ -2989,6 +3073,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             # 等待响应完成（最多等待collector的timeout）
             full_reply = ""
             tl_items = []
+            pending_turn_id = _timeline_begin_turn(user_text)
             while True:
                 chunk = collector.get_chunk()
                 if chunk["type"] == "chunk":
@@ -3012,7 +3097,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
 
             # 标记完成
             collector.set_finished()
-            _timeline_add_turn(user_text, tl_items)
+            _timeline_add_turn(user_text, tl_items, pending_id=pending_turn_id)
 
             # 清理回复
             cleaned_reply = clean_reply(full_reply) if full_reply else ""
@@ -3111,7 +3196,10 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             pass
 
         # 結構化事件時間線：刷新頁面後原樣重建思考框/命令輸出框
+        # 先把這一輪寫成 pending，生成過程中持續更新，刷新不會再丟失
         tl_items = []
+        pending_turn_id = _timeline_begin_turn(user_text, display_user=display_user,
+                                               attachments=attachments)
 
         try:
             # 累积完整回复用于清理和UI更新
@@ -3125,6 +3213,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                     content = chunk["content"]
                     full_reply += content
                     tl_items.append({"k": "text", "t": "", "c": content})
+                    _timeline_update_pending(tl_items)
                     # 供中斷判斷子 Agent 參考「已經說到哪」
                     with self._active_chat_lock:
                         if type(self)._active_chat:
@@ -3162,6 +3251,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                     thought_content = chunk["content"]
                     thought_type = chunk.get("thought_type", "")
                     tl_items.append({"k": "thought", "t": thought_type, "c": thought_content})
+                    _timeline_update_pending(tl_items)
                     thought_chunk = {
                         "id": chat_id,
                         "object": "chat.completion.chunk",
@@ -3188,6 +3278,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                     # 技能執行事件：前端渲染成終端風格區塊，不混入回覆正文
                     cmd_content = chunk.get("message") or chunk.get("output") or ""
                     tl_items.append({"k": chunk["type"], "t": "", "c": cmd_content})
+                    _timeline_update_pending(tl_items)
                     cmd_chunk = {
                         "id": chat_id,
                         "object": "chat.completion.chunk",
@@ -3319,7 +3410,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
 
             # 保存本輪結構化時間線（刷新頁面後重建思考框/命令框/用量/附件名）
             _timeline_add_turn(user_text, tl_items, usage=final_chunk.get("usage"),
-                               display_user=display_user, attachments=attachments)
+                               display_user=display_user, attachments=attachments,
+                               pending_id=pending_turn_id)
 
             # 通知QQ UI更新（显示Aize发送的消息）
             cleaned_reply = clean_reply(full_reply) if full_reply else ""
@@ -3363,7 +3455,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                 pass
             # 異常結束也保留已有時間線（思考過程可能已記錄）
             _timeline_add_turn(user_text, tl_items, display_user=display_user,
-                               attachments=attachments)
+                               attachments=attachments, pending_id=pending_turn_id)
 
 
 class ThinkingEngineAPIServer:

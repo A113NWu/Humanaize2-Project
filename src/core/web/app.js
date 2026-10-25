@@ -116,6 +116,7 @@ async function loadChatHistory(){
           }
         }
         if(turn.usage)appendUsage(streamRoot,turn.usage);
+        if(turn.pending){const ph=document.createElement('div');ph.className='thought-line';ph.dataset.label='生成中';ph.textContent='這一輪還在生成，重新整理可看到最新進度';streamRoot.appendChild(ph)}
         if(thoughtLog.children.length)reply.appendChild(thoughtLog);
         if(streamRoot.children.length)reply.appendChild(streamRoot);
         if(reply.children.length){box.appendChild(reply);count++}
