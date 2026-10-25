@@ -220,10 +220,10 @@
       const i = idx || 0;
       gesture = {
         t0: performance.now(),
-        dur: group === 'TapBody' ? 1000 : 1300,
-        ax: ((i % 3) - 1) * 10 * energy,
-        ay: (group === 'TapBody' ? -16 : -8) * energy,
-        az: (i % 2 === 0 ? -8 : 8) * energy,
+        dur: group === 'TapBody' ? 1200 : 1500,
+        ax: ((i % 3) - 1) * 16 * energy,
+        ay: (group === 'TapBody' ? -26 : -14) * energy,
+        az: (i % 2 === 0 ? -12 : 12) * energy,
       };
     } catch (e) { console.warn('motion failed', e); }
   }
