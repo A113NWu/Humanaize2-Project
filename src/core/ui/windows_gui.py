@@ -1011,6 +1011,16 @@ class _AutonomousAdapter:
     def on_user_message(self):
         """处理用户消息"""
         self._last_message_time = time.time()
+
+    def _build_context(self):
+        """构建最近对话上下文（自主思考提示用）"""
+        messages = (self.memory or {}).get("messages", [])[-8:]
+        context = "最近对话:"
+        for msg in messages:
+            role = msg.get("role", "").capitalize()
+            content = msg.get("content", "")[:100]
+            context += f"\n{role}: {content}"
+        return context
     
     def _run(self):
         """运行自主引擎"""

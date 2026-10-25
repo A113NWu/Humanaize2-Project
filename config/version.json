@@ -1,5 +1,5 @@
 {
-  "version": "2.3.23",
-  "last_updated": "2026-10-25T12:10:00.000000",
-  "release_notes": "v2.3.23：修復 Issue 指出的 5 個問題——串流斷線時取消事件引用未定義變數、自主思考調用未定義函數、測試套件被 sys.exit 阻斷、4 個測試檔案不符合 pytest 規範、Prompt 模組 star import 無法靜態檢測；同時把根目錄 Asset 與 Assets 合併為單一 Assets。"
+  "version": "2.3.24",
+  "last_updated": "2026-10-25T17:05:00.000000",
+  "release_notes": "v2.3.24：補齊自主引擎缺少的 _build_context，修復 60 秒無活動時自主思考仍因 AttributeError 被靜默中斷的問題（問題 2 的後續）。其餘同 v2.3.23：修復 Issue 五項缺陷並把 Asset 併入 Assets。"
 }
