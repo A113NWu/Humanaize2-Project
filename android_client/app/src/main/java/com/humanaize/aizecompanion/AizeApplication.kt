@@ -39,7 +39,10 @@ class AizeApplication : Application() {
         instance = this
 
         // 儘早註冊 Shizuku sticky binder 監聽，避免 checkSelfPermission 誤報未授權
+        ShizukuShellExecutor.init(this)
         ShizukuShellExecutor.ensureInit()
+        // 服務已在跑但本進程沒收到 binder 時，主動補一次
+        ShizukuShellExecutor.requestBinder(force = true)
 
         settingsRepository = SettingsRepository(this)
         apiClient = AizeApiClient("", "")

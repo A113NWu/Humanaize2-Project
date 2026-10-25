@@ -35,6 +35,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -82,6 +83,7 @@ fun ShizukuScreen(viewModel: MainViewModel) {
     }
 
     var permissionState by remember { mutableStateOf<Boolean?>(null) }
+    var latestSvcVersion by remember { mutableIntStateOf(0) }
     var requesting by remember { mutableStateOf(false) }
     var lastFailure by remember { mutableStateOf<String?>(null) }
     var diagExpanded by remember { mutableStateOf(false) }
@@ -128,7 +130,14 @@ fun ShizukuScreen(viewModel: MainViewModel) {
     LaunchedEffect(Unit) {
         while (true) {
             permissionState = withContext(Dispatchers.IO) {
+                // 仍未連上時主動向 Shizuku 重取 binder（服務後來才啟動也能自癒）
+                if (ShizukuShellExecutor.checkPermission(0L) == null) {
+                    ShizukuShellExecutor.requestBinder()
+                }
                 ShizukuShellExecutor.checkPermission()
+            }
+            latestSvcVersion = withContext(Dispatchers.IO) {
+                ShizukuShellExecutor.latestServiceVersion()
             }
             delay(3000)
         }
@@ -160,7 +169,7 @@ fun ShizukuScreen(viewModel: MainViewModel) {
     val statusLabel = when (permissionState) {
         true -> "已授權"
         false -> "未授權"
-        null -> "服務未運行"
+        null -> if (latestSvcVersion > 0) "服務未啟動" else "未就緒"
     }
     val statusColor: Color = when (permissionState) {
         true -> MaterialTheme.colorScheme.tertiary
@@ -193,12 +202,17 @@ fun ShizukuScreen(viewModel: MainViewModel) {
                             when (permissionState) {
                                 true -> "已取得權限，可執行 shell 命令"
                                 false -> "已檢測到 Shizuku 服務，但本應用尚未授權"
-                                null -> if (!shizukuInstalled) {
-                                    "未檢測到 Shizuku，請先安裝並啟動 Shizuku"
-                                } else {
-                                    "Shizuku 已安裝，但本應用沒收到它的服務。" +
-                                            "請確認 Shizuku 應用頂部顯示「服務正在運行」；" +
-                                            "若是剛剛才啟動服務，請點下方「重啟應用」重新連接（包名 ${context.packageName}）"
+                                null -> when {
+                                    !shizukuInstalled ->
+                                        "未檢測到 Shizuku，請先安裝並啟動 Shizuku"
+                                    latestSvcVersion > 0 ->
+                                        "Shizuku 應用已安裝（服務協定 $latestSvcVersion），但服務沒有在運行。" +
+                                                "只打開授權開關不會啟動服務：打開 Shizuku 主頁，用「無線調試」或 root 點啟動，" +
+                                                "看到「Shizuku 服務正在運行」後回來點「重啟應用」"
+                                    else ->
+                                        "Shizuku 已安裝，但本應用沒收到它的服務。" +
+                                                "請確認 Shizuku 應用頂部顯示「服務正在運行」；" +
+                                                "若是剛剛才啟動服務，請點下方「重啟應用」重新連接（包名 ${context.packageName}）"
                                 }
                             },
                             style = MaterialTheme.typography.bodySmall,

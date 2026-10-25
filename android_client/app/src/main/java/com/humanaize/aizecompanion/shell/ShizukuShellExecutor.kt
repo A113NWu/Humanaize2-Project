@@ -1,5 +1,6 @@
 package com.humanaize.aizecompanion.shell
 
+import android.content.Context
 import android.content.pm.PackageManager
 import android.util.Log
 import kotlinx.coroutines.CompletableDeferred
@@ -7,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import rikka.shizuku.Shizuku
+import rikka.shizuku.ShizukuProvider
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.lang.reflect.Method
@@ -69,6 +71,39 @@ object ShizukuShellExecutor {
     /** sticky binder 監聽是否已註冊 */
     @Volatile
     private var binderHooked = false
+
+    /** 應用的 Application Context（用於主動向 Shizuku 重取 binder） */
+    @Volatile
+    private var appContext: Context? = null
+
+    /** 上次主動向 Shizuku 要求 binder 的時間，避免高頻重複請求 */
+    @Volatile
+    private var lastBinderRequestAt = 0L
+
+    fun init(context: Context) {
+        appContext = context.applicationContext
+    }
+
+    /**
+     * 主動向 Shizuku 重新索取 binder。
+     *
+     * 服務在跑、授權也給了，但本進程始終沒收到 binder 時（進程先於服務啟動、
+     * 或 Shizuku 沒能在授權後回送），調用 ShizukuProvider 的補救接口可重新觸發一次投遞，
+     * 不必重啟整個應用。
+     */
+    fun requestBinder(force: Boolean = false) {
+        val ctx = appContext ?: return
+        if (Shizuku.pingBinder()) return
+        val now = System.currentTimeMillis()
+        if (!force && now - lastBinderRequestAt < 3000L) return
+        lastBinderRequestAt = now
+        try {
+            ShizukuProvider.requestBinderForNonProviderProcess(ctx)
+            Log.i(TAG, "requestBinderForNonProviderProcess issued")
+        } catch (t: Throwable) {
+            Log.w(TAG, "requestBinderForNonProviderProcess failed: ${t.message}")
+        }
+    }
 
     /** binder 是否已收到（由監聽回調維護，供 UI/診斷使用） */
     @Volatile
@@ -165,6 +200,16 @@ object ShizukuShellExecutor {
             probe("checkSelfPermission") { Shizuku.checkSelfPermission() },
             probe("shouldShowRequestPermissionRationale") { Shizuku.shouldShowRequestPermissionRationale() }
         ).joinToString("\n")
+    }
+
+    /**
+     * Shizuku 應用已安裝時回傳其服務協定版本（如 13），未安裝回 0。
+     * 這個值不需要 binder，可用來區分「應用沒裝」與「應用裝了但服務沒啟動」。
+     */
+    fun latestServiceVersion(): Int = try {
+        Shizuku.getLatestServiceVersion()
+    } catch (_: Throwable) {
+        0
     }
 
     private fun getNewProcessMethod(): Method? {
