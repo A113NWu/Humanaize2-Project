@@ -40,13 +40,16 @@
         android:usesCleartextTraffic="true"
         tools:targetApi="34">
 
-        <!-- ShizukuProvider：用於向 Shizuku 服務宣告本 app 的存在 -->
+        <!-- ShizukuProvider：用於向 Shizuku 服務宣告本 app 的存在
+             permission 用 shell 持有的 INTERACT_ACROSS_USERS_FULL：
+             Shizuku 服務以 shell 身分回送 binder 時才能通過呼叫檢查 -->
         <provider
             android:name="rikka.shizuku.ShizukuProvider"
             android:authorities="${applicationId}.shizuku"
+            android:enabled="true"
             android:exported="true"
             android:multiprocess="false"
-            android:permission="moe.shizuku.manager.permission.API_V23" />
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
 
         <!-- 主 Activity -->
         <activity
