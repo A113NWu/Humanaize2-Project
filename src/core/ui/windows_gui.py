@@ -1022,7 +1022,9 @@ class _AutonomousAdapter:
             elapsed = time.time() - self._last_message_time
             if elapsed > 60:  # 60秒无活动
                 try:
-                    result = check_silence_and_decide(self.memory, 60)
+                    import autonomous as _auto_mod
+                    _check_silence = getattr(_auto_mod, "check_silence_and_decide", None)
+                    result = _check_silence(self.memory, 60) if _check_silence else None
                     if result and result.get("action") == "AUTO_THINK":
                         self.on_auto_speak(result.get("message", "AI正在思考..."))
                         # 触发思考

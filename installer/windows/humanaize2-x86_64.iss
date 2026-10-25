@@ -3,7 +3,7 @@
 ; 版本號可由構建腳本覆蓋：ISCC /DAppVersion=2.3.14
 
 #ifndef AppVersion
-  #define AppVersion "2.3.22"
+  #define AppVersion "2.3.23"
 #endif
 
 [Setup]
@@ -58,6 +58,8 @@ Source: "skills\*"; DestDir: "{app}\skills"; Excludes: "venv\*,mc-bot\node_modul
 ; 配置與運行時資料
 Source: "config\version.json"; DestDir: "{app}\config"; Flags: ignoreversion
 Source: "data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs noregerror
+; 網頁資源（虛擬攝像頭背景等，統一使用 Assets 目錄）
+Source: "Assets\*"; DestDir: "{app}\Assets"; Flags: ignoreversion recursesubdirs createallsubdirs noregerror
 ; 文檔
 Source: "docs\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "docs\README.md"; DestDir: "{app}"; Flags: ignoreversion

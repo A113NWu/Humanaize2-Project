@@ -1318,7 +1318,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
     }
 
     def _handle_root_asset(self, url_path):
-        """項目根目錄 Asset/ 下的圖片資源（如虛擬攝像頭背景 Camera_bkg.png）。"""
+        """項目根目錄 Assets/ 下的圖片資源（如虛擬攝像頭背景 Camera_bkg.png）。"""
         rel = url_path[len("/asset/"):].replace("\\", "/").lstrip("/")
         if not rel or ".." in rel.split("/") or "/" in rel:
             self._send_error("invalid path", 400)
@@ -1329,11 +1329,14 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._send_error("Not found", 404)
             return
         roots = []
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            roots.append(meipass)
         if getattr(sys, "frozen", False):
             roots.append(os.path.dirname(os.path.abspath(sys.executable)))
         roots.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
         for root in roots:
-            path = os.path.join(root, "Asset", rel)
+            path = os.path.join(root, "Assets", rel)
             if os.path.isfile(path):
                 self._send_file_path(path, mime)
                 return
@@ -3241,7 +3244,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                         logger.info("[ThinkingEngine API] Client disconnected")
                         # 客戶端被新消息打斷而斷線時，同步取消生成，讓引擎盡快釋放聊天鎖
                         try:
-                            ev = getattr(thinking_engine, "_chat_cancel_event", None)
+                            engine = state.get_thinking_engine() if state is not None else None
+                            ev = getattr(engine, "_chat_cancel_event", None)
                             if ev is not None:
                                 ev.set()
                         except Exception:
