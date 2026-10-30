@@ -48,10 +48,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.humanaize.aizecompanion.ui.components.AizeLayout
 import com.humanaize.aizecompanion.ui.components.AizePageScaffold
 import com.humanaize.aizecompanion.ui.viewmodel.ChatItem
@@ -139,10 +137,8 @@ fun ChatScreen(viewModel: MainViewModel) {
                                 )
                             }
                         }
-                        ChatItem.Role.LOG -> LogLine(
-                            kind = item.logKind ?: "thought",
-                            text = item.text
-                        )
+                        // 思考和技能日誌不再顯示，避免列表被日誌刷滿
+                        ChatItem.Role.LOG -> Unit
                     }
                 }
             }
@@ -158,7 +154,9 @@ fun ChatScreen(viewModel: MainViewModel) {
                 OutlinedTextField(
                     value = input,
                     onValueChange = { input = it },
-                    placeholder = { Text("輸入訊息…") },
+                    placeholder = {
+                        Text(if (sending) "Aize 正在說話，仍可發送訊息…" else "輸入訊息…")
+                    },
                     modifier = Modifier.weight(1f),
                     maxLines = 4,
                     shape = RoundedCornerShape(AizeLayout.CardCorner)
@@ -169,7 +167,7 @@ fun ChatScreen(viewModel: MainViewModel) {
                         viewModel.sendChat(input)
                         input = ""
                     },
-                    enabled = input.isNotBlank() && !sending,
+                    enabled = input.isNotBlank(),
                     modifier = Modifier.size(52.dp)
                 ) {
                     Icon(Icons.Default.Send, contentDescription = "發送")
@@ -341,31 +339,6 @@ private fun TypingBubble() {
                 }
             }
         }
-    }
-}
-
-/** 思考/技能日誌行：等寬字體 + 按類型著色，不混入對話氣泡 */
-@Composable
-private fun LogLine(kind: String, text: String) {
-    val color = when (kind) {
-        "skill" -> MaterialTheme.colorScheme.tertiary
-        "gan" -> MaterialTheme.colorScheme.secondary
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    SelectionContainer {
-        Text(
-            text = text,
-            color = color,
-            fontSize = 12.sp,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                    RoundedCornerShape(12.dp)
-                )
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-        )
     }
 }
 
