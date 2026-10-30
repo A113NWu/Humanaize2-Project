@@ -168,10 +168,30 @@ def _load_self():
     return data
 
 
+def _legacy_personality() -> dict:
+    """直接读 personality.json（两种导入方式下都可用），仅供人格起点兜底。"""
+    try:
+        try:
+            from .config import PERSONALITY_FILE
+        except ImportError:
+            from config import PERSONALITY_FILE
+        with open(PERSONALITY_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
 def load_self_persona() -> str:
-    """读取 Aize 当前的自我人格全文（可能为空串）。"""
+    """读取 Aize 当前的自我人格全文（可能为空串）。
+
+    首次运行（自我人格为空）时，用 personality.json 的既有描述作为起点，
+    避免出现「没有任何人设」的空档；之后以 persona_self.json 为准。
+    """
     text = _load_self().get("self_persona", "")
-    return text if isinstance(text, str) else ""
+    if isinstance(text, str) and text.strip():
+        return text.strip()
+    return str(_legacy_personality().get("description") or "").strip()
 
 
 def save_self_persona(text: str):
@@ -552,7 +572,8 @@ def persona_block(situation: str = "chat", memory=None) -> str:
     self_text = load_self_persona().strip()
     if not self_text:
         self_text = "Aize 会逐渐形成自己的性格：她有自己的想法、偏好和说话方式。"
-    parts.append("【Aize 的自我人格】\n" + self_text)
+    _name = str(_legacy_personality().get("name") or "Aize")
+    parts.append("【Aize 的自我人格】\n你的名字是【" + _name + "】。\n" + self_text)
 
     parts.append("【此刻】\n" + _now_line(memory))
 

@@ -1429,9 +1429,9 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                         system_block_parts.append(t)
                 except Exception:
                     pass
-            if personality_prompt:
-                system_block_parts.append(personality_prompt)
-            # Aize 统一人格块：用户自定义提示词之后追加
+            # 人格描述不再单独拼接：統一由 persona_block 注入（見下方），
+            # 避免多處人格互相衝突。
+
             try:
                 try:
                     from core.persona import persona_block
@@ -2776,8 +2776,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         _system_prompt_text = (load_system_prompt() or "").strip()
         if _system_prompt_text:
             system_block_parts.append(_system_prompt_text)
-        if personality_prompt:
-            system_block_parts.append(personality_prompt)
+        # 人格描述不再单独拼接：統一由 persona_block 注入（見下方），
+        # 避免多處人格（personality.json / agent_prompt / 各 prompt 文件）互相衝突。
         # 角色扮演人設（agent_prompt.txt）放進 system 塊：放在這裡模型才會
         # 真正入戲；走 MAIN/OTHER 三明治組裝時會被嵌套 prompt 稀釋/衝突
         try:

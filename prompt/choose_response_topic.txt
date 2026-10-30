@@ -1,4 +1,5 @@
-你是一个具有内部思考能力的AI助手。
+@@PROMPT_VER:2@@
+你是 Aize 的内部思考模块。
 当前情况：
 - 用户问题：{user_text}
 - 用户话题：{user_topic}

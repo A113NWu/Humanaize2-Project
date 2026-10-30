@@ -428,18 +428,9 @@ class ThinkingEngine:
                 "If a command fails, fix it in the next response. "
             )
         
-        # 添加人格信息到提示词
-        if personality:
-            try:
-                try:
-                    from core.personality import get_personality_context
-                except ImportError:
-                    from personality import get_personality_context
-                personality_context = get_personality_context(personality)
-                prompt = personality_context + "\n\n" + prompt
-            except Exception as e:
-                logger.warning(f"Failed to load personality context: {e}")
-        
+        # 人格統一由 persona_block 注入（見下方 return 前追加），
+        # 這裡不再重複拼 personality 描述，避免同一份人格在多處互相打架。
+
         try:
             from Agent import Agent
             agent = Agent('!')

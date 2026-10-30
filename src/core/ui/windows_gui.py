@@ -1037,9 +1037,14 @@ class _AutonomousAdapter:
                     result = _check_silence(self.memory, 60) if _check_silence else None
                     if result and result.get("action") == "AUTO_THINK":
                         self.on_auto_speak(result.get("message", "AI正在思考..."))
-                        # 触发思考
+                        # 触发思考：以开启新话题为目的，并避免重复最近说过的话
                         context = self._build_context()
-                        prompt = f"{context}\n\n用户已暂停，AI自主思考:"
+                        recent = [m.get("content", "") for m in (self.memory or {}).get("messages", [])
+                                  if m.get("role") == "assistant"][-6:]
+                        recent_self = "\n".join(f"- {str(t)[:80]}" for t in recent) or "（暂无）"
+                        prompt = (f"{context}\n\n【最近你说过的话】\n{recent_self}\n\n"
+                                  "主人已经一段时间没说话了。现在主动开口，以开启一个新话题为目的，"
+                                  "不要重复上面说过的句子，也不要每次都问同一类问题；一两句话即可。")
                         self.thinking_engine.queue_chat_task(prompt)
                         self._last_message_time = time.time()
                 except Exception:
