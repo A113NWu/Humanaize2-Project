@@ -1431,6 +1431,17 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                     pass
             if personality_prompt:
                 system_block_parts.append(personality_prompt)
+            # Aize 统一人格块：用户自定义提示词之后追加
+            try:
+                try:
+                    from core.persona import persona_block
+                except ImportError:
+                    from persona import persona_block
+                _persona_text = persona_block("chat", memory)
+                if _persona_text:
+                    system_block_parts.append(_persona_text)
+            except Exception:
+                pass
             try:
                 _recent_ctx = build_context_from_memory(memory, max_messages=12)
                 if _recent_ctx:
@@ -2776,6 +2787,17 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         _agent_prompt_text = (load_agent_prompt() or "").strip()
         if _agent_prompt_text:
             system_block_parts.append(_agent_prompt_text)
+        # Aize 统一人格块：必须追加在「用户自定义提示词」之后
+        try:
+            try:
+                from core.persona import persona_block
+            except ImportError:
+                from persona import persona_block
+            _persona_text = persona_block("chat", memory)
+            if _persona_text:
+                system_block_parts.append(_persona_text)
+        except Exception as e:
+            logger.warning(f"[Chat] persona block failed: {e}")
         # 近期對話短窗口：多步任務（下載/安裝/排錯）需要知道前幾句做到哪，
         # 否則她會忘任務、只會空泛答應。更早的內容仍靠 memory-search 按需檢索。
         try:
@@ -2820,6 +2842,15 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                 from memory import add as _mem_add, save_memory as _mem_save
                 _mem_add(memory, "user", user_text, source="user")
                 _mem_save(memory)
+                # 学习主人习惯：识别「我要上课了」等缺席表述，并结算上次间隔
+                try:
+                    try:
+                        from core.persona import note_user_message
+                    except ImportError:
+                        from persona import note_user_message
+                    note_user_message(memory, user_text)
+                except Exception:
+                    pass
             except Exception as e:
                 logger.warning(f"[Chat] failed to persist user message to memory: {e}")
 

@@ -453,6 +453,18 @@ class ThinkingEngine:
         skills_prompt = ui_settings.get("skills_prompt", "")
         if skills_prompt:
             prompt += "\n\n# Skills configuration\n" + skills_prompt.strip()
+        # 统一人格块（自我人格/此刻/习惯/情绪/目标）：放在所有提示之后，
+        # 保证不被前面的 skills / personality 文本覆盖。
+        try:
+            try:
+                from core.persona import persona_block
+            except ImportError:
+                from persona import persona_block
+            _persona_text = persona_block("agent", getattr(self, "memory", None))
+            if _persona_text and "【Aize 的自我人格】" not in prompt:
+                prompt = prompt + "\n\n" + _persona_text
+        except Exception as e:
+            logger.warning(f"Failed to append persona block: {e}")
         return prompt
 
     def _build_model_prompt(self, main_prompt, memory, user_question, gan_prompt="", other_prompts=None, tail=None):
@@ -1476,7 +1488,7 @@ class ThinkingEngine:
         logger.info("Handling break_silence task")
         
         # 使用更友好的break silence提示词
-        friendly_prompt = self._build_friendly_break_silence_prompt(prompt)
+        friendly_prompt = self._build_friendly_break_silence_prompt(prompt, memory)
         
         reply, adaptation = generate_with_emotion_feedback(friendly_prompt, emotion_monitor)
         logger.info(f"Break silence reply: {reply[:200] if reply else 'Empty'}")
@@ -1512,9 +1524,21 @@ class ThinkingEngine:
         else:
             logger.info("Break silence reply was filtered out, not sending")
     
-    def _build_friendly_break_silence_prompt(self, base_prompt):
-        """构建更友好的打破沉默提示词（从统一的提示词文件获取）"""
-        return get_break_silence_prompt(base_prompt)
+    def _build_friendly_break_silence_prompt(self, base_prompt, memory=None):
+        """构建更友好的打破沉默提示词（从统一的提示词文件获取）。
+
+        主动说话同样要带 Aize 自我人格：用户自定义提示词在前、人格在后。
+        """
+        prompt = get_break_silence_prompt(base_prompt)
+        try:
+            try:
+                from core.persona import compose_prompt_with_persona
+            except ImportError:
+                from persona import compose_prompt_with_persona
+            return compose_prompt_with_persona(prompt, "autonomous", memory)
+        except Exception as e:
+            logger.warning(f"Failed to append persona to break silence prompt: {e}")
+            return prompt
     
     @staticmethod
     def _filter_think_token(token, st):

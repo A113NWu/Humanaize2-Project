@@ -5,6 +5,30 @@ import sys
 # Add core directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# 项目根（src/core/ui/idle.py 上溯四级）：skills/ 位于项目根
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+try:
+    from core.persona import (
+        persona_block,
+        save_self_persona,
+        build_persona_growth_prompt,
+        build_emotion_study_prompt,
+        learn_emotion,
+        should_learn,
+        mark_learned,
+    )
+except ImportError:
+    from persona import (
+        persona_block,
+        save_self_persona,
+        build_persona_growth_prompt,
+        build_emotion_study_prompt,
+        learn_emotion,
+        should_learn,
+        mark_learned,
+    )
+
 from tools.gan_iteration import GANIteration
 from tools.self_optimizer import get_optimizer
 from memory import add_thought, save_memory
@@ -115,7 +139,11 @@ class IdleEngine:
                     "thought": f"[Idle Activity] Aize chooses: {activity}"
                 })
             
-            if activity == "3. 自己思考" and thinking_topic:
+            if any(k in activity for k in ("情感", "情绪", "人格", "目标")):
+                # 自我学习类活动：走内部学习，不要当成「找用户说话」发到聊天界面
+                kind = "persona" if ("人格" in activity or "目标" in activity) else "emotion"
+                self._do_self_learning(kind)
+            elif activity == "3. 自己思考" and thinking_topic:
                 # Step 2: GAN debates around the chosen topic
                 if self.callback:
                     self.callback({
@@ -194,6 +222,13 @@ class IdleEngine:
         from core.data.prompts_manager import load_prompt
         
         prompt = load_prompt("idle_activity_choice")
+        # 空闲活动选择同样要带 Aize 自我人格（用户自定义提示词在前、人格在后）
+        try:
+            _persona_text = persona_block("idle", self.memory)
+            if _persona_text:
+                prompt = prompt + "\n\n" + _persona_text
+        except Exception:
+            pass
         
         try:
             response = chat(prompt).strip()
@@ -216,7 +251,155 @@ class IdleEngine:
             return activity, topic
         except Exception as e:
             return "3. 自己思考", "日常思考"
-    
+
+    def _do_self_learning(self, kind):
+        """空闲自学：直接两次 LLM 调用，不走 function-calling 工具循环。
+
+        kind="persona"：联网摘要 + 聊天记录 → 生成新的自我人格全文并保存；
+        kind="emotion"：让模型输出情绪 JSON 数组 → 逐条写入情绪词库。
+        频率限制：persona 至少 6 小时一次，emotion 至少 2 小时一次。
+        任何异常都只记录思考日志，绝不让空闲线程崩。
+        """
+        def _thought(msg):
+            if self.callback:
+                try:
+                    self.callback({"type": "internal_thought", "thought": msg})
+                except Exception:
+                    pass
+
+        try:
+            from llm import chat
+        except Exception as e:
+            _thought(f"[Self-Learning] LLM 不可用，跳过：{e}")
+            return
+
+        kind = str(kind or "").strip().lower()
+        interval = 6 * 3600 if kind == "persona" else 2 * 3600
+        try:
+            if not should_learn(kind, interval):
+                hours = int(interval // 3600)
+                _thought(f"[Self-Learning] 距上次{kind}学习不足 {hours} 小时，本次跳过")
+                return
+        except Exception as e:
+            _thought(f"[Self-Learning] 检查学习间隔失败：{e}")
+            return
+
+        try:
+            if kind == "persona":
+                digest = self._persona_web_digest()
+                prompt = build_persona_growth_prompt(self.memory, digest)
+                text = (chat(prompt, max_tokens=1200, timeout=120) or "").strip()
+                if not text:
+                    _thought("[Self-Learning] 人格生成结果为空，本次不保存")
+                    return
+                save_self_persona(text)
+                try:
+                    mark_learned("persona")
+                except Exception:
+                    pass
+                _thought("[Self-Learning] Aize 更新了自我人格：" + text[:120].replace("\n", " "))
+            elif kind == "emotion":
+                raw = (chat(build_emotion_study_prompt(), max_tokens=600, timeout=120) or "").strip()
+                parsed = self._parse_emotion_study(raw)
+                if not parsed:
+                    _thought("[Self-Learning] 情绪 JSON 解析失败，本次跳过")
+                    return
+                added = 0
+                for item in parsed:
+                    emotion = str(item.get("emotion") or "").strip()
+                    cues = item.get("cues") or []
+                    expressions = item.get("expressions") or []
+                    text = ""
+                    if isinstance(expressions, list) and expressions:
+                        text = str(expressions[0]).strip()
+                    if not text and isinstance(cues, list) and cues:
+                        text = "、".join(str(c).strip() for c in cues if str(c).strip())
+                    if emotion and text:
+                        try:
+                            if learn_emotion(text, emotion, note="空闲自学"):
+                                added += 1
+                        except Exception:
+                            pass
+                if added:
+                    _thought(f"[Self-Learning] 情绪词库新增 {added} 条")
+                else:
+                    _thought("[Self-Learning] 没有新增有效情绪条目（可能都已存在）")
+                try:
+                    mark_learned("emotion")
+                except Exception:
+                    pass
+            else:
+                _thought(f"[Self-Learning] 未知学习类型：{kind}")
+        except Exception as e:
+            _thought(f"[Self-Learning] {kind} 学习失败：{e}")
+
+    @staticmethod
+    def _parse_emotion_study(raw):
+        """从模型输出中提取 JSON 数组；解析失败返回空列表。"""
+        import json as _json
+        import re as _re
+        m = _re.search(r"\[.*\]", (raw or "").strip(), _re.DOTALL)
+        if not m:
+            return []
+        try:
+            data = _json.loads(m.group(0))
+        except Exception:
+            return []
+        if not isinstance(data, list):
+            return []
+        return [item for item in data if isinstance(item, dict)]
+
+    def _persona_web_digest(self):
+        """尝试联网取一段摘要；任何失败都返回空串。"""
+        mod = self._load_web_search_module()
+        if mod is None:
+            return ""
+        query = "近期社会话题 人类情感 生活"
+        res = {}
+        for payload in ({"query": query}, {"action": "search", "query": query}):
+            try:
+                res = mod.execute(payload)
+                if isinstance(res, dict) and res.get("success"):
+                    break
+            except Exception:
+                res = {}
+        if not isinstance(res, dict) or not res.get("success"):
+            return ""
+        lines = []
+        for item in (res.get("results") or [])[:5]:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or "").strip()
+            snippet = str(item.get("snippet") or item.get("body") or "").strip()
+            if title or snippet:
+                lines.append(f"- {title}：{snippet[:120]}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _load_web_search_module():
+        """按文件路径隔离载入 skills/web-search（兼容 dev 与打包态）。"""
+        import importlib.util
+        import sys as _sys
+        candidates = []
+        meipass = getattr(_sys, "_MEIPASS", None)
+        if meipass:
+            candidates.append(os.path.join(meipass, "skills", "web-search", "__init__.py"))
+        if getattr(_sys, "frozen", False):
+            candidates.append(os.path.join(
+                os.path.dirname(_sys.executable), "skills", "web-search", "__init__.py"))
+        candidates.append(os.path.join(_PROJECT_ROOT, "skills", "web-search", "__init__.py"))
+        for init in candidates:
+            if not os.path.exists(init):
+                continue
+            try:
+                spec = importlib.util.spec_from_file_location("skills_web_search", init)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                return mod
+            except Exception:
+                continue
+        return None
+
     def _run_self_optimization(self):
         """Run AI self-optimization during GAN idle time"""
         if not self.optimizer.should_optimize():

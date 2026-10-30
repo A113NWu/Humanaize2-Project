@@ -3,7 +3,20 @@ import threading
 import time
 import re
 import random
+import collections
 from typing import Optional
+
+try:
+    from core.persona import habit_status, suppression_until
+except ImportError:
+    try:
+        from persona import habit_status, suppression_until
+    except ImportError:
+        habit_status = None
+        suppression_until = None
+
+# 同一进程内最近 8 条主动开场白，避免反复说同一句
+_RECENT_OUTPUTS = collections.deque(maxlen=8)
 
 # 自主行动类型
 ACTION_TYPES = {
@@ -22,6 +35,13 @@ def check_silence_and_decide(memory, threshold_seconds=60):
     如果使用者长时间未回复，则返回一个自主思考建议。
     基于记忆做出决策，不依赖固定性格特征。
     """
+    # 主人说过「我要上课了」之类：在预计回来时间（+10 分钟宽限）之前不打扰
+    try:
+        if suppression_until is not None and suppression_until():
+            return None
+    except Exception:
+        pass
+
     if not memory.get("messages"):
         return None
 
@@ -52,8 +72,18 @@ def check_silence_and_decide(memory, threshold_seconds=60):
         "action": action_type,
         "message": ACTION_TYPES.get(action_type, "AI正在思考下一步行动"),
         "confidence": _calculate_confidence(memory, elapsed),
-        "elapsed_seconds": elapsed
+        "elapsed_seconds": elapsed,
+        "habit": _habit_snapshot(),
+        "now": datetime.now().isoformat(),
     }
+
+
+def _habit_snapshot():
+    """习惯快照（awaiting / patterns），失败返回 None。"""
+    try:
+        return habit_status() if habit_status is not None else None
+    except Exception:
+        return None
 
 
 def _decide_action_type(memory):
@@ -128,43 +158,92 @@ def _recent_dialogue(memory, n=10):
 
 
 def generate_autonomous_message(memory, name="Aize"):
-    """生成自主消息内容"""
-    messages = memory.get("messages", [])
+    """生成自主消息内容：以开启新话题为目的，避免重复最近说过的话。"""
+    messages = (memory or {}).get("messages", [])
 
     # 获取最近的对话主题
     recent_topics = _extract_topics(messages)
+    # 最近 10 条自己说过的话：作为「请换新话题」的提醒
+    recent_self = _recent_assistant_lines(memory, 10)
+
+    new_topic_prompts = [
+        "最近让你觉得有意思的一件小事",
+        "如果你现在能立刻去一个地方，会去哪里",
+        "小时候最想成为什么样的人",
+        "最近有什么让你好奇但还没弄明白的事",
+        "如果明天突然放假，你会怎么过",
+        "你最近吃到的最好吃的东西",
+    ]
 
     # 根据对话状态生成消息
     if not messages:
         # 初次对话
-        greetings = [
-            f"嗨~ 我是{name}！有什么我可以帮你的吗？",
-            f"你好呀！我是{name}，很高兴认识你~ 今天想聊点什么呢？",
-            f"哈喽！我是{name}，随时为你效劳！有什么想聊的吗？"
+        candidates = [
+            f"嗨，我是{name}。想聊点新鲜的：{random.choice(new_topic_prompts)}？",
+            f"你好呀，我是{name}。我们从没聊过——{random.choice(new_topic_prompts)}，你怎么看？",
+            f"我是{name}。不聊客套话，想听听你对「{random.choice(new_topic_prompts)}」的想法。",
         ]
-        return random.choice(greetings)
-
     elif len(messages) <= 3:
         # 对话刚开始
-        questions = [
-            "我们刚刚聊到哪儿了？或者你有什么特别想聊的话题吗？",
-            "对了，你平时有什么兴趣爱好吗？",
-            "最近有什么有趣的事情发生吗？"
+        candidates = [
+            f"我们刚认识不久，换个新话题吧：{random.choice(new_topic_prompts)}。",
+            f"我想多了解你一点：{random.choice(new_topic_prompts)}，愿意说说吗？",
+            f"突然想到一个问题：{random.choice(new_topic_prompts)}，你的答案是什么？",
         ]
-        return random.choice(questions)
-
     else:
-        # 对话进行中
-        if recent_topics:
-            topic = random.choice(recent_topics)
-            follow_up_options = [
-                f"说到{topic}，我突然想到一个问题...",
-                f"关于{topic}，你有什么特别的见解吗？",
-                f"如果我们深入聊聊{topic}，你觉得怎么样？"
-            ]
-            return random.choice(follow_up_options)
-        else:
-            return f"{name}在思考呢... 你有什么想法吗？"
+        # 对话进行中：从旧话题之外找个新角度
+        topic = random.choice(recent_topics) if recent_topics else random.choice(new_topic_prompts)
+        candidates = [
+            f"刚才聊的都过去了，我想开启一个新话题：{topic}。",
+            f"关于{topic}，我脑子里冒出一个新角度，想和你聊聊。",
+            f"我们还没认真聊过{topic}，要不要现在说说？",
+            f"换个方向：{random.choice(new_topic_prompts)}，我挺好奇你的看法。",
+            f"我突然想问你一个和之前不一样的问题：{random.choice(new_topic_prompts)}。",
+        ]
+
+    message = _pick_new_message(candidates)
+    if recent_self:
+        message += ("\n\n【最近你说过（请换个新话题，不要重复）】\n" +
+                    "\n".join("- " + t for t in recent_self))
+    return message
+
+
+def _clean_short(text, limit=120):
+    """清理回复文本（去掉 RESPONSE 前缀与动作标签），用于去重参考。"""
+    text = str(text or "").strip()
+    if "RESPONSE:" in text:
+        text = text.split("RESPONSE:", 1)[1].strip()
+    text = re.sub(r"\[\s*motion\s*:[^\]]*\]", "", text, flags=re.I).strip()
+    return text[:limit]
+
+
+def _recent_assistant_lines(memory, n=10):
+    """取最近 n 条 assistant 文案（时间正序），供自主开场白避免重复。"""
+    texts = []
+    for msg in reversed((memory or {}).get("messages", [])):
+        if not isinstance(msg, dict) or msg.get("role") != "assistant":
+            continue
+        text = _clean_short(msg.get("content"), 80)
+        if text:
+            texts.append(text)
+        if len(texts) >= n:
+            break
+    return list(reversed(texts))
+
+
+def _pick_new_message(candidates):
+    """从候选开场白中挑一条最近 8 条里没说过的，避免重复。"""
+    pool = list(candidates or [])
+    if not pool:
+        return "我在想点自己的事情，你有空的话我们可以聊聊。"
+    random.shuffle(pool)
+    for item in pool:
+        if item not in _RECENT_OUTPUTS:
+            _RECENT_OUTPUTS.append(item)
+            return item
+    chosen = pool[0]
+    _RECENT_OUTPUTS.append(chosen)
+    return chosen
 
 
 def _extract_topics(messages, num_topics=3):
