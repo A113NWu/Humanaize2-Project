@@ -120,7 +120,12 @@ def load_prompt(prompt_name: str) -> str:
         filepath = os.path.join(directory, filename)
         try:
             with open(filepath, "r", encoding="utf-8") as f:
-                return f.read().strip()
+                content = f.read()
+            # 去掉首行的 @@PROMPT_VER:N@@ 版本标记（仅供种植时比较版本）
+            lines = content.splitlines()
+            if lines and lines[0].strip().startswith("@@PROMPT_VER:"):
+                content = "\n".join(lines[1:])
+            return content.strip()
         except OSError:
             continue
         except Exception as e:
