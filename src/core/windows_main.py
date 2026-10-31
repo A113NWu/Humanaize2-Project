@@ -315,6 +315,50 @@ def main():
         gan_enabled=_read_gan_enabled(),
     )
 
+    # 打破沉默（主動開口）看門狗：網頁模式的閒置引擎只在 GAN 隨機選到
+    # 「找用戶說話」時才會開口，命中率低且被 GAN 拖得很慢，實際表現就是
+    # 長期很安靜。這裡用輕量線程按「距上次用戶消息」判斷，決策後直接排
+    # break_silence 任務，結果經事件匯流排推到網頁/手機。
+    def _start_silence_watcher():
+        import threading
+        import time as _time
+        import autonomous as _auto
+
+        last_speak = {"t": 0.0}
+
+        def _loop():
+            while True:
+                try:
+                    _time.sleep(10)
+                    # 10 分鐘內主動過一次就不再重複，避免刷屏
+                    if _time.time() - last_speak["t"] < 600:
+                        continue
+                    res = _auto.check_silence_and_decide(memory, 600)
+                    if not res:
+                        continue
+                    msgs = (memory or {}).get("messages", [])[-8:]
+                    ctx = "最近對話:"
+                    for m in msgs:
+                        ctx += f"\n{m.get('role', '').capitalize()}: {str(m.get('content', ''))[:100]}"
+                    recent = [str(m.get("content", ""))[:80] for m in msgs
+                              if m.get("role") == "assistant"][-6:]
+                    recent_self = "\n".join(f"- {t}" for t in recent) or "（暫無）"
+                    prompt = (
+                        f"{ctx}\n\n【最近你說過的話】\n{recent_self}\n\n"
+                        f"【此刻的念頭】{res.get('message', '')}\n\n"
+                        "主人已經一段時間沒說話了。現在主動開口，以開啟一個新話題為目的，"
+                        "不要重複上面說過的句子，也不要每次都問同一類問題；一兩句話即可。"
+                    )
+                    thinking_engine.queue_break_silence_task(prompt, memory=memory)
+                    last_speak["t"] = _time.time()
+                    print(f"[INFO] 主動開口已排隊: {res.get('action')}")
+                except Exception as e:
+                    print(f"[WARN] silence watcher: {e}")
+
+        threading.Thread(target=_loop, daemon=True, name="silence-watcher").start()
+
+    _start_silence_watcher()
+
     dashboard_url = f"http://{server.host}:{server.port}/"
     print(f"[INFO] Browser dashboard started: {dashboard_url}")
     if not tray_only:

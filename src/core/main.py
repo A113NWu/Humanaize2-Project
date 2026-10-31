@@ -1006,6 +1006,80 @@ def boot_cli():
     cli.run()
 
 
+def _start_autonomous_background(memory, thinking_engine):
+    """網頁模式的背景引擎：閒置 GAN 思考 + 打破沉默主動開口。
+
+    過去 boot_web_dashboard 只有 API server，IdleEngine/Autonomous 從未啟動，
+    所以網頁端既看不到背景思考，也收不到 Aize 的主動消息。
+    """
+    import json
+    import threading
+    import time
+
+    from ui.idle import IdleEngine
+    from memory import add_thought, save_memory
+    from thinking_engine_api import publish_engine_event, classify_idle_thought_type
+
+    try:
+        from app_paths import get_settings_path
+        with open(get_settings_path(), "r", encoding="utf-8") as f:
+            gan_enabled = bool(json.load(f).get("gan_enabled", True))
+    except Exception:
+        gan_enabled = True
+
+    def _idle_cb(resp):
+        try:
+            publish_engine_event(resp)
+            if isinstance(resp, dict) and resp.get("type") == "internal_thought":
+                thought = resp.get("thought", "") or ""
+                # GAN 子步驟（帶 original_event）只作臨時日誌，不落盤
+                if thought and "original_event" not in resp:
+                    add_thought(
+                        memory, thought,
+                        thought_type=classify_idle_thought_type(
+                            thought, resp.get("thought_type", "")))
+                    save_memory(memory)
+        except Exception as e:
+            print(f"[WARN] idle event callback failed: {e}")
+
+    IdleEngine(memory, _idle_cb, idle_interval=300, gan_enabled=gan_enabled)
+    print("[INFO] IdleEngine started")
+
+    last_speak = {"t": 0.0}
+
+    def _silence_loop():
+        import autonomous as _auto
+        while True:
+            try:
+                time.sleep(10)
+                # 10 分鐘冷卻，避免連續刷屏
+                if time.time() - last_speak["t"] < 600:
+                    continue
+                res = _auto.check_silence_and_decide(memory, 600)
+                if not res:
+                    continue
+                msgs = (memory or {}).get("messages", [])[-8:]
+                ctx = "最近對話:"
+                for m in msgs:
+                    ctx += f"\n{m.get('role', '').capitalize()}: {str(m.get('content', ''))[:100]}"
+                recent = [str(m.get("content", ""))[:80] for m in msgs
+                          if m.get("role") == "assistant"][-6:]
+                recent_self = "\n".join(f"- {t}" for t in recent) or "（暫無）"
+                prompt = (
+                    f"{ctx}\n\n【最近你說過的話】\n{recent_self}\n\n"
+                    f"【此刻的念頭】{res.get('message', '')}\n\n"
+                    "主人已經一段時間沒說話了。現在主動開口，以開啟一個新話題為目的，"
+                    "不要重複上面說過的句子，也不要每次都問同一類問題；一兩句話即可。"
+                )
+                thinking_engine.queue_break_silence_task(prompt, memory=memory)
+                last_speak["t"] = time.time()
+                print(f"[INFO] 主動開口已排隊: {res.get('action')}")
+            except Exception as e:
+                print(f"[WARN] silence watcher: {e}")
+
+    threading.Thread(target=_silence_loop, daemon=True, name="silence-watcher").start()
+
+
 def boot_web_dashboard():
     """启动本地服务并打开浏览器管理面板。"""
     _check_and_start_server()
@@ -1032,6 +1106,10 @@ def boot_web_dashboard():
     state.set_personality(personality)
     # 綁定 0.0.0.0：局域網訪問由請求級門禁控制（設置→安全性，默認拒絕），開關熱生效
     server = start_api_server(host="0.0.0.0", port=8082)
+    try:
+        _start_autonomous_background(memory, thinking_engine)
+    except Exception as e:
+        print(f"[WARN] background engines failed: {e}")
     dashboard_url = f"http://127.0.0.1:{server.port}/"
     print(f"[INFO] Browser dashboard started: {dashboard_url}")
     try:
