@@ -72,6 +72,9 @@ class ThinkingEngine:
         self.on_response = on_response_callback
         self.queue = queue.Queue()
         self.running = True
+        # 當前正在處理的任務類型（None = 空閒）：用於「用戶插話時該先做完還是立刻回答」的決策
+        self._active_task_type = None
+        self._active_task_started = 0.0
         self.latest_gan_result = None
         self.thread = threading.Thread(target=self._process, daemon=True)
         self.thread.start()
@@ -564,6 +567,8 @@ class ThinkingEngine:
                 break
             
             task_type = task.get("type", "chat")
+            self._active_task_type = task_type
+            self._active_task_started = time.time()
             prompt = task.get("prompt", "")
             memory = task.get("memory")
             emotion_monitor = task.get("emotion_monitor")
@@ -596,6 +601,7 @@ class ThinkingEngine:
                     # 普通聊天任务
                     self._handle_chat_task(prompt, memory, emotion_monitor, exec_instr)
             finally:
+                self._active_task_type = None
                 # 通知收集器任務真正結束。閉環 followup 的 LLM 生成耗時遠超
                 # 靜默判斷閾值，不能靠「一段時間沒有輸出」推測任務完成，
                 # 必須由 worker 顯式發出結束信號，否則回覆會被截斷。
@@ -2097,6 +2103,10 @@ class ThinkingEngine:
     def queue_break_silence_task(self, prompt, memory=None, emotion_monitor=None, personality=None):
         """队列打破沉默任务 - AI主动对用户说话"""
         self.queue.put({"type": "break_silence", "prompt": prompt, "memory": memory, "emotion_monitor": emotion_monitor, "personality": personality})
+
+    def is_busy(self):
+        """正在處理的任務類型；空閒時返回 None。"""
+        return self._active_task_type or None
 
     def queue_gan_task(self, is_user_topic=False, user_topic=None, memory=None):
         """Queue a GAN debate task - internal thinking only."""

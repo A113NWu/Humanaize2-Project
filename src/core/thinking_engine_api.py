@@ -544,6 +544,42 @@ def build_context_from_memory(memory, max_messages=20):
     return context
 
 
+_BUSY_LABELS = {
+    "break_silence": "正在主動找你聊天",
+    "reflection": "正在自我反思",
+    "gan": "正在內部推演",
+    "chat": "正在回覆上一條消息",
+    "chat_with_gan_decision": "正在回覆上一條消息",
+    "chat_stream": "正在回覆上一條消息",
+}
+
+
+def _decide_busy_reply(user_text, busy_kind):
+    """用戶在 Aize 忙於自主任務時插話：由她決定「先做完再說」還是「立刻回答」。
+
+    返回 (choice, reason)，choice 為 "finish_first" 或 "answer_now"。
+    決策失敗時默認立刻回答，保證用戶不會被卡住。
+    """
+    prompt = (
+        "你是 Aize。你現在" + _BUSY_LABELS.get(busy_kind, f"正在處理 {busy_kind}") + "，"
+        f"這時主人發來一條新消息：{user_text}\n\n"
+        "你要决定怎麼做：\n"
+        "A. finish_first —— 先把眼前的事做完，之後再以「主動找主人說話」的方式回覆這條消息；\n"
+        "B. answer_now —— 立刻放下手上的事，直接回覆主人。\n"
+        "只輸出 JSON：{\"choice\":\"finish_first\"或\"answer_now\",\"reason\":\"一句話理由\"}"
+    )
+    try:
+        from llm import chat as _llm_chat
+        reply = _llm_chat(prompt, max_tokens=120, temperature=0.1,
+                          timeout=25, max_retries=1)
+        if "finish_first" in (reply or "").lower():
+            return "finish_first", (reply or "").strip()
+        return "answer_now", (reply or "").strip()
+    except Exception as e:
+        logger.warning(f"[Chat] busy-decision failed, answering now: {e}")
+        return "answer_now", f"decision error: {e}"
+
+
 class ResponseCollector:
     """响应收集器 - 收集ThinkingEngine的回调响应
     支持流式和同步两种模式，在最后一个块后等待一段时间没有新消息则认为任务完成"""
@@ -2857,6 +2893,43 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             f"memory_available={bool(memory)} personality_available={bool(personality)} stream={stream}"
         )
 
+        # 用戶在她忙於自主任務（主動開口/反思等）時插話：
+        # 由 Aize 自己決定「先做完再說」還是「立刻回答」。
+        # 選「先做完」時立刻回 ACK 並關閉本輪 SSE，避免手機端一直卡在加載；
+        # 真正回覆走 break_silence 通道，作為主動消息推送。
+        _busy_kind = None
+        try:
+            _busy_kind = thinking_engine.is_busy()
+        except Exception:
+            _busy_kind = None
+        if _busy_kind and _busy_kind not in ("chat", "chat_stream", "chat_with_gan_decision") and user_text:
+            _choice, _reason = _decide_busy_reply(user_text, _busy_kind)
+            if _choice == "finish_first":
+                logger.info(f"[Chat] busy({_busy_kind}) -> finish_first: {str(_reason)[:120]}")
+                try:
+                    if memory is not None:
+                        from memory import add as _mem_add2, save_memory as _mem_save2
+                        _mem_add2(memory, "user", user_text, source="user")
+                        _mem_save2(memory)
+                except Exception as e:
+                    logger.warning(f"[Chat] busy persist failed: {e}")
+                try:
+                    # 只記下主人的話，不回任何提示；回覆留給之後的主動消息
+                    _timeline_add_turn(user_text, [])
+                except Exception:
+                    pass
+                # 當前任務完成後，接上主人的話主動回覆
+                thinking_engine.queue_break_silence_task(
+                    f"主人剛才說：{user_text}\n"
+                    "你當時正忙，現在任務已完成，"
+                    "主動接上這條消息，直接回覆主人，一兩句話。",
+                    memory=memory)
+                if stream:
+                    self._send_empty_stream()
+                else:
+                    self._send_empty_json()
+                return
+
         # 單 worker 串行：上一個聊天還在生成時直接禮貌拒絕，避免 collector 互相頂替
         if not self._chat_lock.acquire(blocking=False):
             logger.warning("[Chat] rejected: another chat task is still being processed")
@@ -3126,6 +3199,35 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                     "finish_reason": "stop"
                 }
             ],
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        })
+
+    def _send_empty_stream(self):
+        """靜默結束本輪（Aize 先忙手頭的事，稍後以主動消息回覆）。"""
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/event-stream; charset=utf-8')
+        self.send_header('Cache-Control', 'no-cache')
+        self.send_header('Connection', 'close')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        try:
+            self.wfile.write(b"data: [DONE]\n\n")
+            self.wfile.flush()
+        except BrokenPipeError:
+            pass
+
+    def _send_empty_json(self):
+        """靜默結束本輪（同步版）。"""
+        self._send_json({
+            "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": "thinking-engine",
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": ""},
+                "finish_reason": "stop"
+            }],
             "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         })
 
