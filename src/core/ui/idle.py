@@ -274,7 +274,7 @@ class IdleEngine:
             return
 
         kind = str(kind or "").strip().lower()
-        interval = 6 * 3600 if kind == "persona" else 2 * 3600
+        interval = 3 * 3600 if kind == "persona" else 1 * 3600
         try:
             if not should_learn(kind, interval):
                 hours = int(interval // 3600)
