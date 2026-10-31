@@ -60,6 +60,20 @@ def add(mem, role, content, source=None):
             capture_message(role, content)
         except Exception:
             pass
+    # 短期記憶：Aize 回完一輪後，把「該輪用戶輸入 + 她的回覆」放進 10 分鐘窗口，
+    # 期內由 Aize 自己決定是否寫入長期記憶（記憶/經驗/情感三庫）
+    if role == "assistant" and source in (None, "ai_response"):
+        try:
+            prev_user = ""
+            for item in reversed(mem.get("messages", [])[:-1]):
+                if item.get("source") == "user":
+                    prev_user = item.get("content", "")
+                    break
+            if prev_user.strip():
+                from .short_term import record_turn as _record_short_term
+                _record_short_term(prev_user, content)
+        except Exception:
+            pass
     return mem  # 返回更新后的memory对象
 
 def add_message(mem, role, content):

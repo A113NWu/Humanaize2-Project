@@ -513,6 +513,34 @@ def build_context_from_memory(memory, max_messages=20):
             context += f"\n[Aize回复] {content}"
         else:
             context += f"\n{role}: {content}"
+
+    # 長期記憶檢索（按最近一句用戶輸入）
+    query = ""
+    for msg in reversed(messages):
+        if msg.get("source") == "user":
+            query = msg.get("content", "")
+            break
+    if query:
+        for importer, getter in (
+            ("tools.memory_db", "get_memory_db"),
+            ("tools.experience_db", "get_experience_db"),
+            ("tools.emotion_db", "get_emotion_db"),
+        ):
+            try:
+                module = __import__(importer, fromlist=[getter])
+                block = getattr(module, getter)().format_for_prompt(query)
+                if block:
+                    context += "\n" + block
+            except Exception:
+                pass
+    # 短期記憶（10 分鐘窗口）
+    try:
+        from memory.short_term import format_for_prompt as _st_block
+        block = _st_block()
+        if block:
+            context += "\n" + block
+    except Exception:
+        pass
     return context
 
 
