@@ -1024,40 +1024,10 @@ class _AutonomousAdapter:
     
     def _run(self):
         """运行自主引擎"""
+        # 主動開口已改由閒置引擎按「找用戶說話」的正常邏輯觸發，
+        # 這裡不再按時間強制催她說話。
         while self._running:
             time.sleep(1)
-            if not self.auto_break_silence:
-                continue
-            
-            elapsed = time.time() - self._last_message_time
-            # 主動開口後至少隔 5 分鐘，避免 60 秒一次刷屏
-            since_speak = time.time() - getattr(self, "_last_auto_speak", 0.0)
-            if elapsed > 60 and since_speak > 300:  # 60秒无活动
-                try:
-                    import autonomous as _auto_mod
-                    _check_silence = getattr(_auto_mod, "check_silence_and_decide", None)
-                    result = _check_silence(self.memory, 60) if _check_silence else None
-                    if result:
-                        # 任何非空決策都代表「該主動開口」。
-                        # 舊版只認 AUTO_THINK，而 _decide_action_type 實際只回
-                        # INITIATE_TOPIC/FOLLOW_UP/... 等類型，導致永遠不會主動說話。
-                        self.on_auto_speak(result.get("message", "AI正在思考..."))
-                        # 触发思考：以开启新话题为目的，并避免重复最近说过的话
-                        context = self._build_context()
-                        recent = [m.get("content", "") for m in (self.memory or {}).get("messages", [])
-                                  if m.get("role") == "assistant"][-6:]
-                        recent_self = "\n".join(f"- {str(t)[:80]}" for t in recent) or "（暂无）"
-                        prompt = (f"{context}\n\n【最近你说过的话】\n{recent_self}\n\n"
-                                  f"【此刻的念头】{result.get('message', '')}\n\n"
-                                  "主人已经一段时间没说话了。现在主动开口，以开启一个新话题为目的，"
-                                  "不要重复上面说过的句子，也不要每次都问同一类问题；一两句话即可。")
-                        # 走「打破沉默」通道：生成结果会以 autonomous 事件推送，
-                        # 網頁/手機才能看到並彈通知，而不是只寫進桌面聊天窗
-                        self.thinking_engine.queue_break_silence_task(prompt, memory=self.memory)
-                        self._last_message_time = time.time()
-                        self._last_auto_speak = time.time()
-                except Exception:
-                    pass
 
 
 def main():

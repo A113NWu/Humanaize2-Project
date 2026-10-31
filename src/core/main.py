@@ -1013,8 +1013,6 @@ def _start_autonomous_background(memory, thinking_engine):
     所以網頁端既看不到背景思考，也收不到 Aize 的主動消息。
     """
     import json
-    import threading
-    import time
 
     from ui.idle import IdleEngine
     from memory import add_thought, save_memory
@@ -1044,40 +1042,6 @@ def _start_autonomous_background(memory, thinking_engine):
 
     IdleEngine(memory, _idle_cb, idle_interval=300, gan_enabled=gan_enabled)
     print("[INFO] IdleEngine started")
-
-    last_speak = {"t": 0.0}
-
-    def _silence_loop():
-        import autonomous as _auto
-        while True:
-            try:
-                time.sleep(10)
-                # 10 分鐘冷卻，避免連續刷屏
-                if time.time() - last_speak["t"] < 600:
-                    continue
-                res = _auto.check_silence_and_decide(memory, 600)
-                if not res:
-                    continue
-                msgs = (memory or {}).get("messages", [])[-8:]
-                ctx = "最近對話:"
-                for m in msgs:
-                    ctx += f"\n{m.get('role', '').capitalize()}: {str(m.get('content', ''))[:100]}"
-                recent = [str(m.get("content", ""))[:80] for m in msgs
-                          if m.get("role") == "assistant"][-6:]
-                recent_self = "\n".join(f"- {t}" for t in recent) or "（暫無）"
-                prompt = (
-                    f"{ctx}\n\n【最近你說過的話】\n{recent_self}\n\n"
-                    f"【此刻的念頭】{res.get('message', '')}\n\n"
-                    "主人已經一段時間沒說話了。現在主動開口，以開啟一個新話題為目的，"
-                    "不要重複上面說過的句子，也不要每次都問同一類問題；一兩句話即可。"
-                )
-                thinking_engine.queue_break_silence_task(prompt, memory=memory)
-                last_speak["t"] = time.time()
-                print(f"[INFO] 主動開口已排隊: {res.get('action')}")
-            except Exception as e:
-                print(f"[WARN] silence watcher: {e}")
-
-    threading.Thread(target=_silence_loop, daemon=True, name="silence-watcher").start()
 
 
 def boot_web_dashboard():
