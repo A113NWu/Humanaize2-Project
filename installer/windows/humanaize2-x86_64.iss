@@ -3,7 +3,7 @@
 ; 版本號可由構建腳本覆蓋：ISCC /DAppVersion=2.3.14
 
 #ifndef AppVersion
-  #define AppVersion "2.4.0"
+  #define AppVersion "2.4.1"
 #endif
 
 [Setup]
@@ -54,10 +54,10 @@ Source: "installer\windows\humanaize2.cmd"; DestDir: "{app}"; Flags: ignoreversi
 ; bot.js 鎖定，曾導致靜默安裝中止回滾），保持安裝包體積合理。
 ; noregerror：個別文件被占用時跳過而非中止整個安裝。
 ; 只包含真正的技能目录；Tulpa-MCP-* 等第三方工具目录不随包分发
-Source: "skills\*"; DestDir: "{app}\skills"; Excludes: "venv\*,mc-bot\node_modules\*,mc-bot\models\*,mc-bot\vendor\*,mc-bot\logs\*,Tulpa-MCP-*\*"; Flags: ignoreversion recursesubdirs createallsubdirs noregerror
+Source: "skills\*"; DestDir: "{app}\skills"; Excludes: "venv\*,mc-bot\node_modules\*,mc-bot\models\*,mc-bot\vendor\*,mc-bot\logs\*,Tulpa-MCP-*\*,qq-group-chat\state\*"; Flags: ignoreversion recursesubdirs createallsubdirs noregerror
 ; 配置與運行時資料
 Source: "config\version.json"; DestDir: "{app}\config"; Flags: ignoreversion
-Source: "data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs noregerror
+Source: "data\*"; DestDir: "{app}\data"; Excludes: "media\*,uploads\*,logs\*,temp\*"; Flags: ignoreversion recursesubdirs createallsubdirs noregerror
 ; 網頁資源（虛擬攝像頭背景等，統一使用 Assets 目錄）
 Source: "Assets\*"; DestDir: "{app}\Assets"; Flags: ignoreversion recursesubdirs createallsubdirs noregerror
 ; 文檔

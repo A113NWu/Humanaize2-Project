@@ -33,6 +33,9 @@ def execute(input_data: Any) -> Dict:
             "content": ""
         }
 
+    # 模型常寫 %TEMP%、~ 這類路徑：先展開成真實路徑
+    file_path = os.path.expandvars(os.path.expanduser(str(file_path).strip()))
+
     if not os.path.exists(file_path):
         return {
             "success": False,

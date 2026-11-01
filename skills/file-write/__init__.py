@@ -43,6 +43,9 @@ def execute(input_data: Any) -> Dict:
             "error": "No file path provided"
         }
 
+    # 模型常寫 %TEMP%、~ 這類路徑：先展開成真實路徑再開檔
+    file_path = os.path.expandvars(os.path.expanduser(str(file_path).strip()))
+
     # content 為空通常不是模型本意：多為 JSON 被 max_tokens 截斷後解析成空串。
     # 返回明確錯誤，由 followup 循環餵回模型重試/分段追加，而不是靜默寫 0 字節文件。
     if content is None:

@@ -60,6 +60,11 @@ from data.prompts_manager import (
     load_web_search_prefix_prompt
 )
 
+# Aize 宣告要執行命令的標記：[EXEC] / [EXEC:技能名] / [EXEC 技能名]
+_EXEC_MARKER_RE = re.compile(r'\[EXEC[\s:：]*([^\]\n]*)\]', re.IGNORECASE)
+# 清除時把整行宣告（含技能名與殘餘文字）一起去掉
+_EXEC_LINE_RE = re.compile(r'\[EXEC[^\n]*\n?', re.IGNORECASE)
+
 class ThinkingEngine:
     _game_mode = False
     
@@ -942,6 +947,8 @@ class ThinkingEngine:
         current_buffer = ""
         sent_sentences = []
         reply_section = True  # False = THOUGHT 段（思考，不進聊天區）
+        # [EXEC] 宣告後，後續串流全部視為命令本體（JSON），絕不進入聊天區
+        exec_declared = False
         # 思考模型（MiniMax-M3/R1）的  推理塊過濾狀態
         think_state = {"in_think": False, "pending": "", "thought": ""}
         
@@ -964,6 +971,27 @@ class ThinkingEngine:
                         continue
                     full_reply += visible
                     current_buffer += visible
+
+                    # 兩段式技能執行：「先宣告、再給命令內容」。
+                    # 看到 [EXEC] 立刻告訴系統（UI 顯示宣告），其後串流都當命令參數隱藏。
+                    if exec_declared:
+                        # 宣告後的一切都是命令本體，不顯示、不記憶
+                        current_buffer = ""
+                        continue
+                    _m = _EXEC_MARKER_RE.search(current_buffer)
+                    if _m:
+                        exec_declared = True
+                        _skill = (_m.group(1) or "").strip()
+                        logger.info(f"[EXEC] Aize declared command execution: {_skill or '(unnamed)'}")
+                        if self.on_response:
+                            _label = (f"Aize 要执行命令了：{_skill}" if _skill
+                                      else "Aize 要执行命令了")
+                            self.on_response({"type": "command_start", "message": _label + "\n"})
+                        # 宣告前的自然語言照常進聊天；宣告後的部分丟棄
+                        current_buffer = current_buffer[:_m.start()]
+                        if not current_buffer.strip():
+                            current_buffer = ""
+                            continue
 
                     completed_sentences = self._extract_completed_sentences(current_buffer)
                     for sentence in completed_sentences:
@@ -1003,7 +1031,7 @@ class ThinkingEngine:
             # 流結束：收尾思考塊緩衝，未被標籤吞掉的殘留文本併回正文
             self._drain_think_event(think_state, self.on_response)
             tail = think_state["pending"]
-            if tail and not think_state["in_think"] and not (tail.lstrip().startswith("<") and ">" not in tail):
+            if tail and not exec_declared and not think_state["in_think"] and not (tail.lstrip().startswith("<") and ">" not in tail):
                 current_buffer += tail
             think_state["pending"] = ""
             
@@ -1052,25 +1080,39 @@ class ThinkingEngine:
             try:
                 agent = Agent('!')
                 agent.set_language(self.language)
-                if agent.has_actions(full_reply):
-                    logger.info("Agent has actions to execute")
-                    if self.on_response:
-                        _names = []
-                        try:
-                            _, _calls = self._extract_skill_calls(full_reply)
-                            _names = list(dict.fromkeys(n for n, _ in _calls))
-                        except Exception:
-                            pass
-                        _label = ("正在執行 " + "、".join(_names) + " Skill…") if _names else "正在執行 Skill…"
-                        self.on_response({"type": "command_start", "message": _label + "\n"})
-                    
-                    out = agent.agent('!', full_reply)
-                    logger.info(f"Agent output: {out[:200] if out else 'Empty'}")
-                    
-                    if self.on_response:
-                        self.on_response({"type": "command_result", "output": out})
-                    
-                    self._learn_from_command_result(full_reply, out, success=True)
+                has_actions = agent.has_actions(full_reply)
+                # 主回覆裡有 [EXEC] 宣告、但 JSON 被截斷/格式壞掉時，
+                # 不能直接結束回合，要進 followup 讓模型重新輸出完整調用。
+                retry_truncated = (not has_actions) and self._looks_truncated_skill_call(full_reply)
+                promised_only = ((not has_actions) and (not retry_truncated)
+                                 and self._promises_action_without_call(full_reply, user_text))
+                if has_actions or retry_truncated or promised_only:
+                    if has_actions:
+                        logger.info("Agent has actions to execute")
+                        if self.on_response:
+                            _names = []
+                            try:
+                                _, _calls = self._extract_skill_calls(full_reply)
+                                _names = list(dict.fromkeys(n for n, _ in _calls))
+                            except Exception:
+                                pass
+                            _label = ("正在執行 " + "、".join(_names) + " Skill…") if _names else "正在執行 Skill…"
+                            self.on_response({"type": "command_start", "message": _label + "\n"})
+                        
+                        out = agent.agent('!', full_reply)
+                        logger.info(f"Agent output: {out[:200] if out else 'Empty'}")
+                        
+                        if self.on_response:
+                            self.on_response({"type": "command_result", "output": out})
+                        
+                        self._learn_from_command_result(full_reply, out, success=True)
+                    else:
+                        logger.warning("Main reply promised action but has no skill call; forcing followup retry")
+                        if self.on_response:
+                            self.on_response({"type": "command_start",
+                                              "message": "正在重試技能調用…\n"})
+                        out = (self._truncated_skill_feedback() if retry_truncated
+                               else self._no_action_feedback())
                     
                     response_content = self._extract_response_content(full_reply)
                     if response_content:
@@ -1588,9 +1630,33 @@ class ThinkingEngine:
         if not text:
             return False
         t = text.strip()
+        # 已宣告 [EXEC]：無論後面 JSON 有沒有寫 skill 欄位，都說明她想執行
+        if re.search(r'\[EXEC\]', t, re.IGNORECASE):
+            return True
         if '"skill"' not in t and not re.search(r'\bskill\s*:', t, re.IGNORECASE):
             return False
         return '{' in t
+
+    @staticmethod
+    def _promises_action_without_call(text, user_text=""):
+        """用户要求做事，模型只答应（「我马上写」「先写文件」）却没输出任何技能调用。"""
+        if not text:
+            return False
+        if not re.search(r"(视频|生成|制作|渲染|下载|搜索|查一下|代码|脚本|文档|文件|图片|技能|执行|运行|安装|部署)",
+                         str(user_text or "")):
+            return False
+        return bool(re.search(
+            r"(马上|立刻|立即|这就|先(去|来|写|做)|开始(制作|做|生成|渲染|写)|"
+            r"正在(写|制作|生成|渲染)|我来(做|写|生成|制作|渲染|查)|稍等)", text))
+
+    @staticmethod
+    def _no_action_feedback():
+        import json as _json
+        return _json.dumps({
+            "success": False,
+            "error": "你剛才只說要做，但沒有輸出任何 [EXEC] 技能調用，系統沒有執行任何動作。"
+                     "請立刻直接輸出 [EXEC] 技能名 + 一行合法的技能 JSON，不要解釋、不要只說「馬上」。"
+        }, ensure_ascii=False)
 
     @staticmethod
     def _truncated_skill_feedback():
@@ -1626,7 +1692,7 @@ class ThinkingEngine:
         """
         if not text or '"skill"' not in text:
             return text, []
-        decoder = json.JSONDecoder()
+        decoder = json.JSONDecoder(strict=False)
         spans, calls = [], []
         for match in re.finditer(r'\{', text):
             start = match.start()
@@ -1645,13 +1711,18 @@ class ThinkingEngine:
         visible = text
         for start, end in sorted(spans, reverse=True):
             visible = visible[:start] + visible[end:]
+        # [EXEC] 宣告行只給系統看，不留在給用戶的文本裡
+        visible = _EXEC_LINE_RE.sub('', visible)
         return visible.strip(" \t\r\n，,。.；;、"), calls
 
     @staticmethod
     def _strip_skill_json(text):
-        """把技能 JSON（含尚未打完的殘片）從要顯示/記憶的文本裡清掉。"""
-        if not text or '"skill"' not in text:
+        """把技能 JSON（含尚未打完的殘片）與 [EXEC] 宣告從要顯示/記憶的文本裡清掉。"""
+        if not text:
             return text
+        text = _EXEC_LINE_RE.sub('', text)
+        if '"skill"' not in text:
+            return text.strip(" \t\r\n，,。.；;、")
         t = re.sub(r'\{[^{}]*"skill"[^{}]*\}', '', text)
         # 還沒閉合的 JSON 尾巴：從 {"skill" 起全部丟棄
         t = re.sub(r'\{[^{}]*"skill".*$', '', t, flags=re.S)

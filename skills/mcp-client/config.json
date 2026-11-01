@@ -5,7 +5,7 @@
       "token": "",
       "headers": {},
       "timeout": 240,
-      "enabled": false,
+      "enabled": true,
       "note": "填好 Token 後啟用；Token 在 Tulpa 的外部 Agent / MCP 頁面創建連接取得"
     }
   },

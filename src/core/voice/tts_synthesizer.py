@@ -768,7 +768,7 @@ def _tts_muted() -> bool:
         return False
 
 
-def synthesize_speech(opts: SynthesizeOptions) -> Dict[str, Any]:
+def synthesize_speech(opts: SynthesizeOptions, mobile: bool = False) -> Dict[str, Any]:
     """
     统一 TTS 合成入口。
 
@@ -784,7 +784,8 @@ def synthesize_speech(opts: SynthesizeOptions) -> Dict[str, Any]:
     """
     # 全局靜音開關：ui_settings.json 設 "tts_muted": true 時返回 0.05s 靜音，
     # 流程照常走完（前端不報錯），只是不發聲。
-    if _tts_muted():
+    # 手機端播放由「手機端播放」開關單獨控制，不受這個桌面靜音開關影響。
+    if not mobile and _tts_muted():
         buf = io.BytesIO()
         with wave.open(buf, "wb") as _w:
             _w.setnchannels(1)

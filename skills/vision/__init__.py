@@ -194,23 +194,36 @@ def extract_text(image_path: str = None, image_base64: str = None) -> Dict:
 def execute(input_data: Any) -> dict:
     """执行图像识别技能"""
     if isinstance(input_data, dict):
-        action = input_data.get('action', '')
-        params = input_data.get('params', {})
+        action = str(input_data.get('action') or '').strip().lower()
+        params = input_data.get('params', {}) if isinstance(input_data.get('params'), dict) else {}
         image_data = input_data.get('image', '')
         
         image_path = params.get('image_path', '') or input_data.get('image_path', '')
         image_base64 = params.get('image_base64', '') or input_data.get('image_base64', '')
+        image_paths = input_data.get('image_paths') or params.get('image_paths') or []
+        # 只傳了圖片路徑卻沒寫 action 時，預設做畫面分析
+        if not action and (image_paths or image_path or image_base64 or image_data):
+            action = 'analyze'
     else:
         action = str(input_data)
         params = {}
         image_path = ''
         image_base64 = ''
         image_data = ''
+        image_paths = []
     
     if image_data and not image_path and not image_base64:
         image_base64 = image_data
     
     if action == 'analyze':
+        if isinstance(image_paths, list) and image_paths:
+            results = []
+            for p in image_paths[:8]:
+                try:
+                    results.append({"image_path": p, "analysis": analyze_image(str(p), "")})
+                except Exception as e:
+                    results.append({"image_path": str(p), "error": str(e)})
+            return {"status": "success", "analyses": results}
         return analyze_image(image_path, image_base64)
     
     elif action == 'ocr':

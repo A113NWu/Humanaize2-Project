@@ -1,0 +1,19 @@
+{
+  "enabled": true,
+  "server": "tulpa",
+  "conversation_id": "3028829084:group:1121346731",
+  "conversation_name": "异世界の愛",
+  "persona_mode": "aize_dragon",
+  "persona_extra": "",
+  "participation": "natural",
+  "min_reply_seconds": 60,
+  "max_replies_per_hour": 3,
+  "quiet_hours": [
+    2,
+    8
+  ],
+  "wait_timeout_seconds": 150,
+  "model_max_tokens": 220,
+  "watchdog": true,
+  "desktop_api": "http://127.0.0.1:48467"
+}

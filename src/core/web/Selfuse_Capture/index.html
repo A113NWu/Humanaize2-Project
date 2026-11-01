@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Selfuse Capture · 面部捕捉</title>
+<style>
+  :root {
+    --bg: #101014;
+    --surface: #1a1a20;
+    --surface-2: #22222a;
+    --outline: #34343f;
+    --text: #e8e8ee;
+    --muted: #9a9aa8;
+    --primary: #a78bfa;
+    --primary-dim: #6d5bb8;
+    --ok: #4ade80;
+    --err: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    min-height: 100vh; display: flex; flex-direction: column;
+  }
+  header {
+    display: flex; align-items: center; gap: 14px;
+    padding: 18px 26px; border-bottom: 1px solid var(--outline);
+    background: var(--surface);
+  }
+  header .logo {
+    width: 34px; height: 34px; border-radius: 10px;
+    background: linear-gradient(135deg, var(--primary), #6ee7d8);
+    display: grid; place-items: center; font-size: 18px;
+  }
+  header h1 { font-size: 18px; margin: 0; font-weight: 600; letter-spacing: .5px; }
+  header .sub { color: var(--muted); font-size: 12px; margin-left: auto; }
+  main {
+    flex: 1; display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, .9fr);
+    gap: 18px; padding: 20px 26px; max-width: 1280px; width: 100%; margin: 0 auto;
+  }
+  .card {
+    background: var(--surface); border: 1px solid var(--outline);
+    border-radius: 16px; padding: 16px 18px;
+  }
+  .preview-wrap { position: relative; padding: 0; overflow: hidden; min-height: 320px; display: flex; }
+  #preview { width: 100%; height: auto; display: none; object-fit: contain; background: #000; border-radius: 16px; }
+  .placeholder {
+    margin: auto; text-align: center; color: var(--muted); font-size: 14px; line-height: 2;
+    padding: 40px;
+  }
+  .placeholder .icon { font-size: 46px; display: block; margin-bottom: 10px; opacity: .7; }
+  .side { display: flex; flex-direction: column; gap: 18px; }
+  .row { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; }
+  .row + .row { border-top: 1px solid var(--outline); }
+  .label { color: var(--muted); font-size: 13px; }
+  .value { font-size: 14px; font-variant-numeric: tabular-nums; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 10px; border-radius: 999px; font-size: 12px;
+    background: var(--surface-2); border: 1px solid var(--outline);
+  }
+  .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+  .chip.on { color: var(--ok); border-color: #2e6b45; }
+  .chip.on .dot { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+  .chip.off { color: var(--muted); }
+  .chip.err { color: var(--err); border-color: #6b2e2e; }
+  .chip.err .dot { background: var(--err); }
+  .angles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 6px; }
+  .angle { background: var(--surface-2); border-radius: 12px; padding: 12px; }
+  .angle .k { font-size: 11px; color: var(--muted); letter-spacing: 1px; }
+  .angle .v { font-size: 22px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .bar { height: 4px; background: #2c2c36; border-radius: 2px; margin-top: 8px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 50%; background: var(--primary); transition: width .12s linear; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  button {
+    font: inherit; font-size: 13px; cursor: pointer;
+    border-radius: 10px; padding: 9px 18px; border: 1px solid transparent;
+    transition: background .15s, opacity .15s;
+  }
+  button.primary { background: var(--primary); color: #14101f; font-weight: 600; }
+  button.primary:hover { background: #b9a3ff; }
+  button.tonal { background: var(--surface-2); color: var(--text); border-color: var(--outline); }
+  button.tonal:hover { background: #2b2b35; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  .hint { color: var(--muted); font-size: 12px; line-height: 1.8; }
+  .hint code { background: var(--surface-2); padding: 2px 6px; border-radius: 5px; color: #c4b5fd; }
+  .err-text { color: var(--err); font-size: 12px; word-break: break-all; display: none; }
+  footer { color: var(--muted); font-size: 11px; text-align: center; padding: 10px 0 18px; }
+  @media (max-width: 860px) {
+    main { grid-template-columns: 1fr; }
+    header .sub { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">◉</div>
+  <h1>Selfuse Capture</h1>
+  <span class="sub">面部動作捕捉 · 127.0.0.1:8082</span>
+</header>
+
+<main>
+  <section class="card preview-wrap">
+    <img id="preview" alt="攝像頭預覽">
+    <div class="placeholder" id="placeholder">
+      <span class="icon">🎥</span>
+      攝像頭未啟動<br>
+      點擊右側「開始捕捉」<br>
+      <span style="font-size:12px">畫面為鏡像預覽，綠框表示已鎖定面部</span>
+    </div>
+  </section>
+
+  <aside class="side">
+    <section class="card">
+      <div class="row">
+        <span class="label">捕捉狀態</span>
+        <span class="chip off" id="run-chip"><span class="dot"></span><span id="run-text">已停止</span></span>
+      </div>
+      <div class="row">
+        <span class="label">面部檢測</span>
+        <span class="chip off" id="face-chip"><span class="dot"></span><span id="face-text">未檢測</span></span>
+      </div>
+      <div class="err-text" id="err-text"></div>
+      <div class="angles">
+        <div class="angle"><div class="k">HEAD X · 左右</div><div class="v" id="vx">0.0°</div><div class="bar"><i id="bx"></i></div></div>
+        <div class="angle"><div class="k">HEAD Y · 上下</div><div class="v" id="vy">0.0°</div><div class="bar"><i id="by"></i></div></div>
+        <div class="angle"><div class="k">HEAD Z · 傾斜</div><div class="v" id="vz">0.0°</div><div class="bar"><i id="bz"></i></div></div>
+        <div class="angle"><div class="k">BODY · 身體</div><div class="v" id="vb">0.0°</div><div class="bar"><i id="bb"></i></div></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="actions">
+        <button class="primary" id="btn-start">開始捕捉</button>
+        <button class="tonal" id="btn-stop" disabled>停止</button>
+        <button class="tonal" id="btn-calib" disabled>重新校準</button>
+      </div>
+      <p class="hint">
+        自動校準：開始後第一次穩定檢測到的坐姿即為「正對鏡頭」；離開畫面 3 秒或點「重新校準」會重設。<br>
+        Live2D 形象會實時跟隨你的頭部轉動；在 Live2D 頁面網址加 <code>mocap=1</code> 即可自動啟用。
+      </p>
+    </section>
+
+    <section class="card">
+      <div class="row"><span class="label">攝像頭</span><span class="value" id="cam">默認設備 (index 0)</span></div>
+      <div class="row"><span class="label">輸出</span><span class="value">SSE · 30 fps</span></div>
+      <div class="row"><span class="label">本頁</span><span class="value">/Selfuse_Capture</span></div>
+    </section>
+  </aside>
+</main>
+
+<footer>Humanaize2 · Selfuse Capture 獨立面部捕捉系統</footer>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const preview = $('preview'), placeholder = $('placeholder');
+  let running = false, timer = null;
+
+  function setChip(el, state, text) {
+    el.className = 'chip ' + state;
+    el.querySelector('span:last-child').textContent = text;
+  }
+
+  function setAngle(id, barId, value, max = 30) {
+    $(id).textContent = value.toFixed(1) + '°';
+    $(barId).style.width = Math.max(0, Math.min(100, 50 + (value / max) * 50)) + '%';
+  }
+
+  async function post(path) {
+    try {
+      const r = await fetch(path, { method: 'POST' });
+      return await r.json();
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  }
+
+  async function refresh() {
+    try {
+      const r = await fetch('/api/live2d/mocap/status', { cache: 'no-store' });
+      const s = await r.json();
+      running = !!s.running;
+      const p = s.pose || { x: 0, y: 0, z: 0, body: 0, face: false };
+
+      setChip($('run-chip'), running ? 'on' : 'off', running ? '運行中' : '已停止');
+      setChip($('face-chip'), p.face ? 'on' : 'off', p.face ? '已檢測' : '未檢測');
+      setAngle('vx', 'bx', p.x); setAngle('vy', 'by', p.y);
+      setAngle('vz', 'bz', p.z); setAngle('vb', 'bb', p.body, 10);
+
+      preview.style.display = running ? 'block' : 'none';
+      placeholder.style.display = running ? 'none' : 'block';
+      if (running && !preview.src.includes('/api/live2d/mocap/preview')) {
+        preview.src = '/api/live2d/mocap/preview?t=' + Date.now();
+      }
+      if (!running) preview.removeAttribute('src');
+
+      $('btn-start').disabled = running;
+      $('btn-stop').disabled = !running;
+      $('btn-calib').disabled = !running;
+
+      const err = $('err-text');
+      if (s.error) { err.style.display = 'block'; err.textContent = s.error; }
+      else { err.style.display = 'none'; }
+    } catch (e) {
+      setChip($('run-chip'), 'err', '連接失敗');
+    }
+  }
+
+  $('btn-start').addEventListener('click', async () => {
+    const r = await post('/api/live2d/mocap/start');
+    if (!r.ok) {
+      const err = $('err-text');
+      err.style.display = 'block'; err.textContent = r.error || '啟動失敗';
+    }
+    setTimeout(refresh, 200);
+  });
+  $('btn-stop').addEventListener('click', async () => { await post('/api/live2d/mocap/stop'); refresh(); });
+  $('btn-calib').addEventListener('click', async () => { await post('/api/live2d/mocap/recalibrate'); refresh(); });
+
+  refresh();
+  timer = setInterval(refresh, 300);
+
+  if (new URLSearchParams(location.search).get('auto') === '1') {
+    post('/api/live2d/mocap/start').then(() => refresh());
+  }
+</script>
+</body>
+</html>

@@ -1,4 +1,6 @@
 const state={settings:{},messages:0};const $=selector=>document.querySelector(selector);const $$=selector=>document.querySelectorAll(selector);
+/* 手機端/桌面端語音播放由兩個獨立開關控制 */
+const isMobileDevice=/Android|iPhone|iPad|iPod|Mobile|HarmonyOS/i.test(navigator.userAgent);
 /* 401 統一處理：任何 API 返回未登錄 → 刷新頁面（服務器會在 / 返回登錄頁） */
 const rawFetch=window.fetch.bind(window);window.fetch=(...args)=>rawFetch(...args).then(r=>{if(r.status===401){location.reload()}return r});
 const basicSettings=$('[data-section-view="basic"]');basicSettings.insertAdjacentHTML('afterbegin','<div class="openai-settings"><label><input name="openai_enabled" type="checkbox">启用 OpenAI API 模式（默认关闭）</label><label>OpenAI API Key<input name="openai_api_key" type="password" placeholder="留空则使用本地模型"></label><label>OpenAI Base URL<input name="openai_base_url" placeholder="https://api.openai.com/v1"></label><label>OpenAI 模型<input name="openai_model" placeholder="gpt-4o-mini"></label><label>视觉模型（分析上传的图片用，留空沿用对话模型）<input name="vision_model" placeholder="如 gpt-4o / qwen-vl-max"></label></div>');
@@ -17,14 +19,15 @@ const live2dWidget={
   /* 推命令給 Live2D 頁面（說話/動作）；失敗靜默不影響聊天 */
   push(cmd){if(!this.enabled)return;fetch('/api/live2d/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cmd)}).catch(()=>{});},
   onSpeakStart(){document.body.classList.add('aize-speaking');},
-  /* 主頁語音模式開著時音頻由主頁播，這裡只讓形象動；否則形象自己開口說 */
-  onReply(text){if(voice.speakActive())return;const t=String(text||'').replace(/\s+/g,' ').trim();if(t)this.push({type:'speak',text:t.slice(0,400)});}
+  /* 本頁語音播放開著時音頻由本頁播，這裡只讓形象動；否則形象按「桌面端播放」開關自己開口說 */
+  onReply(text){if(voice.speakActive())return;const s=state.settings||{};const want=isMobileDevice?!!s.tts_mobile_enabled:!!s.tts_desktop_enabled;if(!want)return;const t=String(text||'').replace(/\s+/g,' ').trim();if(t)this.push({type:'speak',text:t.slice(0,400),mobile:!!s.tts_mobile_enabled,desktop:!!s.tts_desktop_enabled});}
 };
 function applyUiPrefs(){
   live2dWidget.apply(state.settings.live2d_enabled!==false&&String(state.settings.live2d_enabled)!=='false');
   document.documentElement.style.setProperty('--anim-mult',state.settings.animation_speed||'1.5');
   /* 語音引擎被關掉時立即停止正在播的語音（純 TTS 模式；麥克風對話模式不受影響） */
-  if(!state.settings.tts_enabled&&typeof voice!=='undefined'&&!voice.on){try{voice._abortPlayback();voice.speakBuf='';}catch(e){}}
+  const devTts=state.settings?(isMobileDevice?state.settings.tts_mobile_enabled:state.settings.tts_desktop_enabled):false;
+  if(!devTts&&typeof voice!=='undefined'&&!voice.on){try{voice._abortPlayback();voice.speakBuf='';}catch(e){}}
 }
 /* Live2D 浮窗拖動：手柄 pointer capture 後即使滑過 iframe 事件也不丟；
    位置存 localStorage，刷新保留，雙擊手柄歸位 */
@@ -162,8 +165,8 @@ const voice={
   micPaused:false, awaitingDrain:false,
   supported:('SpeechRecognition' in window)||('webkitSpeechRecognition' in window),
   lang(){return (state.settings&&state.settings.language)==='English'?'en-US':'zh-TW';},
-  /* 是否應該出聲：麥克風對話模式，或設置裡開了語音引擎（純 TTS 自動朗讀） */
-  speakActive(){return this.on||!!(state.settings&&state.settings.tts_enabled);},
+  /* 是否應該出聲：麥克風對話模式，或本設備對應的播放開關（手機端/桌面端分開設置） */
+  speakActive(){return this.on||!!(state.settings&&(isMobileDevice?state.settings.tts_mobile_enabled:state.settings.tts_desktop_enabled));},
   /* ---- 對話流鉤子 ---- */
   resetTurn(){this.speakBuf='';this.inCode=false;this.awaitingDrain=false;this._abortPlayback();this.queue=[];document.body.classList.remove('aize-speaking');},
   /* AI 回合開始：清空舊播放並靜音麥克風（半雙工，防止 Aize 語音被識別成新發言打斷自己） */

@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import re
+import threading
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -364,6 +365,57 @@ def create_session():
     session.trust_env = False
     return session
 
+# ---------------------------------------------------------------- 限流节流
+_RATE_LIMIT_COOLDOWN = 30.0     # 撞到 429 後強制放慢的秒數
+_RATE_LIMIT_LOCK = threading.Lock()
+_rate_limit_until = 0.0
+_rate_limit_notified_at = 0.0
+
+
+def _is_rate_limit_error(error):
+    return "HTTP error 429" in str(error)
+
+
+def _note_rate_limit(error):
+    """雲端 429：放慢後續調用，並用桌面通知提醒用戶（60 秒內只提醒一次）。"""
+    global _rate_limit_until, _rate_limit_notified_at
+    now = time.time()
+    with _RATE_LIMIT_LOCK:
+        _rate_limit_until = max(_rate_limit_until, now + _RATE_LIMIT_COOLDOWN)
+        should_notify = (now - _rate_limit_notified_at) >= 60.0
+        if should_notify:
+            _rate_limit_notified_at = now
+    logger.warning("Cloud API rate limited: %s（%.0fs 内放慢调用）", error, _RATE_LIMIT_COOLDOWN)
+    if not should_notify:
+        return
+    try:
+        from tools.notify import notify_info
+    except ImportError:
+        try:
+            from core.tools.notify import notify_info
+        except ImportError:
+            notify_info = None
+    if notify_info is not None:
+        try:
+            notify_info("Aize 被限流了",
+                        "云端 API 触发 429 限流，Aize 已放慢思考频率，约 30 秒后自动恢复。")
+        except Exception:
+            pass
+
+
+def _wait_rate_limit(stop_event=None):
+    """限流冷卻期內先等夠再調用，避免越撞越狠。"""
+    while True:
+        with _RATE_LIMIT_LOCK:
+            remain = _rate_limit_until - time.time()
+        if remain <= 0:
+            return
+        if stop_event is not None and stop_event.is_set():
+            return
+        logger.info("Rate-limit cooldown active, wait %.1fs before next cloud call", remain)
+        time.sleep(min(remain, 1.0))
+
+
 def chat(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top_p=TOP_P, session=None, stop_event=None, timeout=600, max_retries=3, system: str = None):
     """發送HTTP請求到本機llama-server，取得回答。
 
@@ -382,10 +434,18 @@ def chat(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top_p=TOP_
         return "[llm aborted]"
 
     if provider:
-        try:
-            return _openai_chat(prompt, provider, max_tokens, temperature, top_p, session, timeout, system)
-        except Exception as error:
-            logger.warning("Cloud provider failed, falling back to local llama-server: %s", error)
+        for attempt in range(3):
+            # 上一次撞限流時先等冷卻結束，別急著再撞一次
+            _wait_rate_limit(stop_event)
+            try:
+                return _openai_chat(prompt, provider, max_tokens, temperature, top_p, session, timeout, system)
+            except Exception as error:
+                if _is_rate_limit_error(error):
+                    _note_rate_limit(error)
+                    if attempt < 2:
+                        continue
+                logger.warning("Cloud provider failed, falling back to local llama-server: %s", error)
+                break
             # 雲端失敗時繼續走下方本地鏈路，不 return error 字符串
 
     try:

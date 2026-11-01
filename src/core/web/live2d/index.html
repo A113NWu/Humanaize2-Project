@@ -290,11 +290,15 @@
   }
   function handleCommand(cmd) {
     switch (cmd.type) {
-      case 'speak':
-        // 動作由 Aize 自己通過 motion 命令下達，這裡不再自動附加動作
-        speak(cmd.text || '');
+      case 'speak': {
+        // 手機端/桌面端播放各由一個開關控制；舊命令沒帶標記時沿用舊行為
+        const isMobile = /Android|iPhone|iPad|iPod|Mobile|HarmonyOS/i.test(navigator.userAgent);
+        const tagged = (typeof cmd.mobile !== 'undefined') || (typeof cmd.desktop !== 'undefined');
+        const allowed = tagged ? (isMobile ? !!cmd.mobile : !!cmd.desktop) : true;
+        if (allowed) speak(cmd.text || '');
         addMsg('Aize', cmd.text || '', 'aize');
         break;
+      }
       case 'motion': playMotion(cmd.group, cmd.index, cmd); break;
       case 'expression': playExpression(cmd.name); break;
       case 'chat_in':

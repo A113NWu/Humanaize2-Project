@@ -712,6 +712,7 @@ class SkillsManager:
             offset = 0
         
         try:
+            path = os.path.expandvars(os.path.expanduser(str(path or "")))
             with open(path, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
                 start = max(0, offset)
@@ -738,6 +739,10 @@ class SkillsManager:
             return {"error": "file-write requires path and content"}
         
         try:
+            path = os.path.expandvars(os.path.expanduser(str(path or "")))
+            parent = os.path.dirname(os.path.abspath(path))
+            if parent:
+                os.makedirs(parent, exist_ok=True)
             write_mode = 'w' if mode == 'write' else 'a'
             with open(path, write_mode, encoding='utf-8') as f:
                 f.write(content)
@@ -807,41 +812,54 @@ class SkillsManager:
     
     def _execute_web_search(self, input_data: Any) -> Dict:
         """Execute web search"""
-        try:
-            from web_tool import search_web
-        except ImportError:
-            return {"error": "web-search tool not available (web_tool not found)"}
-        
         if isinstance(input_data, dict):
             query = input_data.get('query', '')
-            num_results = input_data.get('num_results', 5)
+            num_results = int(input_data.get('num_results', 5) or 5)
         else:
             query = str(input_data)
             num_results = 5
-        
+
+        if not query:
+            return {"error": "web-search requires query"}
+
         try:
-            results = search_web(query, num_results)
+            from tools.web_search import WebSearch
+            results = WebSearch().search(query, max_results=num_results)
             return {"status": "success", "results": results, "query": query}
         except Exception as e:
-            return {"error": str(e)}
+            return {"error": f"web-search failed: {e}"}
     
     def _execute_web_fetch(self, input_data: Any) -> Dict:
         """Execute web fetch"""
-        try:
-            from web_tool import fetch_url
-        except ImportError:
-            return {"error": "web-fetch tool not available (web_tool not found)"}
-        
         if isinstance(input_data, dict):
             url = input_data.get('url', '')
         else:
             url = str(input_data)
-        
+
+        if not url:
+            return {"error": "web-fetch requires url"}
+
         try:
-            content = fetch_url(url)
-            return {"status": "success", "url": url, "content": content[:1000], "truncated": len(content) > 1000}
+            import re as _re
+            import urllib.request
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                              "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+            })
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                raw = resp.read(2 * 1024 * 1024)
+            try:
+                text = raw.decode('utf-8')
+            except UnicodeDecodeError:
+                text = raw.decode('gbk', errors='replace')
+            # 去掉標籤與多餘空白，方便模型直接讀
+            text = _re.sub(r'<script[\s\S]*?</script>|<style[\s\S]*?</style>', ' ', text, flags=_re.I)
+            text = _re.sub(r'<[^>]+>', ' ', text)
+            text = _re.sub(r'\s+', ' ', text).strip()
+            return {"status": "success", "url": url, "content": text[:4000],
+                    "truncated": len(text) > 4000}
         except Exception as e:
-            return {"error": str(e)}
+            return {"error": f"web-fetch failed: {e}"}
     
     def _execute_society_network(self, input_data: Any) -> Dict:
         """Execute Humanaize Society Network skill"""

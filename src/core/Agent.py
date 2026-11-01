@@ -26,6 +26,23 @@ except ImportError as e:
     SKILLS_AVAILABLE = False
 
 
+def _resolve_skills_dir():
+    """解析技能目錄：開發態用專案根 skills/，打包態用 exe 旁 skills/。"""
+    if getattr(sys, "frozen", False):
+        exe_skills = os.path.join(os.path.dirname(sys.executable), "skills")
+        if os.path.isdir(exe_skills) and os.listdir(exe_skills):
+            return exe_skills
+        bundled = os.path.join(getattr(sys, "_MEIPASS", ""), "skills")
+        if os.path.isdir(bundled) and os.listdir(bundled):
+            return bundled
+    root_skills = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "skills"
+    )
+    if os.path.isdir(root_skills) and os.listdir(root_skills):
+        return root_skills
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "skills")
+
+
 class Agent:
     def __init__(self, special):
         self.special = special
@@ -34,14 +51,7 @@ class Agent:
         self.current_language = "en"
         
         if SKILLS_AVAILABLE:
-            # 打包 onefile 時 __file__ 位於 _MEI/core，捆綁技能可能不在那裡；
-            # 安裝目錄旁的 skills/（由 installer 鋪設）優先使用
-            skills_dir = os.path.join(os.path.dirname(__file__), "skills")
-            if getattr(sys, "frozen", False):
-                exe_skills = os.path.join(os.path.dirname(sys.executable), "skills")
-                if os.path.isdir(exe_skills) and os.listdir(exe_skills):
-                    skills_dir = exe_skills
-            self.skills_manager = SkillsManager(skills_dir)
+            self.skills_manager = SkillsManager(_resolve_skills_dir())
             self.language_adapter = LanguageAdapter()
     
     def set_language(self, language: str):
@@ -126,7 +136,7 @@ class Agent:
         
         # 首先尝试直接解析
         try:
-            payload = json.loads(content)
+            payload = json.loads(content, strict=False)
         except json.JSONDecodeError:
             pass
         
@@ -135,13 +145,13 @@ class Agent:
             candidate = self._find_json_object(content)
             if candidate:
                 try:
-                    payload = json.loads(candidate)
+                    payload = json.loads(candidate, strict=False)
                 except json.JSONDecodeError:
                     # 尝试修复常见的JSON错误
                     fixed_candidate = self._fix_json_format(candidate)
                     if fixed_candidate:
                         try:
-                            payload = json.loads(fixed_candidate)
+                            payload = json.loads(fixed_candidate, strict=False)
                         except json.JSONDecodeError:
                             pass
         

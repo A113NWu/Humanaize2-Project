@@ -120,3 +120,8 @@ skills/mc-bot/vendor/
 skills/mc-bot/config.json
 _task_run.ps1
 _task_result.txt
+
+# 第三方工具目录（含 SnowLuma 运行时，体积过大，不随仓库分发）
+skills/Tulpa-MCP-*/
+# 群聊驱动运行时状态（进程号/会话号/日志）
+skills/qq-group-chat/state/

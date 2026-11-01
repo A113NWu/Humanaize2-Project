@@ -35,6 +35,48 @@ from memory import add_thought, save_memory
 
 _idle_engine_instance = None
 
+_AESTHETIC_DB_NAME = "aesthetic_db.json"
+
+
+def _aesthetic_path():
+    """审美学习数据的保存位置（dev=data/、打包=exe 旁 data/）。"""
+    base = None
+    for mod in ("app_paths", "core.app_paths"):
+        try:
+            m = __import__(mod, fromlist=["app_data_dir"])
+            base = m.app_data_dir()
+            break
+        except Exception:
+            continue
+    if not base:
+        base = os.path.join(_PROJECT_ROOT, "data")
+    os.makedirs(base, exist_ok=True)
+    return os.path.join(base, _AESTHETIC_DB_NAME)
+
+
+def _load_aesthetic():
+    import json as _json
+    try:
+        with open(_aesthetic_path(), "r", encoding="utf-8") as f:
+            data = _json.load(f)
+        if isinstance(data, dict):
+            data.setdefault("entries", [])
+            data.setdefault("insights", [])
+            return data
+    except Exception:
+        pass
+    return {"entries": [], "insights": [], "last_learned_at": None}
+
+
+def _save_aesthetic(data):
+    import json as _json
+    try:
+        with open(_aesthetic_path(), "w", encoding="utf-8") as f:
+            _json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
 class IdleEngine:
     """
     空闲引擎 - AI在没有用户交互时进行的内部思考活动
@@ -123,6 +165,10 @@ class IdleEngine:
         """
         self.is_running_gan = True
         gan_result = None
+        # 長期任務優先：休息中就完全停工；到點就先推進任務，不跑常規 GAN 活動
+        if not self._long_task_gate():
+            self.is_running_gan = False
+            return
         # 顯式開場事件：CLI/網頁可藉此畫出獨立的「閒置思考」區塊
         if self.callback:
             try:
@@ -139,7 +185,13 @@ class IdleEngine:
                     "thought": f"[Idle Activity] Aize chooses: {activity}"
                 })
             
-            if any(k in activity for k in ("情感", "情绪", "人格", "目标")):
+            if "音乐" in activity or "作曲" in activity or "乐理" in activity:
+                # 音乐自学：按曲风收集音频 + NumPy 频谱分析，更新音色档案
+                self._do_music_learning()
+            elif "审美" in activity or "美学" in activity:
+                # 审美自学：爬图 + Pillow 分析 + 网上文本理解
+                self._do_aesthetic_learning()
+            elif any(k in activity for k in ("情感", "情绪", "人格", "目标")):
                 # 自我学习类活动：走内部学习，不要当成「找用户说话」发到聊天界面
                 kind = "persona" if ("人格" in activity or "目标" in activity) else "emotion"
                 self._do_self_learning(kind)
@@ -216,6 +268,107 @@ class IdleEngine:
                 except Exception:
                     pass
     
+    def _long_task_gate(self):
+        """长期任务调度：休息中 → 全部停工；任务到点 → 先推进任务。
+
+        返回 False 表示本次空闲时段不再跑常规活动（GAN/社交/自学）。
+        """
+        def _thought(msg):
+            if self.callback:
+                try:
+                    self.callback({"type": "internal_thought", "thought": msg})
+                except Exception:
+                    pass
+
+        try:
+            from tools.long_tasks import get_task_store
+            store = get_task_store()
+        except Exception:
+            return True
+        try:
+            if store.is_resting():
+                ru = store.rest_until()
+                reason = (store.rest_state or {}).get("reason") or ""
+                suffix = f"（{reason}）" if reason else ""
+                _thought(f"[LongTask] 正在休息，{ru.strftime('%H:%M')} 前不做任何事{suffix}")
+                return False
+            due = store.due_tasks()
+            if not due:
+                return True
+            _thought("[LongTask] 记着的任务：\n" + store.reminder_text(max_tasks=3))
+            self._long_task_focus(due, store)
+            return False
+        except Exception as e:
+            _thought(f"[LongTask] 调度检查失败：{e}")
+            return True
+
+    def _long_task_focus(self, due, store):
+        """到点后让 Aize 自己决定：再推进一小步，还是休息一段。"""
+        def _thought(msg):
+            if self.callback:
+                try:
+                    self.callback({"type": "internal_thought", "thought": msg})
+                except Exception:
+                    pass
+        try:
+            from llm import chat
+        except Exception:
+            return
+        info = store.reminder_text(max_tasks=3)
+        prompt = (
+            "你有长期任务，现在是你的空闲时间。\n"
+            f"{info}\n\n"
+            "请决定这一小段时间做什么，只输出一个 JSON：\n"
+            '{"action":"work","step":"这次具体推进的一步","minutes":20,"progress":"更新后的进度"}\n'
+            "或者\n"
+            '{"action":"rest","minutes":30,"reason":"休息时想做什么，比如刷社交网站、找用户聊天、发呆"}\n\n'
+            "规则：始终记着截止时间；快到期就多工作、少休息；"
+            "想休息就给出明确的结束分钟数，醒来继续做。"
+        )
+        try:
+            raw = (chat(prompt, max_tokens=300, timeout=90) or "").strip()
+        except Exception as e:
+            _thought(f"[LongTask] 决策失败：{e}")
+            return
+        import re as _re
+        import json as _json
+        m = _re.search(r"\{.*\}", raw, _re.S)
+        if not m:
+            _thought("[LongTask] 决策结果不是 JSON，本次跳过")
+            return
+        try:
+            data = _json.loads(m.group(0))
+        except Exception:
+            _thought("[LongTask] 决策 JSON 解析失败")
+            return
+
+        action = str(data.get("action") or "").lower()
+        if action == "rest":
+            try:
+                minutes = int(data.get("minutes") or 30)
+            except Exception:
+                minutes = 30
+            res = store.rest(minutes=minutes, reason=data.get("reason") or "")
+            if res.get("success"):
+                ru = store.rest_until()
+                _thought(f"[LongTask] 先休息 {minutes} 分钟到 {ru.strftime('%H:%M')}，"
+                         f"然后回来继续（{data.get('reason') or '放空一下'}）")
+            return
+
+        if action == "work":
+            task = due[0]
+            step = str(data.get("step") or "").strip()
+            progress = str(data.get("progress") or "").strip()
+            try:
+                minutes = int(data.get("minutes") or 20)
+            except Exception:
+                minutes = 20
+            store.update(task.get("id"), next_step=step, progress=progress or None,
+                         next_minutes=max(5, minutes), note=step)
+            _thought(f"[LongTask] #{task.get('id')} {task.get('title')}：这一轮 {step}"
+                     + (f"，进度：{progress}" if progress else "")
+                     + f"；{minutes} 分钟后继续")
+
     def _choose_activity(self):
         """让Aize选择空闲活动和思考方向"""
         from llm import chat
@@ -349,12 +502,198 @@ class IdleEngine:
             return []
         return [item for item in data if isinstance(item, dict)]
 
-    def _persona_web_digest(self):
+    def _do_aesthetic_learning(self):
+        """审美自学：从网上抓图，用 Pillow 提取配色/明暗/构图特征，
+        再结合网上的文字资料，让模型总结自己的审美观察。"""
+        def _thought(msg):
+            if self.callback:
+                try:
+                    self.callback({"type": "internal_thought", "thought": msg})
+                except Exception:
+                    pass
+
+        try:
+            from llm import chat
+        except Exception as e:
+            _thought(f"[Aesthetic] LLM 不可用，跳过：{e}")
+            return
+        try:
+            from PIL import Image  # noqa: F401
+        except Exception:
+            _thought("[Aesthetic] 没有安装 Pillow，跳过图片分析")
+            return
+
+        db = _load_aesthetic()
+        try:
+            if db.get("last_learned_at"):
+                from datetime import datetime
+                dt = datetime.fromisoformat(str(db["last_learned_at"]))
+                if (datetime.now() - dt).total_seconds() < 2 * 3600:
+                    _thought("[Aesthetic] 距上次审美学习不足 2 小时，本次跳过")
+                    return
+        except Exception:
+            pass
+
+        work = os.path.join(os.path.dirname(_aesthetic_path()), "media", "aesthetic",
+                            time.strftime("%Y%m%d_%H%M%S"))
+        try:
+            os.makedirs(work, exist_ok=True)
+        except Exception:
+            pass
+
+        entries = []
+        for idx, url in enumerate(self._bing_image_urls("风景摄影 构图 色彩 光影", 8)[:4]):
+            path = os.path.join(work, f"img_{idx + 1}.jpg")
+            if not self._download_image(url, path):
+                continue
+            stats = self._analyze_image_stats(path)
+            if not stats:
+                continue
+            stats["source"] = url
+            entries.append(stats)
+            _thought(f"[Aesthetic] 分析 img_{idx + 1}：亮度 {stats['brightness']:.0f}，"
+                     f"饱和 {stats['saturation']:.0f}，主色 {'/'.join(stats['palette'][:3])}")
+
+        if not entries:
+            _thought("[Aesthetic] 这次没有成功抓到可分析的图片，跳过")
+            return
+
+        digest = self._persona_web_digest("摄影 构图 配色 美学 设计")
+        metrics = json.dumps(entries, ensure_ascii=False)[:1600]
+        prompt = (
+            "你在训练自己的审美。下面是你从网上看到的几张图片的客观数据"
+            "（尺寸、亮度、饱和度、色彩丰富度、锐度、主色）和相关的网络文字资料。\n\n"
+            f"图片数据：{metrics}\n\n网络资料：{digest or '（无）'}\n\n"
+            "请用中文写 3-5 句你自己的审美观察：什么样的配色、明暗关系、构图会好看，"
+            "为什么；也可以说你在数据里注意到的规律。不要罗列数据，不要写标题。"
+        )
+        try:
+            insight = (chat(prompt, max_tokens=500, timeout=120) or "").strip()
+        except Exception as e:
+            _thought(f"[Aesthetic] 总结失败：{e}")
+            insight = ""
+
+        db["entries"] = (db.get("entries") or [])[-200:] + entries
+        if insight:
+            db["insights"] = (db.get("insights") or [])[-200:] + [
+                {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "text": insight}]
+            try:
+                add_thought(self.memory, insight, thought_type="aesthetic")
+                save_memory(self.memory)
+            except Exception:
+                pass
+            _thought("[Aesthetic] " + insight[:180].replace("\n", " "))
+        db["last_learned_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+        _save_aesthetic(db)
+
+    @staticmethod
+    def _bing_image_urls(query, limit=8):
+        """从 Bing 图片搜索页提取原图地址（爬不到就返回空列表）。"""
+        import re as _re
+        import html as _html
+        import urllib.parse as _parse
+        import urllib.request as _req
+        try:
+            url = ("https://www.bing.com/images/search?q=" + _parse.quote(query)
+                   + "&first=1&tsc=ImageBasicHover")
+            req = _req.Request(url, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                              "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+                "Accept-Language": "zh-CN,zh;q=0.9",
+            })
+            page = _req.urlopen(req, timeout=20).read().decode("utf-8", "ignore")
+        except Exception:
+            return []
+        found = (_re.findall(r'murl&quot;:&quot;(.*?)&quot;', page)
+                 or _re.findall(r'"murl":"(.*?)"', page))
+        urls = []
+        for raw in found:
+            u = _html.unescape(raw).replace("\\/", "/")
+            if not u.lower().split("?")[0].endswith((".jpg", ".jpeg", ".png", ".webp")):
+                continue
+            if u not in urls:
+                urls.append(u)
+            if len(urls) >= limit:
+                break
+        return urls
+
+    @staticmethod
+    def _download_image(url, path):
+        import urllib.request as _req
+        try:
+            req = _req.Request(url, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                              "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"})
+            with _req.urlopen(req, timeout=25) as resp:
+                data = resp.read(10 * 1024 * 1024)
+            with open(path, "wb") as f:
+                f.write(data)
+            from PIL import Image
+            with Image.open(path) as im:
+                im.verify()
+            return True
+        except Exception:
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except Exception:
+                pass
+            return False
+
+    @staticmethod
+    def _analyze_image_stats(path):
+        """Pillow 客观分析：亮度/饱和度/色彩丰富度/锐度/主色/构图比例。"""
+        try:
+            import math
+            from PIL import Image, ImageStat, ImageFilter
+            with Image.open(path) as im:
+                im = im.convert("RGB")
+                w, h = im.size
+                if w < 8 or h < 8:
+                    return {}
+                small = im.resize((256, 256))
+                stat = ImageStat.Stat(small)
+                brightness = sum(stat.mean) / 3.0
+                hsv = small.convert("HSV")
+                saturation = ImageStat.Stat(hsv).mean[1]
+                # Hasler & Süsstrunk 色彩丰富度
+                pixels = list(small.getdata())
+                r = [p[0] for p in pixels]
+                g = [p[1] for p in pixels]
+                b = [p[2] for p in pixels]
+                rg = [a - c for a, c in zip(r, g)]
+                yb = [0.5 * (a + c) - d for a, c, d in zip(r, g, b)]
+                def _mean_std(v):
+                    m = sum(v) / len(v)
+                    s = math.sqrt(sum((x - m) ** 2 for x in v) / len(v))
+                    return m, s
+                m_rg, s_rg = _mean_std(rg)
+                m_yb, s_yb = _mean_std(yb)
+                colorfulness = (math.sqrt(s_rg ** 2 + s_yb ** 2)
+                                + 0.3 * math.sqrt(m_rg ** 2 + m_yb ** 2))
+                edges = ImageStat.Stat(small.convert("L").filter(ImageFilter.FIND_EDGES))
+                sharpness = float(edges.var[0])
+                colors = small.quantize(colors=5).convert("RGB").getcolors(maxcolors=256) or []
+                colors.sort(key=lambda c: c[0], reverse=True)
+                palette = ["#%02x%02x%02x" % c[1] for c in colors[:5]]
+                return {
+                    "file": path,
+                    "size": [w, h],
+                    "aspect": round(w / float(h), 2),
+                    "brightness": round(brightness, 1),
+                    "saturation": round(saturation, 1),
+                    "colorfulness": round(colorfulness, 1),
+                    "sharpness": round(sharpness, 1),
+                    "palette": palette,
+                }
+        except Exception:
+            return {}
+
+    def _persona_web_digest(self, query="近期社会话题 人类情感 生活"):
         """尝试联网取一段摘要；任何失败都返回空串。"""
         mod = self._load_web_search_module()
         if mod is None:
             return ""
-        query = "近期社会话题 人类情感 生活"
         res = {}
         for payload in ({"query": query}, {"action": "search", "query": query}):
             try:
@@ -399,6 +738,72 @@ class IdleEngine:
             except Exception:
                 continue
         return None
+
+    @staticmethod
+    def _load_music_skill():
+        """按文件路径隔离载入 skills/music-gen（兼容 dev 与打包态）。"""
+        import importlib.util
+        import sys as _sys
+        candidates = []
+        meipass = getattr(_sys, "_MEIPASS", None)
+        if meipass:
+            candidates.append(os.path.join(meipass, "skills", "music-gen", "__init__.py"))
+        if getattr(_sys, "frozen", False):
+            candidates.append(os.path.join(
+                os.path.dirname(_sys.executable), "skills", "music-gen", "__init__.py"))
+        candidates.append(os.path.join(_PROJECT_ROOT, "skills", "music-gen", "__init__.py"))
+        for init in candidates:
+            if not os.path.exists(init):
+                continue
+            try:
+                spec = importlib.util.spec_from_file_location("skills_music_gen", init)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                return mod
+            except Exception:
+                continue
+        return None
+
+    def _do_music_learning(self):
+        """音乐自学：挑一个语料最少的曲风，收集 2 首音频 → NumPy 提取频谱 → 更新音色档案。"""
+        def _thought(msg):
+            if self.callback:
+                try:
+                    self.callback({"type": "internal_thought", "thought": msg})
+                except Exception:
+                    pass
+
+        mod = self._load_music_skill()
+        if mod is None:
+            _thought("[Music] 找不到 music-gen 技能，跳过本次音乐学习")
+            return
+        try:
+            if not should_learn("music", 3 * 3600):
+                _thought("[Music] 距上次音乐学习不足 3 小时，本次跳过")
+                return
+        except Exception:
+            pass
+
+        genres = ["jazz", "classical", "blues", "rock", "electronic",
+                  "folk", "ambient", "hiphop", "pop", "chinese"]
+        try:
+            listing = mod.execute({"action": "list"}).get("genres") or {}
+            pick = min(genres, key=lambda g: ((listing.get(g) or {}).get("tracks_learned") or 0,
+                                              (listing.get(g) or {}).get("tracks") or 0))
+            got = mod.execute({"action": "collect", "genre": pick, "limit": 2})
+            saved = int(got.get("count") or 0)
+            analyzed = mod.execute({"action": "analyze", "genre": pick})
+            if not analyzed.get("success"):
+                _thought(f"[Music] {pick} 频谱分析没有结果：{analyzed.get('error')}；本次新收集 {saved} 首")
+                return
+            _thought(f"[Music] 收集 {pick} {saved} 首，已分析 {analyzed.get('tracks')} 首，"
+                     f"主频能量中心 {analyzed.get('avg_centroid_hz')} Hz，音色档案已更新")
+            try:
+                mark_learned("music")
+            except Exception:
+                pass
+        except Exception as e:
+            _thought(f"[Music] 学习失败：{e}")
 
     def _run_self_optimization(self):
         """Run AI self-optimization during GAN idle time"""

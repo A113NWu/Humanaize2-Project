@@ -541,6 +541,14 @@ def build_context_from_memory(memory, max_messages=20):
             context += "\n" + block
     except Exception:
         pass
+    # 長期任務與 Deadline（讓她自己在對話裡記著，別忘）
+    try:
+        from tools.long_tasks import get_task_store
+        block = get_task_store().reminder_text(max_tasks=3)
+        if block:
+            context += "\n[記著的長期任務]\n" + block
+    except Exception:
+        pass
     return context
 
 
@@ -1535,7 +1543,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                 except Exception:
                     pass
 
-            collector = ResponseCollector(timeout=300)
+            # 技能執行（如逐帧渲染 60 秒视频）可能静默跑十幾分鐘，不能按 300 秒掐斷
+            collector = ResponseCollector(timeout=3600, completion_wait=1800)
             original_on_response = thinking_engine.on_response
             thinking_engine.on_response = collector.callback
 
@@ -1577,9 +1586,15 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                 except Exception:
                     pass
 
-            # 推 speak 命令：Live2D 頁面輪詢拿到後 TTS 朗讀 + 唇形
+            # 推 speak 命令：Live2D 頁面輪詢拿到後 TTS 朗讀 + 唇形（手機端/桌面端分開控制）
             try:
-                self._live2d_hub().push_command({"type": "speak", "text": reply})
+                _tts_settings = self._read_settings_raw()
+                self._live2d_hub().push_command({
+                    "type": "speak",
+                    "text": reply,
+                    "mobile": bool(_tts_settings.get("tts_mobile_enabled")),
+                    "desktop": bool(_tts_settings.get("tts_desktop_enabled")),
+                })
             except Exception:
                 pass
 
@@ -2044,7 +2059,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             "counter_max_warnings": 2, "counter_cooldown": 300,
             "allow_lan_access": False, "web_auth_username": "", "web_auth_password_hash": "",
             "live2d_enabled": True, "animation_speed": "1.5",
-            "tts_enabled": False
+            "tts_mobile_enabled": False, "tts_desktop_enabled": False
         }
 
     def _read_settings_raw(self):
@@ -2054,6 +2069,10 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             with open(self._settings_path(), "r", encoding="utf-8") as settings_file:
                 values = json.load(settings_file)
             if isinstance(values, dict):
+                # 舊版單一 tts_enabled → 拆分為手機端/桌面端兩個開關
+                if "tts_enabled" in values:
+                    values.setdefault("tts_mobile_enabled", bool(values["tts_enabled"]))
+                    values.setdefault("tts_desktop_enabled", bool(values["tts_enabled"]))
                 settings.update(values)
         except (OSError, ValueError):
             pass
@@ -2670,7 +2689,10 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             except ModuleNotFoundError:
                 from core.voice.tts_synthesizer import SynthesizeOptions, synthesize_speech, TTSError
 
-            result = synthesize_speech(SynthesizeOptions(text=text, voice=voice))
+            # 手機端（安卓 WebView）請求不受桌面靜音開關影響，保證「手機端播放」生效
+            _ua = str(self.headers.get('User-Agent') or '')
+            _is_mobile = any(t in _ua for t in ('Android', 'iPhone', 'iPad', 'Mobile', 'HarmonyOS'))
+            result = synthesize_speech(SynthesizeOptions(text=text, voice=voice), mobile=_is_mobile)
             audio = result.get("audio_bytes") or b""
             content_type = result.get("content_type") or "audio/mpeg"
             if not audio:
@@ -2956,7 +2978,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                 logger.warning(f"[Chat] failed to persist user message to memory: {e}")
 
         # 创建响应收集器
-        collector = ResponseCollector(timeout=300)
+        # 技能執行（如逐帧渲染 60 秒视频）可能静默跑十幾分鐘，不能按 300 秒掐斷
+        collector = ResponseCollector(timeout=3600, completion_wait=1800)
 
         # 保存原始on_response回调
         original_on_response = thinking_engine.on_response
