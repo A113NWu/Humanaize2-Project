@@ -31,6 +31,9 @@ _RUN_PATH = os.path.join(_STATE_DIR, "session.json")
 _MAX_LOG_LINES = 200
 _MAX_BUBBLES = 3
 _MAX_BUBBLE_CHARS = 80
+# 「当前离线/在忙」的暂缓策略：忙碌时最多连续推迟 10 轮（每轮 30 秒）
+_MAX_DEFER = 10
+_DEFER_SECONDS = 30
 _SET_KEYS = (
     "enabled", "conversation_id", "conversation_name", "persona_mode", "persona_extra",
     "participation", "min_reply_seconds", "max_replies_per_hour", "quiet_hours",
@@ -56,6 +59,7 @@ _STATE = {
     "log": [],
     "watchdog_note": "",
     "last_retry_at": 0.0,
+    "defer_count": 0,
 }
 
 
@@ -401,7 +405,36 @@ def _fmt_messages(messages):
     return "\n".join(lines)
 
 
-def _decision_prompt(res, batch):
+def _busy_snapshot():
+    """她此刻在忙什么：长任务 / 正在和主人对话 / 休息。用于决定「现在回」还是「做完再回」。"""
+    _ensure_core_path()
+    parts = []
+    try:
+        from tools.long_tasks import get_task_store
+        store = get_task_store()
+        tasks = store.list_tasks() or []
+        for task in tasks[:2]:
+            title = str(task.get("title") or "").strip()
+            step = str(task.get("next_step") or "").strip()
+            if title:
+                parts.append(f"在做「{title}」" + (f"（下一步：{step}）" if step else ""))
+        if not tasks and store.is_resting():
+            parts.append("在休息")
+    except Exception:
+        pass
+    try:
+        from ui import idle as idle_mod
+        engine = getattr(idle_mod, "_idle_engine_instance", None)
+        if engine is not None and getattr(engine, "paused", False):
+            parts.insert(0, "正在和主人对话")
+    except Exception:
+        pass
+    if not parts:
+        return False, "空闲"
+    return True, "；".join(parts)
+
+
+def _decision_prompt(res, batch, busy_text="空闲"):
     payload = _STATE.get("prompt_payload") or {}
     guidance = res.get("chat_guidance") or {}
     reminders = "\n".join(f"- {r}" for r in (guidance.get("reminders") or [])[:4])
@@ -416,6 +449,9 @@ def _decision_prompt(res, batch):
 【群聊行为要点】
 {reminders or "- 想接就接，接不上就安静；不要每条都回，也不要纯潜水。"}
 
+【你现在的状态】
+{busy_text}
+
 【这批新消息】
 {_fmt_messages(res.get("messages") or [])}
 
@@ -425,15 +461,21 @@ def _decision_prompt(res, batch):
 【本地允许的事件 id】{allowed or "无"}
 
 【你要做的】
-判断这一批要不要接话。只输出一个 JSON，不要解释、不要代码块：
-{{"action": "reply" 或 "silence",
+判断这一批要不要接话、什么时候接。只输出一个 JSON，不要解释、不要代码块：
+{{"action": "reply" 或 "defer" 或 "silence",
  "target_event_id": 一个整数（必须是允许的 id）,
  "topic_event_ids": [最多3个允许的 id],
  "intent": "20字内，你在做什么",
  "bubbles": ["第一句", "可选第二句"]}}
 
-规则：不想接就 silence 并让 bubbles 为空；reply 时 bubbles 1~3 条、每条不超过 60 字，
-不按标点拆句、不写括号动作、不写 @ 或 CQ 码、不用问句收尾。
+三个动作的含义：
+- reply：现在就回，把 bubbles 写出来；
+- defer：想做但此刻腾不出手，先把这件群聊事记着，等当前事情做完再回来处理；
+  只有【你现在的状态】确实是「在做…」或「正在和主人对话」时才用，bubbles 必须为空；
+- silence：不打算接，bubbles 为空。
+
+规则：reply 时 bubbles 1~3 条、每条不超过 60 字，不按标点拆句、不写括号动作、
+不写 @ 或 CQ 码、不用问句收尾。
 标着 [图片] 的消息你看不到画面，只能顺着文字语境接，不要描述或猜测图里是什么。"""
 
 
@@ -457,7 +499,9 @@ def _parse_decision(text, allowed):
     except ValueError:
         return {"action": "silence", "intent": "JSON 解析失败"}
     action = str(data.get("action") or "silence").strip().lower()
-    if action not in ("reply", "silence", "wait"):
+    if action in ("wait", "defer", "later", "postpone"):
+        action = "defer"
+    if action not in ("reply", "defer", "silence"):
         action = "silence"
     bubbles = []
     for item in data.get("bubbles") or []:
@@ -467,6 +511,8 @@ def _parse_decision(text, allowed):
             bubbles.append(text_item[:_MAX_BUBBLE_CHARS])
         if len(bubbles) >= _MAX_BUBBLES:
             break
+    if action == "defer" and bubbles:
+        action = "reply"  # 说了要拖却又写好了话 → 当成现在就回
     target = data.get("target_event_id")
     if not isinstance(target, int) or (allowed and target not in allowed):
         target = allowed[-1] if allowed else 0
@@ -482,7 +528,7 @@ def _parse_decision(text, allowed):
     }
 
 
-def _plan(client, session_id, batch_id, action, intent, target=0, topics=None):
+def _plan(client, session_id, batch_id, action, intent, target=0, topics=None, wait_seconds=0):
     args = {
         "session_id": session_id,
         "batch_id": batch_id,
@@ -495,6 +541,8 @@ def _plan(client, session_id, batch_id, action, intent, target=0, topics=None):
             args["target_event_id"] = target
         if topics:
             args["topic_event_ids"] = topics
+    elif action == "wait":
+        args["wait_seconds"] = max(0, min(30, int(wait_seconds or 0)))
     return _call(client, "plan_chat_reply", args)
 
 
@@ -544,11 +592,29 @@ def _handle_batch(client, cfg, res, batch):
     allowed = _batch_ids(batch)
     if not batch_id or not allowed:
         return
-    prompt = _decision_prompt(res, batch)
+    busy, busy_text = _busy_snapshot()
+    prompt = _decision_prompt(res, batch, busy_text)
     stop = _STATE.get("stop")
     decision = _parse_decision(_ask_llm(prompt, cfg, stop), allowed)
     _STATE["rounds"] += 1
     _STATE["last_activity"] = time.strftime("%H:%M:%S") + " " + decision.get("intent", "")
+    if not busy:
+        _STATE["defer_count"] = 0
+
+    if decision["action"] == "defer" and not decision["bubbles"]:
+        if busy and _STATE["defer_count"] < _MAX_DEFER:
+            _STATE["defer_count"] += 1
+            intent = decision.get("intent") or "稍后再回"
+            _plan(client, session_id, batch_id, "wait", intent, wait_seconds=_DEFER_SECONDS)
+            _log(f"[暂缓] {busy_text}；做完再回（{intent}）")
+            return
+        if busy:
+            _log(f"[静默] 已暂缓 {_MAX_DEFER} 次仍未腾出空，先不回")
+            _plan(client, session_id, batch_id, "silence", "一直没空，本轮不接话")
+            _STATE["silenced"] += 1
+            return
+        # 其实不忙，只是模型想拖 → 当作不接话
+        _STATE["defer_count"] = 0
 
     ok, reason = _budget_ok(cfg)
     if decision["action"] != "reply" or not decision["bubbles"] or not ok:

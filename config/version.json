@@ -1,5 +1,5 @@
 {
-  "version": "2.4.1",
-  "last_updated": "2026-11-01T15:10:00.000000",
-  "release_notes": "v2.4.1：新增一批自研技能与能力。1) music-gen：按曲风收集音频、NumPy 提取频谱，再用分轨编曲合成新曲，支持 trance（138BPM、侧链泵感）与 jazz 等曲风；2) video-gen：写 HTML 逐帧渲染合成 mp4；3) long-task：带 Deadline 的长期任务与休息窗口管理；4) qq-group-chat：后台驱动 Tulpa MCP 群聊循环（wait→决策→plan→send），按自然频率发言、带静默时段；5) 新增 Selfuse_Capture 独立面部捕捉页面，Live2D 姿态串流可跨页面保持；6) 提示词、LLM 调用、闲置引擎与语音合成细节优化。"
+  "version": "2.4.2",
+  "last_updated": "2026-11-01T17:30:00.000000",
+  "release_notes": "v2.4.2：QQ 群聊行为改造。群里有新消息时先通知 Aize，并把她此刻的状态（在做哪个长期任务 / 正在和主人对话 / 空闲）一起告诉她，由她自己三选一：现在回答、做完当前任务再回答、不回答。选「做完再回」时按 30 秒一轮暂缓并重新判断，腾出空来就接；连续 10 轮仍未空则本轮不接。同时修复群聊计划与发送回执日志的误报。v2.4.1 内容沿用：music-gen、video-gen、long-task、qq-group-chat 等自研技能与 Selfuse_Capture 独立面部捕捉页面。"
 }
