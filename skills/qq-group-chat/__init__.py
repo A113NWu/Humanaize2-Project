@@ -34,6 +34,8 @@ _MAX_BUBBLE_CHARS = 80
 # 「当前离线/在忙」的暂缓策略：忙碌时最多连续推迟 10 轮（每轮 30 秒）
 _MAX_DEFER = 10
 _DEFER_SECONDS = 30
+# 没接话的群聊内容最多每 10 分钟写一条长期记忆，免得把记忆库灌满
+_MEMORY_MIN_GAP = 600
 _SET_KEYS = (
     "enabled", "conversation_id", "conversation_name", "persona_mode", "persona_extra",
     "participation", "min_reply_seconds", "max_replies_per_hour", "quiet_hours",
@@ -60,6 +62,7 @@ _STATE = {
     "watchdog_note": "",
     "last_retry_at": 0.0,
     "defer_count": 0,
+    "last_memory_at": 0.0,
 }
 
 
@@ -103,6 +106,16 @@ def _ensure_core_path():
     core = os.path.join(_PROJECT_ROOT, "src", "core")
     if os.path.isdir(core) and core not in sys.path:
         sys.path.insert(0, core)
+
+
+def _affect_block():
+    """她此刻的心情（tools.affect），群聊里的语气也跟着走。"""
+    _ensure_core_path()
+    try:
+        from tools.affect import render_affect_block
+        return (render_affect_block() or "").strip()
+    except Exception:
+        return ""
 
 
 def _pid_alive(pid):
@@ -405,6 +418,50 @@ def _fmt_messages(messages):
     return "\n".join(lines)
 
 
+def _batch_digest(res, bubbles=None):
+    """把一批群消息（以及自己刚说的话）压成一条可入库的记忆。"""
+    name = str(_load_config().get("conversation_name") or "QQ群")
+    lines = []
+    for message in (res.get("messages") or [])[-8:]:
+        content = str(message.get("content") or "").strip()
+        segments = message.get("segments") or []
+        if any(str(seg.get("type") or "") in ("image", "face", "record", "video")
+               for seg in segments if isinstance(seg, dict)):
+            content = (content + " [图片]").strip()
+        if not content:
+            continue
+        who = "我" if message.get("is_self") else str(
+            message.get("sender") or message.get("sender_id") or "群友")
+        lines.append(f"{who}：{content}")
+    if not lines and not bubbles:
+        return ""
+    text = f"QQ群「{name}」里，" + "；".join(lines) if lines else f"QQ群「{name}」里"
+    if bubbles:
+        text += "。我回：" + " / ".join(bubbles)
+    return text
+
+
+def _remember(text, force=False):
+    """写进 Aize 的长期记忆库（tools.memory_db）。force=False 时按时间窗节流。"""
+    text = str(text or "").strip()
+    if not text:
+        return
+    now = time.time()
+    if not force and now - float(_STATE.get("last_memory_at") or 0.0) < _MEMORY_MIN_GAP:
+        return
+    _ensure_core_path()
+    try:
+        from tools.memory_db import get_memory_db
+        result = get_memory_db().add("群聊", text[:800], kind="chat")
+    except Exception as exc:
+        _log(f"[记忆] 写入失败：{type(exc).__name__}")
+        return
+    if result.get("success"):
+        with _LOCK:
+            _STATE["last_memory_at"] = now
+        _log("[记忆] 已记下这批群聊")
+
+
 def _busy_snapshot():
     """她此刻在忙什么：长任务 / 正在和主人对话 / 休息。用于决定「现在回」还是「做完再回」。"""
     _ensure_core_path()
@@ -444,6 +501,8 @@ def _decision_prompt(res, batch, busy_text="空闲"):
         for t in targets[:8])
     allowed = _batch_ids(batch)
     persona = payload.get("persona") or _persona_text(_load_config())
+    feel = _affect_block()
+    feel_line = f"\n{feel}\n" if feel else ""
     return f"""{persona}
 
 【群聊行为要点】
@@ -451,7 +510,7 @@ def _decision_prompt(res, batch, busy_text="空闲"):
 
 【你现在的状态】
 {busy_text}
-
+{feel_line}
 【这批新消息】
 {_fmt_messages(res.get("messages") or [])}
 
@@ -605,11 +664,13 @@ def _handle_batch(client, cfg, res, batch):
         if busy and _STATE["defer_count"] < _MAX_DEFER:
             _STATE["defer_count"] += 1
             intent = decision.get("intent") or "稍后再回"
+            _remember(_batch_digest(res))
             _plan(client, session_id, batch_id, "wait", intent, wait_seconds=_DEFER_SECONDS)
             _log(f"[暂缓] {busy_text}；做完再回（{intent}）")
             return
         if busy:
             _log(f"[静默] 已暂缓 {_MAX_DEFER} 次仍未腾出空，先不回")
+            _remember(_batch_digest(res))
             _plan(client, session_id, batch_id, "silence", "一直没空，本轮不接话")
             _STATE["silenced"] += 1
             return
@@ -622,41 +683,51 @@ def _handle_batch(client, cfg, res, batch):
             _log(f"[静默] {reason}（本想接 id={decision['target_event_id']}）")
         else:
             _log(f"[静默] {decision.get('intent') or '不接话'}")
+        _remember(_batch_digest(res))
         _plan(client, session_id, batch_id, "silence", decision.get("intent") or "本轮不接话")
         _STATE["silenced"] += 1
         return
 
-    plan = _plan(client, session_id, batch_id, "reply",
-                 decision.get("intent") or "接一句",
-                 decision["target_event_id"], decision["topic_event_ids"])
-    plan_id = _plan_id(plan)
-    if not plan_id:
-        detail = " ".join(str(plan.get(k) or "") for k in ("state", "error_code", "note"))
-        _log(f"[计划] 未拿到 READY 计划：{detail.strip() or '无状态'}")
-        return
+    try:
+        plan = _plan(client, session_id, batch_id, "reply",
+                     decision.get("intent") or "接一句",
+                     decision["target_event_id"], decision["topic_event_ids"])
+        plan_id = _plan_id(plan)
+        if not plan_id:
+            detail = " ".join(str(plan.get(k) or "") for k in ("state", "error_code", "note"))
+            _log(f"[计划] 未拿到 READY 计划：{detail.strip() or '无状态'}")
+            return
 
-    bubbles = [{"kind": "text", "text": text} for text in decision["bubbles"]]
-    receipt = _call(client, "send_chat_reply", {
-        "session_id": session_id,
-        "plan_id": plan_id,
-        "idempotency_key": f"humanaize-qq-{int(time.time() * 1000)}",
-        "expression_ids": [],
-        "bubbles": bubbles,
-    })
-    with _LOCK:
-        _STATE["sent"] += 1
-        _STATE["last_reply_at"] = time.time()
-        _STATE["reply_times"].append(time.time())
-    text = " / ".join(b["text"] for b in bubbles)
-    _log(f"[发言] {text}")
-    statuses = []
-    for item in (receipt.get("bubbles") or receipt.get("results") or []):
-        if isinstance(item, dict):
-            statuses.append(str(item.get("state") or (item.get("receipt") or {}).get("state") or ""))
-    overall = str(receipt.get("state") or "")
-    if (overall and overall not in ("SUCCEEDED", "NOOP")) or \
-            any(s not in ("SUCCEEDED", "NOOP") for s in statuses):
-        _log(f"[回执] {overall or ' / '.join(statuses)} {receipt.get('reason') or ''}".strip())
+        bubbles = [{"kind": "text", "text": text} for text in decision["bubbles"]]
+        receipt = _call(client, "send_chat_reply", {
+            "session_id": session_id,
+            "plan_id": plan_id,
+            "idempotency_key": f"humanaize-qq-{int(time.time() * 1000)}",
+            "expression_ids": [],
+            "bubbles": bubbles,
+        })
+        with _LOCK:
+            _STATE["sent"] += 1
+            _STATE["last_reply_at"] = time.time()
+            _STATE["reply_times"].append(time.time())
+        text = " / ".join(b["text"] for b in bubbles)
+        _log(f"[发言] {text}")
+        statuses = []
+        for item in (receipt.get("bubbles") or receipt.get("results") or []):
+            if isinstance(item, dict):
+                statuses.append(str(item.get("state") or (item.get("receipt") or {}).get("state") or ""))
+        overall = str(receipt.get("state") or "")
+        failed = (overall and overall not in ("SUCCEEDED", "NOOP")) or \
+            any(s not in ("SUCCEEDED", "NOOP") for s in statuses)
+        if failed:
+            _log(f"[回执] {overall or ' / '.join(statuses)} {receipt.get('reason') or ''}".strip())
+            _remember(_batch_digest(res))
+        else:
+            _remember(_batch_digest(res, decision["bubbles"]), force=True)
+    except TulpaError:
+        # 发送链路没通（QQ 没连上等）：这批内容照样记下来，但不算她说过
+        _remember(_batch_digest(res))
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -761,6 +832,9 @@ def _start(cfg, reason=""):
     with _LOCK:
         if _STATE["thread"] and _STATE["thread"].is_alive():
             return False, "驱动循环已经在运行"
+    # 技能被重复导入时会得到新的模块实例，pid 锁挡不住同一进程里的第二份循环
+    if any(t.name == "qq-group-loop" and t.is_alive() for t in threading.enumerate()):
+        return False, "这个进程里已经有群聊驱动在跑"
     if not _acquire_lock():
         return False, "另一个进程正在运行群聊驱动（见 state/loop.pid）"
     stop = threading.Event()

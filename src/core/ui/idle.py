@@ -38,6 +38,15 @@ _idle_engine_instance = None
 _AESTHETIC_DB_NAME = "aesthetic_db.json"
 
 
+def _affect_block():
+    """她此刻的心情（tools.affect），让空闲时的决定也带着情绪。"""
+    try:
+        from tools.affect import render_affect_block
+        return (render_affect_block() or "").strip()
+    except Exception:
+        return ""
+
+
 def _aesthetic_path():
     """审美学习数据的保存位置（dev=data/、打包=exe 旁 data/）。"""
     base = None
@@ -382,6 +391,9 @@ class IdleEngine:
                 prompt = prompt + "\n\n" + _persona_text
         except Exception:
             pass
+        _feel = _affect_block()
+        if _feel:
+            prompt = prompt + "\n\n" + _feel
         
         try:
             response = chat(prompt).strip()
@@ -948,6 +960,9 @@ class IdleEngine:
             # 此時把反饋塊直接追加到末尾，保證閉環依然成立
             if results_block and "{action_results}" not in base_prompt:
                 prompt += "\n" + results_block
+            _feel = _affect_block()
+            if _feel:
+                prompt += "\n\n" + _feel
             try:
                 raw = chat(prompt, max_tokens=400, timeout=60).strip()
             except Exception as e:

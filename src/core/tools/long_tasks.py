@@ -164,7 +164,15 @@ class LongTaskStore:
             return {"success": True, "task": t}
 
     def complete(self, task_id, note=""):
-        return self.update(task_id, status=_STATUS_DONE, note=note or "任务完成")
+        result = self.update(task_id, status=_STATUS_DONE, note=note or "任务完成")
+        # 事情做完了，她的心情也应该动一下（情绪由 tools.affect 维护）
+        if result.get("success"):
+            try:
+                from tools.affect import note_event
+                note_event("completed", f"把「{(result.get('task') or {}).get('title', '')}」做完了")
+            except Exception:
+                pass
+        return result
 
     # ------------------------------------------------------------ rest
     def rest_until(self):

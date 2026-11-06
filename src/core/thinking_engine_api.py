@@ -533,6 +533,14 @@ def build_context_from_memory(memory, max_messages=20):
                     context += "\n" + block
             except Exception:
                 pass
+    # Aize 的情绪：主人刚说的话 + 她自己的心情（由 tools.affect 维护，跨重启保留）
+    try:
+        from tools.affect import render_affect_block
+        block = render_affect_block()
+        if block:
+            context += "\n" + block
+    except Exception:
+        pass
     # 短期記憶（10 分鐘窗口）
     try:
         from memory.short_term import format_for_prompt as _st_block
@@ -1466,6 +1474,13 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         if not text:
             self._send_error("text is required", 400)
             return
+
+        # 先感知主人这句话的情绪，并更新 Aize 自己的心情（build_context_from_memory 会读出来）
+        try:
+            from tools.affect import observe_user_message
+            observe_user_message(text)
+        except Exception:
+            pass
 
         state = ThinkingEngineState()
         thinking_engine = state.get_thinking_engine()
@@ -2831,6 +2846,13 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                 break
         # 時間線只存主人真正打的字（附件上下文/視覺描述不進聊天氣泡）
         display_user_text = (user_text or "").strip()
+
+        # 先感知主人这句话的情绪，并更新 Aize 自己的心情（build_context_from_memory 会读出来）
+        try:
+            from tools.affect import observe_user_message
+            observe_user_message(display_user_text)
+        except Exception as e:
+            logger.warning(f"[Affect] observe failed: {e}")
 
         # 上傳附件分流：圖片→視覺模型分析；其他文件→引導 Aize 寫代碼閉環分析。
         # 在佔用 _chat_lock 之前完成（視覺調用是外部 HTTP，不阻塞其他聊天排隊）。
