@@ -60,8 +60,8 @@ def add(mem, role, content, source=None):
             capture_message(role, content)
         except Exception:
             pass
-    # 短期記憶：Aize 回完一輪後，把「該輪用戶輸入 + 她的回覆」放進 10 分鐘窗口，
-    # 期內由 Aize 自己決定是否寫入長期記憶（記憶/經驗/情感三庫）
+    # 短期記憶：Aize 回完一輪後，把「該輪用戶輸入 + 她的回覆」放進按話題保存的短期記憶，
+    # 由她自己判斷是否寫入長期記憶（記憶/經驗/情感三庫）；沒寫入的 24 小時後遺忘
     if role == "assistant" and source in (None, "ai_response"):
         try:
             prev_user = ""

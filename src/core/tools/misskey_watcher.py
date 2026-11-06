@@ -111,6 +111,24 @@ def _filter_check(text):
     return True, []
 
 
+def _short_term():
+    """短期記憶模塊（收到的消息先放進去，再由她自己判斷是否進長期）。"""
+    for mod in ("memory.short_term", "core.memory.short_term"):
+        try:
+            return __import__(mod, fromlist=["record_turn"])
+        except Exception:
+            continue
+    return None
+
+
+def _affect_block():
+    try:
+        from tools.affect import render_affect_block
+        return (render_affect_block() or "").strip()
+    except Exception:
+        return ""
+
+
 class MisskeyWatcher:
     """輪詢 Misskey，發現新消息/活動時提醒 Aize 並由她決定互動與否。"""
 
@@ -121,6 +139,7 @@ class MisskeyWatcher:
         self._seen = []
         self._state_path = os.path.join(_data_dir(), "misskey_watch_state.json")
         self._seen = _load_json(self._state_path, {}).get("seen", [])
+        self._entries = {}   # note_id → 短期記憶 entry id（回覆後把她的話補進去）
         self.thread = threading.Thread(target=self._run, daemon=True)
 
     def start(self):
@@ -209,6 +228,19 @@ class MisskeyWatcher:
             return
 
         fresh = fresh[:_MAX_ITEMS_PER_POLL]
+        # 每條提及先寫進短期記憶：回不回由她決定，是否值得長期記住也由她判斷
+        st = _short_term()
+        if st:
+            for kind, nid, user, text in fresh:
+                if kind != "提及":
+                    continue
+                try:
+                    entry = st.record_turn(f"@{user}：{text}", source="misskey",
+                                           speaker=f"@{user}（Misskey）")
+                    if entry.get("id"):
+                        self._entries[nid] = entry["id"]
+                except Exception:
+                    pass
         mention_cnt = sum(1 for k, *_ in fresh if k == "提及")
         self._emit(f"收到 {len(fresh)} 條新消息/活動（其中 {mention_cnt} 條提及），Aize 正在決定是否互動…")
         self._decide_and_act(bot, fresh)
@@ -223,6 +255,9 @@ class MisskeyWatcher:
         lines = [f"[{nid}]（{kind}）@{user}: {text[:160]}" for kind, nid, user, text in fresh]
         prompt = (base.replace("{host}", str(bot.config.get("host") or "Misskey"))
                       .replace("{items}", "\n".join(lines)))
+        feel = _affect_block()
+        if feel:
+            prompt += "\n\n" + feel
         raw = _chat(prompt, max_tokens=500, timeout=60)
         actions = self._parse_actions(raw)
         if actions is None:
@@ -261,6 +296,7 @@ class MisskeyWatcher:
                 r = bot.post(text, reply_id=nid)
                 if r.get("success"):
                     acted += 1
+                    self._remember_reply(nid, text)
                     self._emit(f"Aize 回覆了 @{self._user_of(fresh, nid)}：{text[:60]}")
                 else:
                     self._emit(f"回覆失敗：{r.get('error')}")
@@ -285,6 +321,16 @@ class MisskeyWatcher:
 
         if acted == 0:
             self._emit("Aize 看了一圈，決定都不互動（忽略）")
+
+    def _remember_reply(self, nid, text):
+        """把她回的那句補進同一條短期記憶，之後由她判斷是否長期記住。"""
+        st = _short_term()
+        entry_id = self._entries.pop(str(nid), None)
+        if st and entry_id:
+            try:
+                st.attach_ai(entry_id, text)
+            except Exception:
+                pass
 
     @staticmethod
     def _user_of(fresh, nid):

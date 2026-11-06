@@ -442,7 +442,8 @@ def _batch_digest(res, bubbles=None):
 
 
 def _remember(text, force=False):
-    """写进 Aize 的长期记忆库（tools.memory_db）。force=False 时按时间窗节流。"""
+    """写进 Aize 的短期记忆；回不回都由她自己再判断是否进长期记忆。
+    force=False 时按时间窗节流。"""
     text = str(text or "").strip()
     if not text:
         return
@@ -451,15 +452,15 @@ def _remember(text, force=False):
         return
     _ensure_core_path()
     try:
-        from tools.memory_db import get_memory_db
-        result = get_memory_db().add("群聊", text[:800], kind="chat")
+        from memory.short_term import record_turn
+        entry = record_turn(text[:800], source="qq", speaker="QQ群聊")
     except Exception as exc:
         _log(f"[记忆] 写入失败：{type(exc).__name__}")
         return
-    if result.get("success"):
+    if entry:
         with _LOCK:
             _STATE["last_memory_at"] = now
-        _log("[记忆] 已记下这批群聊")
+        _log("[记忆] 已放进短期记忆，等她判断是否长期记住")
 
 
 def _busy_snapshot():
