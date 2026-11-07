@@ -178,6 +178,10 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False, onefile=F
         "--collect-submodules", "core.Prompt",
         "--hidden-import", "core.data",
         "--collect-submodules", "core.data",
+        # video-gen 用 CDP 复用同一个浏览器逐帧截图；缺 websocket-client 会退回
+        # 每帧启动一次 Chrome 的慢路径（20 秒视频要渲半小时）
+        "--hidden-import", "websocket",
+        "--collect-submodules", "websocket",
         # Exclude heavy unneeded modules (transitive deps not used by core app)
         "--exclude-module", "transformers",
         "--exclude-module", "torch",

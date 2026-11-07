@@ -711,6 +711,16 @@ def execute(input_data: Any) -> Dict[str, Any]:
     params = input_data.get("params") if isinstance(input_data.get("params"), dict) else {}
     merged = dict(params)
     merged.update({k: v for k, v in input_data.items() if k not in ("params",)})
+    # 模型有時會把參數再包一層 input，例如
+    # {"action":"analyze_audio","input":{"audio_path":"..."}}
+    # 把內層參數攤平，避免技能因拿不到 audio 直接失敗
+    nested = input_data.get("input")
+    if isinstance(nested, dict):
+        inner = nested.get("input") if isinstance(nested.get("input"), dict) else nested
+        for key, value in inner.items():
+            merged.setdefault(key, value)
+    if not merged.get("audio"):
+        merged["audio"] = merged.get("audio_path") or merged.get("path") or ""
 
     action = str(merged.get("action") or merged.get("command") or "").strip().lower()
     if not action:
