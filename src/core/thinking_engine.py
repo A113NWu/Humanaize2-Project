@@ -681,17 +681,30 @@ class ThinkingEngine:
         try:
             agent = Agent('!')
             agent.set_language(self.language)
-            if agent.has_actions(actual_reply):
-                logger.info("Agent has actions to execute")
-                if self.on_response:
-                    self.on_response({"type": "command_start", "message": "AI is executing a command...\n"})
-                out = agent.agent('!', actual_reply)
-                logger.info(f"Agent output: {out[:200] if out else 'Empty'}")
-                if self.on_response:
-                    self.on_response({"type": "command_result", "output": out})
-                
-                # 从命令执行中学习
-                self._learn_from_command_result(actual_reply, out, success=True)
+            has_actions = agent.has_actions(actual_reply)
+            retry_truncated = (not has_actions) and self._looks_truncated_skill_call(actual_reply)
+            promised_only = ((not has_actions) and (not retry_truncated)
+                             and self._promises_action_without_call(actual_reply, user_text))
+            if has_actions or retry_truncated or promised_only:
+                if has_actions:
+                    logger.info("Agent has actions to execute")
+                    if self.on_response:
+                        self.on_response({"type": "command_start", "message": "AI is executing a command...\n"})
+                    out = agent.agent('!', actual_reply)
+                    logger.info(f"Agent output: {out[:200] if out else 'Empty'}")
+                    if self.on_response:
+                        self.on_response({"type": "command_result", "output": out})
+
+                    # 从命令执行中学习
+                    self._learn_from_command_result(actual_reply, out, success=True)
+                else:
+                    # 只答应/只说要分析，却没输出技能调用：不能当最终回复结束，
+                    # 餵回纠偏信息进入 followup，让任务继续往下走
+                    logger.warning("Main reply promised action but has no skill call; forcing followup retry")
+                    if self.on_response:
+                        self.on_response({"type": "command_start", "message": "正在重試技能調用…\n"})
+                    out = (self._truncated_skill_feedback() if retry_truncated
+                           else self._no_action_feedback())
                 
                 # 如果有RESPONSE内容，使用它；否则清理命令后作为回复
                 if response_content:
@@ -735,7 +748,8 @@ class ThinkingEngine:
                     for _sn, _si in self._extract_skill_calls(actual_reply)[1]:
                         seen_calls.add(f"{_sn}:{json.dumps(_si, sort_keys=True, ensure_ascii=False)}")
                     stall_nudges = 0
-                    for loop_idx in range(10):
+                    cont_nudges = 0
+                    for loop_idx in range(20):
                         followup_prompt = load_followup_prompt(followup_out, user_text)
                         logger.info(f"Generating followup response (round {loop_idx + 1})")
                         # 發送「思考中」信號，避免 ResponseCollector 因 LLM 生成耗時
@@ -768,11 +782,19 @@ class ThinkingEngine:
                         logger.info(f"[Followup] round {loop_idx + 1}: skill_calls={len(f_calls)}, cleaned_length={len(fcleaned.strip())}")
                         if not f_calls:
                             # 想調技能但 JSON 被截斷/壞掉 → 餵回錯誤讓模型立即重試，不結束工作流
-                            if self._looks_truncated_skill_call(ffinal_reply) and loop_idx < 9:
+                            if self._looks_truncated_skill_call(ffinal_reply) and loop_idx < 19:
                                 logger.warning(f"[Followup] round {loop_idx + 1}: truncated skill JSON, retrying")
                                 followup_out = self._truncated_skill_feedback()
                                 continue
-                            # 沒有更多技能調用 → 展示最終總結
+                            # 只說「我先分析/接下來檢查」而沒有任何調用 → 任務會半路停下，強制糾偏
+                            if (not self._asks_user(ffinal_reply)) and (not self._looks_complete(ffinal_reply)) \
+                                    and cont_nudges < 4:
+                                cont_nudges += 1
+                                logger.warning(f"[Followup] round {loop_idx + 1}: no skill call and task not "
+                                               f"complete, nudge #{cont_nudges}")
+                                followup_out = self._continuation_nudge_feedback(user_text)
+                                continue
+                            # 沒有更多技能調用 → 展示最終總結（或向用戶提問）
                             if self.on_response and fcleaned.strip():
                                 self.on_response({"type": "chat_response", "reply": fcleaned.strip()})
                             break
@@ -1153,7 +1175,8 @@ class ThinkingEngine:
                         for _sn, _si in self._extract_skill_calls(full_reply)[1]:
                             seen_calls.add(f"{_sn}:{json.dumps(_si, sort_keys=True, ensure_ascii=False)}")
                         stall_nudges = 0
-                        for loop_idx in range(10):  # 最多 10 輪，防止無限循環
+                        cont_nudges = 0
+                        for loop_idx in range(20):  # 最多 20 輪，防止無限循環
                             followup_prompt = load_followup_prompt(followup_out, user_text)
                             logger.info(f"Generating followup response (round {loop_idx + 1})")
                             # 發送「思考中」信號重置 collector 計時器，避免 LLM 生成
@@ -1180,11 +1203,19 @@ class ThinkingEngine:
 
                             if not f_calls:
                                 # 想調技能但 JSON 被截斷/壞掉 → 餵回錯誤讓模型立即重試，不結束工作流
-                                if self._looks_truncated_skill_call(ffinal_reply) and loop_idx < 9:
+                                if self._looks_truncated_skill_call(ffinal_reply) and loop_idx < 19:
                                     logger.warning(f"Followup round {loop_idx + 1}: truncated skill JSON, retrying")
                                     followup_out = self._truncated_skill_feedback()
                                     continue
-                                # 沒有更多技能調用 → 這是最終總結，展示給用戶
+                                # 只說「我先分析/接下來檢查」而沒有調用 → 任務會半路停下，強制糾偏
+                                if (not self._asks_user(ffinal_reply)) and (not self._looks_complete(ffinal_reply)) \
+                                        and cont_nudges < 4:
+                                    cont_nudges += 1
+                                    logger.warning(f"Followup round {loop_idx + 1}: no skill call and task not "
+                                                   f"complete, nudge #{cont_nudges}")
+                                    followup_out = self._continuation_nudge_feedback(user_text)
+                                    continue
+                                # 沒有更多技能調用 → 這是最終總結（或向用戶提問），展示給用戶
                                 fsentences = self._split_sentences(fcleaned)
                                 for sentence in fsentences:
                                     if sentence and sentence not in sent_sentences:
@@ -1639,15 +1670,61 @@ class ThinkingEngine:
 
     @staticmethod
     def _promises_action_without_call(text, user_text=""):
-        """用户要求做事，模型只答应（「我马上写」「先写文件」）却没输出任何技能调用。"""
+        """模型只答应/宣布下一步要做（「我先分析」「接下来检查」）却没输出任何技能调用。"""
         if not text:
             return False
-        if not re.search(r"(视频|生成|制作|渲染|下载|搜索|查一下|代码|脚本|文档|文件|图片|技能|执行|运行|安装|部署)",
-                         str(user_text or "")):
+        if not re.search(
+                r"(视频|音频|音乐|MV|歌词|生成|制作|渲染|下载|搜索|查一下|分析|检查|"
+                r"代码|脚本|文档|文件|图片|素材|技能|执行|运行|安装|部署|整理|合成)",
+                str(user_text or "")):
             return False
         return bool(re.search(
-            r"(马上|立刻|立即|这就|先(去|来|写|做)|开始(制作|做|生成|渲染|写)|"
-            r"正在(写|制作|生成|渲染)|我来(做|写|生成|制作|渲染|查)|稍等)", text))
+            r"(马上|立刻|立即|这就|先(去|来|写|做|看|分析|检查|研究|确认|整理|准备)|"
+            r"开始(制作|做|生成|渲染|分析|检查|写)|正在(写|制作|生成|渲染|分析|检查)|"
+            r"我来(做|写|生成|制作|渲染|查|分析|检查)|让我(先|去|来)|"
+            r"接下来(我|要|会|先)|下一步(我|要|会)|我看看|我去|我要(去|先|做|写)|稍等)",
+            text))
+
+    @staticmethod
+    def _asks_user(text):
+        """她是在向用户要信息 / 等用户确认，这时应该结束回合等回复，不算半途而废。"""
+        t = str(text or "").strip()
+        if not t:
+            return False
+        if t.endswith(("?", "？")):
+            return True
+        return bool(re.search(
+            r"(请|麻烦|可以|能不能|要不要|是否).{0,12}(发|给|告诉|提供|确认|选|说|上传|补充)", t))
+
+    @staticmethod
+    def _looks_complete(text):
+        """判断一段没有技能调用的文字是不是「真的做完了」的总结。"""
+        t = str(text or "").strip()
+        if not t:
+            return False
+        if re.search(r"(我先|接下来|下一步|马上|立刻|正在|稍等|还没|未完成|待会|一会儿|准备去|打算)",
+                     t):
+            return False
+        if re.search(r"(完成|做完|搞定|做好|弄好|写好|写完|画好|剪好|生成好|合成好|处理完|检查完|"
+                     r"保存|已存|文件(在|位于)|以下是|结果如下|总结如下|路径|输出在|已发|已上傳|已上传)", t):
+            return True
+        if re.search(r"(\.mp4|\.mp3|\.wav|\.lrc|\.docx|\.xlsx|\.pptx|\.pdf|\.zip|\.png|\.jpg|"
+                     r"C:\\|D:\\)", t, re.IGNORECASE):
+            return True
+        return False
+
+    @staticmethod
+    def _continuation_nudge_feedback(user_text=""):
+        """任务半途停下时的纠偏：只说不做等于把任务丢在半路。"""
+        import json as _json
+        return _json.dumps({
+            "success": False,
+            "error": "任务还没有完成，但你这一轮没有输出任何 [EXEC] 技能调用，只说了接下来要做什么。"
+                     "系统不会自己继续，任务会停在半路。請立即输出下一條 [EXEC] 技能名 + 一行合法 JSON 繼續推進；"
+                     "只有用戶要求的產物真的生成並檢查過（文件存在 / 视频路径已拿到 / 结果已给出），"
+                     "才可以用自然语言总结收尾。若确实需要用户提供信息，就直接向用户提问并结束本轮。",
+            "user_original_request": str(user_text or "")[:300]
+        }, ensure_ascii=False)
 
     @staticmethod
     def _no_action_feedback():
