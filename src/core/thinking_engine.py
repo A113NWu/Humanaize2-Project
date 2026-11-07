@@ -731,13 +731,16 @@ class ThinkingEngine:
                 logger.info(f"AI final reply (with command): {final_reply}")
                 
                 if memory is not None:
-                    add(memory, "assistant", final_reply, source="ai_response")
+                    # promised_only 只是「我先分析一下」的过场话，不写进记忆、不展示给用户
+                    if final_reply and not promised_only:
+                        add(memory, "assistant", final_reply, source="ai_response")
                     add(memory, "system", f"Command output:\n{out}", source="system")
                     save_memory(memory)
-                if self.on_response:
+                if self.on_response and final_reply and not promised_only:
                     self.on_response({"type": "chat_response", "reply": final_reply})
                 # 发送AI回复通知
-                notify_ai_response(final_reply)
+                if not promised_only:
+                    notify_ai_response(final_reply)
                 
                 # 将命令结果发给AI，引导她解决问题
                 try:
