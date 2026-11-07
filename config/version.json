@@ -1,5 +1,5 @@
 {
-  "version": "2.4.7",
-  "last_updated": "2026-11-07T12:40:00.000000",
-  "release_notes": "v2.4.7：MV 流程实测修复。视频渲染的 canvas 常被模型漏写 width/height，导致画面只占左上角 300x150；现在渲染器会自动补尺寸，成片铺满整幅。技能参数再包一层 input 时自动摊平（audio_path 等别名也兼容）。重复已成功的动作时纠偏信息会列出已完成步骤并给出 MV 固定顺序（analyze_audio → render_frames → build_video → build_mv → sample_frames）。CDP 快路径打包补齐 websocket-client，20 秒视频渲染约 30 秒完成。v2.4.6 内容沿用：任务强制续跑、过场话不展示。"
+  "version": "2.4.8",
+  "last_updated": "2026-11-07T22:40:00.000000",
+  "release_notes": "v2.4.8：桌面控制新增状态查询与紧急停止 API。「GET /api/desktop-control/status」返回是否启用、是否运行中、当前目标/步数/最近观察；「POST /api/desktop-control/stop」可从任何进程发出急停。运行状态与急停信号改为落地文件共享，跨进程/跨模块实例生效（配合 WinIsland 插件 aize-status 在灵动岛上常驻显示状态，托盘命令或 Ctrl+Alt+Shift+S 一键急停）。两接口为本地免登录，仍受局域网门禁限制。"
 }

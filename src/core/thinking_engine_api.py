@@ -1061,7 +1061,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                           "/api/live2d/mocap/start", "/api/live2d/mocap/stop",
                           "/api/live2d/mocap/status", "/api/live2d/mocap/preview",
                           "/api/live2d/mocap/recalibrate", "/Selfuse_Capture",
-                          "/Selfuse_Capture/", "/api/tts")
+                          "/Selfuse_Capture/", "/api/tts",
+                          "/api/desktop-control/status", "/api/desktop-control/stop")
     # OBS 瀏覽源無法登錄，Live2D 頁面資源與攝像頭背景圖免登錄（仍受局域網門禁限制）
     _AUTH_EXEMPT_PREFIXES = ("/live2d/", "/asset/")
 
@@ -1184,6 +1185,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._send_json(self._load_settings())
         elif parsed.path == '/api/status':
             self._send_json(self._status_payload())
+        elif parsed.path == '/api/desktop-control/status':
+            self._handle_desktop_control_status()
         elif parsed.path == '/api/chat/history':
             self._handle_chat_history()
         elif parsed.path == '/api/prompt':
@@ -1330,6 +1333,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._handle_chat_completions()
         elif parsed.path == '/api/chat/interrupt':
             self._handle_chat_interrupt()
+        elif parsed.path == '/api/desktop-control/stop':
+            self._handle_desktop_control_stop()
         elif parsed.path == '/api/settings':
             self._handle_save_settings()
         elif parsed.path == '/api/prompt':
@@ -2061,6 +2066,60 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             "thoughts": memory.get("thoughts", [])[-100:],
             "decisions": memory.get("decisions", [])[-100:],
         }
+
+    # ---------- 桌面控制：狀態查詢 / 緊急停止（本機免登錄，供 WinIsland 插件輪詢） ----------
+
+    def _desktop_control_dir(self) -> str:
+        """與 computer-control 技能的 _data_dir() 保持一致。"""
+        for mod in ("app_paths", "core.app_paths"):
+            try:
+                m = __import__(mod, fromlist=["app_data_dir"])
+                base = m.app_data_dir()
+                if base:
+                    os.makedirs(base, exist_ok=True)
+                    return base
+            except Exception:
+                continue
+        base = os.path.join(project_root, "data")
+        os.makedirs(base, exist_ok=True)
+        return base
+
+    def _handle_desktop_control_status(self):
+        base = self._desktop_control_dir()
+        state = {}
+        try:
+            with open(os.path.join(base, "desktop_control_state.json"), "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                state = data
+        except Exception:
+            pass
+        running = {
+            "active": bool(state.get("active")),
+            "goal": str(state.get("goal", "") or ""),
+            "steps": int(state.get("steps", 0) or 0),
+            "max_steps": int(state.get("max_steps", 0) or 0),
+            "observation": str(state.get("observation", "") or ""),
+            "started_at": float(state.get("started_at", 0) or 0),
+            "updated_at": float(state.get("updated_at", 0) or 0),
+        }
+        # 標記 active 但 120s 未刷新 → 寫狀態的進程已死，視為未運行
+        if running["active"] and time.time() - running["updated_at"] > 120:
+            running["active"] = False
+            running["stale"] = True
+        enabled = bool(self._read_settings_raw().get("desktop_control_enabled", True))
+        stopped = os.path.exists(os.path.join(base, "desktop_control.stop"))
+        self._send_json({"success": True, "enabled": enabled,
+                         "running": running, "stopped": stopped})
+
+    def _handle_desktop_control_stop(self):
+        try:
+            with open(os.path.join(self._desktop_control_dir(), "desktop_control.stop"),
+                      "w", encoding="utf-8") as f:
+                f.write(str(time.time()))
+            self._send_json({"success": True, "stopped": True})
+        except Exception as e:
+            self._send_error(f"desktop-control stop failed: {e}", 500)
 
     def _settings_defaults(self):
         return {

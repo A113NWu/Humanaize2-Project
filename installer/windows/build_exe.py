@@ -57,6 +57,30 @@ def get_main_script():
     return "src/core/main.py"
 
 
+def bundle_ui_data():
+    """把 src/core/ui/data 里要随包分发的默认文件收拢到临时目录。
+
+    ui_settings.json 是用户运行时的设置（API Key、模型路径、端口等），
+    不能打进安装包：覆盖安装时会把用户已有的设置冲掉。
+    """
+    src = os.path.join(PROJECT_ROOT, "src", "core", "ui", "data")
+    staging = os.path.join(PROJECT_ROOT, "build", "_bundle_ui_data")
+    if os.path.exists(staging):
+        shutil.rmtree(staging)
+    os.makedirs(staging, exist_ok=True)
+    copied = 0
+    if os.path.isdir(src):
+        for name in os.listdir(src):
+            if name == "ui_settings.json":
+                continue
+            s = os.path.join(src, name)
+            if os.path.isfile(s):
+                shutil.copy2(s, os.path.join(staging, name))
+                copied += 1
+    print(f"[BUNDLE] ui/data staged: {copied} file(s), ui_settings.json excluded")
+    return staging if copied else None
+
+
 def build_exe(arch="x86_64", create_zip=False, create_installer=False, onefile=False):
     """Build executable for specified architecture"""
     app_name = "Humanaize2"
@@ -110,7 +134,6 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False, onefile=F
         "--workpath", build_dir,
         "--paths", os.path.join(PROJECT_ROOT, "src", "core"),
         # Data files
-        "--add-data", f"src/core/ui/data{DATA_SEP}src/core/ui/data",
         "--add-data", f"src/core/web{DATA_SEP}web",
         "--add-data", f"prompt{DATA_SEP}prompt",
         "--add-data", f"languages{DATA_SEP}languages",
@@ -343,6 +366,11 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False, onefile=F
     assets_dir = os.path.join(PROJECT_ROOT, "Assets")
     if os.path.isdir(assets_dir):
         cmd.extend(["--add-data", f"Assets{DATA_SEP}Assets"])
+
+    # ui/data 只打包默认资源，排除用户设置文件 ui_settings.json
+    ui_bundle = bundle_ui_data()
+    if ui_bundle:
+        cmd.extend(["--add-data", f"{ui_bundle}{DATA_SEP}src/core/ui/data"])
 
     if onefile:
         cmd.extend([

@@ -194,7 +194,10 @@ class IdleEngine:
                     "thought": f"[Idle Activity] Aize chooses: {activity}"
                 })
             
-            if "音乐" in activity or "作曲" in activity or "乐理" in activity:
+            if any(k in activity for k in ("操作电脑", "控制电脑", "电脑操作", "玩电脑", "用电脑")):
+                # 闲时自主操作电脑：Aize 自己定目标，交给 computer-control 技能执行
+                self._do_desktop_control(thinking_topic, activity)
+            elif "音乐" in activity or "作曲" in activity or "乐理" in activity:
                 # 音乐自学：按曲风收集音频 + NumPy 频谱分析，更新音色档案
                 self._do_music_learning()
             elif "审美" in activity or "美学" in activity:
@@ -464,7 +467,7 @@ class IdleEngine:
                     pass
                 _thought("[Self-Learning] Aize 更新了自我人格：" + text[:120].replace("\n", " "))
             elif kind == "emotion":
-                raw = (chat(build_emotion_study_prompt(), max_tokens=600, timeout=120) or "").strip()
+                raw = (chat(build_emotion_study_prompt(), max_tokens=1200, timeout=120) or "").strip()
                 parsed = self._parse_emotion_study(raw)
                 if not parsed:
                     _thought("[Self-Learning] 情绪 JSON 解析失败，本次跳过")
@@ -500,16 +503,61 @@ class IdleEngine:
 
     @staticmethod
     def _parse_emotion_study(raw):
-        """从模型输出中提取 JSON 数组；解析失败返回空列表。"""
+        """从模型输出中提取情绪 JSON 数组。
+
+        输出被 max_tokens 截断时（常见于条目很多的数组），逐个提取已经完整的
+        {...} 对象，保留能解析的部分，而不是整批丢掉。
+        """
         import json as _json
         import re as _re
-        m = _re.search(r"\[.*\]", (raw or "").strip(), _re.DOTALL)
-        if not m:
+
+        text = (raw or "").strip()
+        text = _re.sub(r"^```[A-Za-z]*\s*", "", text)
+        text = _re.sub(r"\s*```$", "", text).strip()
+        if not text:
             return []
+
         try:
-            data = _json.loads(m.group(0))
+            data = _json.loads(text)
         except Exception:
-            return []
+            data = None
+
+        if data is None:
+            # 截断兜底：按字符串感知的大括号配对，收集所有完整的对象
+            items = []
+            depth = 0
+            start = -1
+            in_str = False
+            escaped = False
+            for i, ch in enumerate(text):
+                if in_str:
+                    if escaped:
+                        escaped = False
+                    elif ch == "\\":
+                        escaped = True
+                    elif ch == '"':
+                        in_str = False
+                    continue
+                if ch == '"':
+                    in_str = True
+                elif ch == "{":
+                    if depth == 0:
+                        start = i
+                    depth += 1
+                elif ch == "}" and depth:
+                    depth -= 1
+                    if depth == 0 and start >= 0:
+                        try:
+                            item = _json.loads(text[start:i + 1])
+                            if isinstance(item, dict):
+                                items.append(item)
+                        except Exception:
+                            pass
+                        start = -1
+            data = items
+
+        if isinstance(data, dict):
+            data = next((v for v in data.values() if isinstance(v, list)), [])
         if not isinstance(data, list):
             return []
         return [item for item in data if isinstance(item, dict)]
@@ -859,6 +907,71 @@ class IdleEngine:
     def get_optimization_prompt(self) -> str:
         """Get prompt for AI to create new optimizations"""
         return self.optimizer.generate_optimization_prompt()
+
+    @staticmethod
+    def _desktop_control_enabled() -> bool:
+        """读设置里的桌面控制开关，缺省视为开启。"""
+        import json as _json
+        path = None
+        for mod in ("app_paths", "core.app_paths"):
+            try:
+                m = __import__(mod, fromlist=["get_settings_path"])
+                path = m.get_settings_path()
+                break
+            except Exception:
+                continue
+        if not path:
+            return True
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                return bool(_json.load(fh).get("desktop_control_enabled", True))
+        except Exception:
+            return True
+
+    def _do_desktop_control(self, plan: str = "", activity: str = ""):
+        """闲时自主操作电脑：Aize 给出目标 → computer-control 技能闭环执行。"""
+        def _thought(msg):
+            if self.callback:
+                self.callback({"type": "internal_thought", "thought": msg})
+
+        if not self._desktop_control_enabled():
+            _thought("[Desktop Control] 已在设置中关闭，跳过")
+            return
+
+        goal = (plan or "").strip()
+        if not goal:
+            goal = "先观察当前屏幕，然后做一件对主人有帮助的小事（整理窗口或打开常用程序）"
+
+        mod = self._load_skill_module("computer-control")
+        if mod is None:
+            _thought("[Desktop Control] 技能未加载（skills/computer-control 缺失）")
+            return
+
+        _thought(f"[Desktop Control] 目标：{goal}")
+        try:
+            result = mod.execute({
+                "action": "run_goal",
+                "goal": goal,
+                "max_steps": 15,
+                "max_seconds": 900,
+            })
+        except Exception as error:
+            result = {"success": False, "error": str(error)}
+
+        if result.get("success"):
+            _thought(f"[Desktop Control] 完成：{result.get('observation') or '目标已完成'}")
+        else:
+            _thought(f"[Desktop Control] 未完成：{result.get('error') or result.get('stop_reason')}")
+
+        if self.memory is not None:
+            try:
+                add_thought(self.memory,
+                            f"[Desktop Control] 目标：{goal}｜结果："
+                            f"{'成功' if result.get('success') else '未完成'}",
+                            thought_type="action")
+                save_memory(self.memory)
+            except Exception:
+                pass
 
     def _do_social_activity(self, plan: str = ""):
         """閒時社交活動：把站点内容（提及/时间线/表情说明）原样喂给 Aize，

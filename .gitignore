@@ -113,6 +113,9 @@ build_log_*.txt
 
 .git_commit_msg.tmp
 
+# WinIsland 插件 Rust 构建产物
+winisland-plugin/target/
+
 skills/mc-bot/node_modules/
 skills/mc-bot/logs/
 skills/mc-bot/models/

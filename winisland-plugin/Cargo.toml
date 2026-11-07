@@ -1,0 +1,14 @@
+[package]
+name = "aize-status"
+version = "0.1.0"
+edition = "2021"
+description = "WinIsland plugin: shows Aize desktop-control status with one-click emergency stop"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"

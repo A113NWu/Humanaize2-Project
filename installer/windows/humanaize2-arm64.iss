@@ -39,9 +39,9 @@ Name: "addtopath"; Description: "Add to PATH environment variable"; GroupDescrip
 Source: "installer_output\arm64\Humanaize2-arm64.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; Skills 目錄（可寫，供運行時安裝/更新技能）
 Source: "skills\*"; DestDir: "{app}\skills"; Flags: ignoreversion recursesubdirs createallsubdirs
-; 配置與運行時資料
+; 配置與運行時資料；ui_settings.json 是用戶自己的設置，絕不隨包分發、也不覆蓋已有文件
 Source: "config\version.json"; DestDir: "{app}\config"; Flags: ignoreversion
-Source: "data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "data\*"; DestDir: "{app}\data"; Excludes: "media\*,uploads\*,logs\*,temp\*,ui_settings.json"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; 文檔
 Source: "docs\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "docs\README.md"; DestDir: "{app}"; Flags: ignoreversion

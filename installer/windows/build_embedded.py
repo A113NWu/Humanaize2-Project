@@ -31,10 +31,11 @@ def mkdirp(p):
 def step(msg):
     print(f"\n=== {msg} ===")
 
-def copy_tree_safe(src, dst, filter_dirs=None, filter_exts=None):
+def copy_tree_safe(src, dst, filter_dirs=None, filter_exts=None, filter_names=None):
     """Copy directory tree, skipping heavy/unnecessary parts."""
     filter_dirs = filter_dirs or set()
     filter_exts = filter_exts or set()
+    filter_names = filter_names or set()
     mkdirp(dst)
     for root, dirs, files in os.walk(src):
         rel = os.path.relpath(root, src)
@@ -43,6 +44,8 @@ def copy_tree_safe(src, dst, filter_dirs=None, filter_exts=None):
         dst_root = os.path.join(dst, rel) if rel != "." else dst
         mkdirp(dst_root)
         for f in files:
+            if f in filter_names:
+                continue
             ext = os.path.splitext(f)[1].lower()
             if ext in filter_exts:
                 continue
@@ -309,11 +312,11 @@ def main():
     shutil.copy2(s, os.path.join(d, "version.json"))
     print(f"  config/version.json copied")
 
-    # Also copy ui/data directory (images etc.)
+    # Also copy ui/data directory (images etc.)，但用户的 ui_settings.json 不打包
     s = os.path.join(src_root, "core", "ui", "data")
     if os.path.exists(s):
         d = os.path.join(dst_src, "core", "ui", "data")
-        copy_tree_safe(s, d)
+        copy_tree_safe(s, d, filter_names={"ui_settings.json"})
         print(f"  src/core/ui/data copied")
 
     # Copy core/tools directory

@@ -785,6 +785,39 @@ def _get_llama_server_environment(server_path):
     return environment
 
 
+# 本進程拉起的 llama-server 子進程句柄；退出時必須殺掉，
+# 否則它跑在 PyInstaller 的 _MEI 臨時目錄裡，清理失敗會彈出
+# “Failed to remove temporary directory” 警告框並把進程卡死。
+_LLAMA_PROC = None
+
+
+def _register_llama_child(proc):
+    global _LLAMA_PROC
+    _LLAMA_PROC = proc
+    try:
+        import atexit
+        atexit.register(_terminate_llama_child)
+    except Exception:
+        pass
+
+
+def _terminate_llama_child():
+    global _LLAMA_PROC
+    proc = _LLAMA_PROC
+    _LLAMA_PROC = None
+    if proc is None:
+        return
+    try:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except Exception:
+                proc.kill()
+    except Exception:
+        pass
+
+
 def _check_and_start_server(max_wait: int = 120, force_restart: bool = False) -> bool:
     """檢查LLM伺服器是否執行，若未執行則自動啟動，並等待伺服器完全啟動
     
@@ -914,6 +947,7 @@ def _check_and_start_server(max_wait: int = 120, force_restart: bool = False) ->
                 stderr=subprocess.STDOUT,
                 creationflags=creation_flags,
             )
+            _register_llama_child(process)
 
             print(f"[INFO] Waiting for LLM server to start (ctx={ctx_size})...")
             for attempt in range(max_wait):
