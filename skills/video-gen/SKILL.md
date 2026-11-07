@@ -60,6 +60,8 @@ MV 注意事项:
 - sample_frames: {"action": "sample_frames", "video": "视频绝对路径", "count": 6} → 从成片抽帧
 
 HTML 约定（必须遵守，违反会导致整片空白/错位）:
+- canvas 必须同时写 width / height 属性，且等于目标尺寸（如 <canvas width='854' height='480'>）；
+  只写 CSS 尺寸不够，画布默认 300x150，画面会被裁到左上角
 - 必须定义 renderFrame(t)（或 drawFrame(t)），t 单位为秒；每帧只依据 t 画一次静态画面
 - 禁止 requestAnimationFrame / setInterval / setTimeout / Date.now / 自播 animate() 循环；
   渲染器是「外部反复调用 renderFrame(t) 再截图」，页面自己跑动画会串帧。整幅画面必须在一次 renderFrame(t) 内同步画完。

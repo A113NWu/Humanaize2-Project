@@ -126,6 +126,12 @@ window.addEventListener('load', function () {
     var q = new URLSearchParams(location.search);
     var i = parseInt(q.get('frame') || '0', 10);
     var fps = parseFloat(q.get('fps') || '24');
+    // 模型常忘了给 canvas 写 width/height 属性，默认 300x150 会把画面裁在左上角
+    var cvs = document.querySelector('canvas');
+    if (cvs) {
+      if (!cvs.hasAttribute('width')) { cvs.width = window.innerWidth; }
+      if (!cvs.hasAttribute('height')) { cvs.height = window.innerHeight; }
+    }
     if (typeof renderFrame === 'function') { renderFrame(i / fps); }
     if (typeof drawFrame === 'function') { drawFrame(i / fps); }
   } catch (e) { document.title = 'ERR ' + e; }
@@ -141,6 +147,26 @@ def _inject_harness(html: str) -> str:
     if "</body>" in html:
         return html.replace("</body>", _HARNESS + "</body>", 1)
     return html + _HARNESS
+
+
+def _inject_canvas_size(html: str, width: int, height: int) -> str:
+    """给没有 width/height 属性的 <canvas> 补齐尺寸。
+
+    模型常只写 CSS 尺寸，canvas 默认 300x150；页面脚本在解析时就缓存
+    c.width/c.height，之后再改也来不及，所以要在 HTML 字符串阶段补好。
+    """
+    def _fix(match):
+        tag = match.group(0)
+        extra = ""
+        if not re.search(r"\swidth\s*=", tag, re.IGNORECASE):
+            extra += f" width='{width}'"
+        if not re.search(r"\sheight\s*=", tag, re.IGNORECASE):
+            extra += f" height='{height}'"
+        if not extra:
+            return tag
+        return tag[:-1] + extra + ">"
+
+    return re.sub(r"<canvas[^>]*>", _fix, html, flags=re.IGNORECASE)
 
 
 def _shot(exe: str, page_uri: str, png_path: str, width: int, height: int,
@@ -371,7 +397,7 @@ def _render_frames(html: str, workdir: str, fps: int, duration: float,
     frames_dir = os.path.join(workdir, "frames")
     os.makedirs(frames_dir, exist_ok=True)
     page_path = os.path.join(workdir, "page.html")
-    payload = _inject_harness(html)
+    payload = _inject_harness(_inject_canvas_size(html, width, height))
     digest = _html_digest(payload, fps, width, height, total)
     hash_path = os.path.join(workdir, ".html_hash")
     old_digest = ""

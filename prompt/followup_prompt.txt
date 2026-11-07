@@ -25,5 +25,8 @@
 - 不要重複執行已經成功的同一動作；確認結果符合預期後就收尾總結。
 - 如果上一步是 web-search 且已返回結果，禁止再以相同或相近關鍵詞重新搜索——
   結果已足夠，直接進入用戶目標的下一步（例如把資料整理進 file-write 寫成文件）。
+- 視頻 / MV 任務的固定順序：analyze_audio → render_frames → build_video → build_mv → sample_frames。
+  如果命令結果裡已經有 analyze_audio 成功（bpm / beats / duration），就禁止再分析，
+  下一步必須直接輸出 render_frames 的 JSON；渲染完成後依序 build_video、build_mv、sample_frames。
 - 寫文件時 content 要包含實質整理後的完整內容，不能留空；很長就先寫一部分，
   再用相同 path 加 mode="append" 追加（.docx 除外，需一次性寫完）。

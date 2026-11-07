@@ -813,7 +813,7 @@ class ThinkingEngine:
                             if stall_nudges < 2:
                                 stall_nudges += 1
                                 logger.warning(f"Followup round {loop_idx + 1}: stalled, nudge #{stall_nudges}")
-                                followup_out = self._stall_nudge_feedback(user_text)
+                                followup_out = self._stall_nudge_feedback(user_text, seen_calls)
                                 continue
                             logger.warning(f"Followup loop stalled (repeated calls), stopping.")
                             if fcleaned.strip() and self.on_response:
@@ -1239,7 +1239,7 @@ class ThinkingEngine:
                                 if stall_nudges < 2:
                                     stall_nudges += 1
                                     logger.warning(f"Followup round {loop_idx + 1}: stalled, nudge #{stall_nudges}")
-                                    followup_out = self._stall_nudge_feedback(user_text)
+                                    followup_out = self._stall_nudge_feedback(user_text, seen_calls)
                                     continue
                                 logger.warning(f"Followup loop stalled (repeated calls), stopping. calls={call_signatures}")
                                 if fcleaned.strip() and self.on_response:
@@ -1749,16 +1749,18 @@ class ThinkingEngine:
         }, ensure_ascii=False)
 
     @staticmethod
-    def _stall_nudge_feedback(user_text):
-        """followup 中模型重複已成功的動作（典型：拿著搜索結果反復搜索）時的強制糾偏。"""
+    def _stall_nudge_feedback(user_text, completed=None):
+        """followup 中模型重複已成功的動作（典型：拿著分析結果反復分析）時的強制糾偏。"""
         import json as _json
+        done = "、".join(sorted({sig.split(":", 1)[0] for sig in (completed or set())}))
         return _json.dumps({
             "success": False,
             "error": "你重複了剛剛已經成功的同一動作，任務並未因此推進。"
-                     "禁止以相同或相近參數再次調用同一個技能（尤其不要再 web-search）。"
-                     "請立即換成推進任務的不同動作：如果手上已有搜索/查詢結果，"
-                     "就直接把資料整理好調用 file-write 寫入用戶指定的文件（.docx 路徑會生成真正的 Word 文檔，"
-                     "content 必須是完整的整理內容、不能留空）；完成文件後再用中文口頭總結。",
+                     f"已經執行過：{done or '無'}；禁止再用相同或相近參數重複這些動作。"
+                     "請立即繼續下一步：視頻 / MV 的固定順序是 analyze_audio → render_frames → "
+                     "build_video → build_mv → sample_frames（analyze_audio 已成功就直接 render_frames）；"
+                     "搜索 / 資料任務則把已有結果整理好調用 file-write 寫入文件。"
+                     "不要只說要做什麼，必須輸出 [EXEC] + 一行合法技能 JSON。",
             "user_original_request": str(user_text or "")[:300]
         }, ensure_ascii=False)
 
