@@ -70,6 +70,10 @@ def execute(input_data: Any) -> Dict:
         )
 
         content = response.text
+        # 没声明 charset 的页面 requests 会按 ISO-8859-1 解码，中文会变乱码
+        if not response.encoding or response.encoding.lower() in ("iso-8859-1", "latin-1"):
+            response.encoding = response.apparent_encoding or "utf-8"
+            content = response.text
 
         if len(content) > max_length:
             content = content[:max_length] + f"\n... [Truncated {len(content) - max_length} characters]"
