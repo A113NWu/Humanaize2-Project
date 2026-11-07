@@ -521,6 +521,189 @@ def _download_assets(urls: List[str], workdir: str) -> Dict[str, Any]:
             "errors": errors}
 
 
+# ---------------------------------------------------------------- audio / MV
+def _decode_pcm(audio: str, max_seconds: float):
+    """用 ffmpeg 解成 22050Hz 单声道 s16le 原始样本，避免引入 numpy。"""
+    exe = _ffmpeg_exe()
+    if not exe:
+        raise RuntimeError("找不到 ffmpeg")
+    cmd = [exe, "-v", "error", "-i", audio, "-t", str(max_seconds),
+           "-ac", "1", "-ar", "22050", "-f", "s16le", "-"]
+    proc = subprocess.run(cmd, capture_output=True, timeout=150)
+    if proc.returncode != 0:
+        raise RuntimeError((proc.stderr or b"").decode("utf-8", "ignore")[-300:])
+    return proc.stdout, 22050
+
+
+def _analyze_audio(audio: str, max_seconds: float = 180) -> Dict[str, Any]:
+    """分析曲子的 BPM / 拍号 / 重音位置，供分镜卡点。"""
+    from array import array
+    import math
+    if not os.path.exists(audio):
+        return {"success": False, "error": f"音频不存在：{audio}"}
+    try:
+        raw, rate = _decode_pcm(audio, max_seconds)
+    except Exception as e:
+        return {"success": False, "error": f"解码失败：{e}"}
+    hop = 512
+    samples = array("h")
+    samples.frombytes(raw[: len(raw) - len(raw) % 2])
+    energy = []
+    for i in range(0, len(samples) - hop, hop):
+        chunk = samples[i:i + hop]
+        energy.append(sum(abs(v) for v in chunk) / hop)
+
+    if len(energy) < 16:
+        return {"success": False, "error": "音频太短，无法分析"}
+
+    peak = max(energy) or 1.0
+    energy = [v / peak for v in energy]
+    onset = [max(0.0, energy[i] - energy[i - 1]) for i in range(1, len(energy))]
+    smooth = [sum(onset[max(0, i - 1):i + 2]) / 3.0 for i in range(len(onset))]
+
+    frame_rate = rate / hop
+    mean = sum(smooth) / len(smooth)
+    centered = [v - mean for v in smooth]
+
+    def _lag_score(lag):
+        if lag <= 0 or lag >= len(centered):
+            return 0.0
+        total = sum(centered[i] * centered[i + lag] for i in range(len(centered) - lag))
+        return total / (len(centered) - lag)
+
+    min_lag = max(2, int(frame_rate * 60 / 240))
+    max_lag = min(len(centered) // 2, int(frame_rate * 60 / 30))
+    best_lag, best_score = 0, 0.0
+    for lag in range(min_lag, max_lag + 1):
+        score = _lag_score(lag)
+        bpm = 60 * frame_rate / lag
+        if bpm < 60:
+            score *= 0.7   # 优先 60-180 的常见速度
+        if score > best_score:
+            best_lag, best_score = lag, score
+
+    bpm = 60 * frame_rate / best_lag if best_lag else 0.0
+    while bpm and bpm < 70:
+        bpm *= 2
+    while bpm and bpm > 180:
+        bpm /= 2
+    best_lag = int(round(60 * frame_rate / bpm)) if bpm else best_lag
+
+    # 拍号：比较 3 拍 / 4 拍重复的强度；只有 3 拍明显更强才判 3/4
+    meter = "4/4"
+    if best_lag:
+        score3 = _lag_score(best_lag * 3)
+        score4 = _lag_score(best_lag * 4)
+        if score4 > 0 and score3 > score4 * 1.8:
+            meter = "3/4"
+
+    # 相位：找一个偏移，让拍点落在能量上升处
+    phase, phase_score = 0, -1.0
+    if best_lag:
+        for offset in range(best_lag):
+            total = sum(smooth[i] for i in range(offset, len(smooth), best_lag))
+            if total > phase_score:
+                phase, phase_score = offset, total
+
+    duration = len(samples) / rate
+    beats = []
+    t = phase / frame_rate if best_lag else 0.0
+    step = best_lag / frame_rate if best_lag else 0.0
+    while step and t < duration and len(beats) < 400:
+        beats.append(round(t, 2))
+        t += step
+
+    # 重音：能量上升的局部峰，用来卡大动作/转场
+    accents = []
+    threshold = mean + (math.sqrt(sum((v - mean) ** 2 for v in smooth) / len(smooth)) * 1.3)
+    min_gap = max(1, int(frame_rate * 0.12))
+    last_idx = -min_gap
+    for i in range(1, len(smooth) - 1):
+        if smooth[i] >= threshold and smooth[i] >= smooth[i - 1] and smooth[i] >= smooth[i + 1] \
+                and i - last_idx >= min_gap:
+            accents.append(round(i / frame_rate, 2))
+            last_idx = i
+        if len(accents) >= 80:
+            break
+
+    return {
+        "success": True,
+        "audio": audio,
+        "duration": round(duration, 2),
+        "bpm": round(bpm, 1),
+        "beat_interval": round(step, 3),
+        "meter": meter,
+        "beats": beats,
+        "accents": accents,
+        "analyzed_seconds": round(duration, 2),
+    }
+
+
+def _build_mv(video: str, audio: str, workdir: str, output: str = "",
+              start: float = 0.0, audio_volume: float = 1.0,
+              keep_original: bool = False, original_volume: float = 0.25) -> Dict[str, Any]:
+    """把画面和曲子合成 MV（H.264 + AAC，faststart）。"""
+    exe = _ffmpeg_exe()
+    if not exe:
+        return {"success": False, "error": "找不到 ffmpeg，无法合成 MV"}
+    for path, label in ((video, "视频"), (audio, "音频")):
+        if not os.path.exists(path):
+            return {"success": False, "error": f"{label}不存在：{path}"}
+    out = output or os.path.join(workdir, "mv.mp4")
+    os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
+
+    has_original = False
+    if keep_original:
+        try:
+            probe = subprocess.run([exe, "-i", video], capture_output=True, text=True, timeout=30)
+            has_original = "Audio:" in (probe.stderr or "")
+        except Exception:
+            has_original = False
+
+    cmd = [exe, "-y", "-i", video]
+    if start:
+        cmd += ["-ss", str(start)]
+    cmd += ["-i", audio]
+    if has_original:
+        cmd += ["-filter_complex",
+                f"[0:a]volume={original_volume}[a0];[1:a]volume={audio_volume}[a1];"
+                "[a0][a1]amix=inputs=2:duration=first:dropout_transition=0[a]",
+                "-map", "0:v", "-map", "[a]"]
+    else:
+        cmd += ["-map", "0:v", "-map", "1:a", "-af", f"volume={audio_volume}"]
+    cmd += ["-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-shortest", out]
+    try:
+        proc = subprocess.run(cmd, timeout=300, capture_output=True, text=True)
+    except Exception as e:
+        return {"success": False, "error": f"ffmpeg 运行失败：{e}"}
+    if proc.returncode != 0 or not os.path.exists(out):
+        return {"success": False, "error": "MV 合成失败",
+                "stderr": (proc.stderr or "")[-400:]}
+    return {"success": True, "message": "MV 合成完成", "video": out,
+            "size_bytes": os.path.getsize(out), "keep_original": has_original}
+
+
+def _parse_lrc(text: str) -> Dict[str, Any]:
+    """解析 LRC 歌词：[mm:ss.xx] 行，支持一行多个时间标签。"""
+    lines, meta = [], {}
+    for raw in str(text or "").splitlines():
+        line = raw.strip()
+        tag = re.match(r"\[(\w+):([^\]]*)\]", line)
+        if tag and not re.match(r"\[\d+:\d+", line):
+            meta[tag.group(1).lower()] = tag.group(2).strip()
+            continue
+        stamps = re.findall(r"\[(\d+):(\d+(?:\.\d+)?)\]", line)
+        content = re.sub(r"\[[^\]]*\]", "", line).strip()
+        if not stamps or not content:
+            continue
+        for minute, second in stamps:
+            lines.append({"time": round(int(minute) * 60 + float(second), 2),
+                          "text": content})
+    lines.sort(key=lambda item: item["time"])
+    return {"success": bool(lines), "lines": lines, "meta": meta}
+
+
 # ---------------------------------------------------------------- dispatch
 def execute(input_data: Any) -> Dict[str, Any]:
     if not isinstance(input_data, dict):
@@ -589,6 +772,42 @@ def execute(input_data: Any) -> Dict[str, Any]:
         if not urls:
             return {"success": False, "error": "缺少 urls"}
         res = _download_assets(list(urls), workdir)
+        res["dir"] = workdir
+        return res
+
+    if action in ("analyze_audio", "analyze_song", "audio_analysis"):
+        audio = merged.get("audio") or merged.get("path") or ""
+        if not audio:
+            return {"success": False, "error": "缺少 audio（上传曲子的路径）"}
+        res = _analyze_audio(audio, float(merged.get("max_seconds") or 180))
+        res["dir"] = workdir
+        return res
+
+    if action in ("build_mv", "mv", "mux"):
+        video = merged.get("video") or os.path.join(workdir, "video.mp4")
+        audio = merged.get("audio") or ""
+        if not audio:
+            return {"success": False, "error": "缺少 audio（曲子路径）"}
+        res = _build_mv(video, audio, workdir,
+                        output=merged.get("output") or "",
+                        start=float(merged.get("start") or 0),
+                        audio_volume=float(merged.get("audio_volume") or 1.0),
+                        keep_original=bool(merged.get("keep_original")),
+                        original_volume=float(merged.get("original_volume") or 0.25))
+        res["dir"] = workdir
+        return res
+
+    if action in ("parse_lrc", "lrc"):
+        text = merged.get("lrc") or ""
+        if not text and merged.get("lrc_path"):
+            try:
+                with open(merged["lrc_path"], "r", encoding="utf-8") as f:
+                    text = f.read()
+            except Exception as e:
+                return {"success": False, "error": f"读取 LRC 失败：{e}"}
+        if not text:
+            return {"success": False, "error": "缺少 lrc 文本或 lrc_path"}
+        res = _parse_lrc(text)
         res["dir"] = workdir
         return res
 
