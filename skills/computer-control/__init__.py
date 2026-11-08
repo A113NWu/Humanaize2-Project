@@ -746,7 +746,9 @@ def execute(input_data: Any) -> Dict:
     if not isinstance(input_data, dict):
         return {"success": False, "error": "input 必须是 JSON 对象，例如 {\"action\": \"status\"}"}
 
-    action = str(input_data.get("action", "") or "").strip().lower()
+    # 通用技能提示教模型用 {"command": ...}，这里兼容；只认 action 的旧行为会把
+    # 这类调用当成空 action 静默返回动作列表，模型误以为已执行。
+    action = str(input_data.get("action", "") or input_data.get("command", "") or "").strip().lower()
     action = _ACTION_ALIASES.get(action, action)
     if not action:
         return {"success": True, "actions": [

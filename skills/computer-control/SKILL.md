@@ -1,6 +1,6 @@
 ---
 name: computer-control
-description: 看见并操作整台 Windows 电脑（截屏、视觉理解、移动鼠标、点击、拖拽、滚动、键入文字、按快捷键）。当你需要读屏、控制鼠标键盘、或让电脑自己执行一个目标（例如打开某个程序、点某个按钮、玩游戏）时使用。
+description: 看见并操作整台 Windows 电脑（截屏、视觉理解、移动鼠标、点击、拖拽、滚动、键入文字、按快捷键）。当你需要读屏、控制鼠标键盘、或让电脑自己执行一个目标（例如打开某个程序、点某个按钮、玩游戏）时使用。还支持 Autopilot（action=autopilot）：主人明确许可后可长时间自主接管电脑，直到自己输出 quit；没有许可时先用 action=autopilot_request 向主人申请。
 metadata:
   category: system
   risk_level: high

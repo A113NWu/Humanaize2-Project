@@ -2129,7 +2129,9 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
 
     _AUTOPILOT_TALK_HINTS = ("autopilot", "自己玩", "玩电脑", "玩電腦", "接管电脑", "接管電腦",
                              "自己操作电脑", "自己操作電腦", "随便玩", "隨便玩",
-                             "电脑给你", "電腦給你", "自己用电脑", "自己用電腦")
+                             "电脑给你", "電腦給你", "自己用电脑", "自己用電腦",
+                             "出门", "出門", "看家", "不在家", "帮我看电脑", "幫我看電腦",
+                             "看着电脑", "看著電腦", "交给你", "交給你", "你看着办", "你看著辦")
 
     @staticmethod
     def _json_dict(text):
