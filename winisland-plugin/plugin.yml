@@ -1,0 +1,12 @@
+id: aize-status
+name: Aize Status
+author: Humanaize
+version: 0.6.3
+description: 纯黑胶囊：时间居中，显示 Aize 目标、当前操作、Autopilot / 控制模式与急停
+github-link: https://github.com/A113NWu/aize-status
+abi-version: 2
+entry: aize_status.dll
+icon: icon.png
+readme: README.md
+dll_hashes:
+- da544c3b535b627c1363566c102c1f47a96f01a4ed89b1215d4da75592f71641
