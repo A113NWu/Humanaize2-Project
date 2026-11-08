@@ -578,7 +578,8 @@ unsafe fn create_surface(
     let f = api.create?;
     let spec = SurfaceSpecV2::new(kind, w, h, key, title);
     let mut id: WidgetId = 0;
-    if f(api.prefix.context, token, &spec, &mut id) == STATUS_OK && id != 0 {
+    let rc = f(api.prefix.context, token, &spec, &mut id);
+    if rc == STATUS_OK && id != 0 {
         Some(id)
     } else {
         None
@@ -620,6 +621,7 @@ unsafe extern "C" fn create(info: *const PluginCreateInfoV2, out_handle: *mut *m
     let events_api = read_table::<EventsApiV2>(query, host.prefix.context, IFACE_EVENTS);
     let system_api = read_table::<SystemApiV2>(query, host.prefix.context, IFACE_SYSTEM);
     let command_api = read_table::<CommandApiV2>(query, host.prefix.context, IFACE_COMMAND);
+
 
     let mut state = Box::new(State {
         token: info.plugin_token,
@@ -773,10 +775,10 @@ static DESCRIPTOR: PluginDescriptorV2 = PluginDescriptorV2 {
     metadata: PluginMetadataC {
         id: str_to_fixed::<64>("aize-status"),
         name: str_to_fixed::<128>("Aize Status"),
-        version: str_to_fixed::<32>("0.6.2"),
+        version: str_to_fixed::<32>("0.6.3"),
         author: str_to_fixed::<128>("Humanaize"),
         description: str_to_fixed::<256>(
-            "纯黑胶囊：时间居中，Aize 目标、当前操作、控制模式与急停",
+            "纯黑胶囊：时间居中，显示 Aize 目标、当前操作、Autopilot / 控制模式与急停",
         ),
     },
     create: Some(create),
