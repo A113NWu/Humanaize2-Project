@@ -52,10 +52,42 @@ ACTIVITY_LABELS = {
     "game": "玩遊戲",
     "skill": "寫 Skills",
     "other_ai": "找其他 AI",
+    "other": "其他（她自己的想法）",
 }
 
 # 小腦判定的合法動作（none = 她只是想想想，不做任何事）
 _IDLE_ACTIONS = ("none",) + tuple(ACTIVITY_LABELS)
+
+# 猶豫覆核最多幾輪；一直改主意到上限就視為放棄這個決定
+_MAX_RECONSIDER = 3
+
+
+def _norm_action(value):
+    """把模型可能回的中文活動名 / 大小寫差異，歸一成動作詞表裡的一項。"""
+    text = str(value or "").strip()
+    if not text:
+        return "none"
+    key = text.lower()
+    if key in _IDLE_ACTIONS:
+        return key
+    for act, label in ACTIVITY_LABELS.items():
+        if text == label:
+            return act
+    return "none"
+
+
+def _norm_decision(value):
+    """把「維持 / 改 / 放棄」的中英文寫法歸一，認不出就回空字串。"""
+    text = str(value or "").strip().lower()
+    if text in ("keep", "change", "abandon"):
+        return text
+    if "abandon" in text or "放弃" in text or "放棄" in text or "算了" in text:
+        return "abandon"
+    if "change" in text or "改" in text or "换" in text or "換" in text:
+        return "change"
+    if "keep" in text or "维持" in text or "維持" in text or "保持" in text or "继续" in text or "繼續" in text:
+        return "keep"
+    return ""
 
 
 def _affect_block():
@@ -233,9 +265,15 @@ class IdleEngine:
                     "thought": f"[獨白] {thought}"
                 })
 
-            # Step 2（小腦）：執行器 Agent 讀她的獨白，判斷她是否真的想做動作
-            action, plan = self._route_thought(thought)
+            # Step 2（小腦）：執行器讀獨白 → 決定動作 → 再扔回給她猶豫覆核
+            action, plan, note = self._decide(thought)
             thinking_topic = plan or thought
+
+            if note and self.callback:
+                self.callback({
+                    "type": "internal_thought",
+                    "thought": f"[猶豫] {note}"
+                })
             
             if self.callback:
                 self.callback({
@@ -483,13 +521,61 @@ class IdleEngine:
         try:
             raw = chat(prompt).strip()
             data = _json_from_text(raw)
-            action = str(data.get("action") or "none").strip().lower()
+            action = _norm_action(data.get("action"))
             plan = str(data.get("plan") or "").strip()
-            if action not in _IDLE_ACTIONS:
-                action = "none"
             return action, plan
         except Exception:
             return "none", ""
+
+    def _decide(self, thought):
+        """猶豫機制：小腦給出決定後，把這個決定再扔回給她本人一次。
+
+        她要拿邏輯把利弊擺清楚（為什麼行 / 為什麼不行），再回答「維持 / 改 / 放棄」。
+        - 回答「維持」＝兩次結果一致 → 交給執行器執行
+        - 回答「改」   → 用新決定重複整個過程，直到兩次一致
+        - 回答「放棄」或改到上限 → 這一輪什麼都不做
+        返回 (action, plan, note)，note 是她最後一次猶豫的理由。
+        """
+        action, plan = self._route_thought(thought)
+        if action == "none":
+            return "none", "", ""
+
+        note = ""
+        for _ in range(_MAX_RECONSIDER):
+            verdict = self._reconsider(thought, action, plan)
+            note = str(verdict.get("reason") or "").strip() or note
+            decision = _norm_decision(verdict.get("decision"))
+
+            if decision == "abandon":
+                return "none", "", note
+
+            if decision == "change":
+                new_action = _norm_action(verdict.get("action"))
+                if new_action == "none":
+                    return "none", "", note
+                action, plan = new_action, str(verdict.get("plan") or "").strip()
+                continue
+
+            # keep（或無法解析）：維持原決定 → 兩次一致，可以執行
+            return action, plan, note
+
+        # 反覆改主意到上限 → 放棄
+        return "none", "", note
+
+    def _reconsider(self, thought, action, plan):
+        """把她的決定交還給她自己覆核，要求用邏輯權衡利弊。"""
+        from llm import chat
+        from core.data.prompts_manager import load_prompt
+
+        try:
+            prompt = load_prompt("idle_reconsider")
+            prompt = (prompt
+                      .replace("{thought}", thought or "")
+                      .replace("{action_label}", ACTIVITY_LABELS.get(action, action))
+                      .replace("{plan}", plan or "（她还没写清具体目标）"))
+            return _json_from_text(chat(prompt).strip())
+        except Exception:
+            return {}
 
     def _do_self_learning(self, kind):
         """空闲自学：直接两次 LLM 调用，不走 function-calling 工具循环。
