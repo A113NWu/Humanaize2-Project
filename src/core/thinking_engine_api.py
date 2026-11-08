@@ -2100,6 +2100,7 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             "steps": int(state.get("steps", 0) or 0),
             "max_steps": int(state.get("max_steps", 0) or 0),
             "observation": str(state.get("observation", "") or ""),
+            "action": str(state.get("action", "") or ""),
             "started_at": float(state.get("started_at", 0) or 0),
             "updated_at": float(state.get("updated_at", 0) or 0),
         }

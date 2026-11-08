@@ -37,6 +37,26 @@ _idle_engine_instance = None
 
 _AESTHETIC_DB_NAME = "aesthetic_db.json"
 
+# 執行器（小腦）可用的動作。這是小腦的「動作詞表」，
+# 大腦（她的自由獨白）完全不需要知道這些名字，也不輸出任何格式。
+ACTIVITY_LABELS = {
+    "desktop": "操作電腦",
+    "music": "學習音樂",
+    "aesthetic": "學習審美",
+    "emotion": "學習人類情感",
+    "persona": "更新自我人格",
+    "social": "社交網站",
+    "talk": "找主人說話",
+    "think": "自己想事情",
+    "web": "上網看帖子",
+    "game": "玩遊戲",
+    "skill": "寫 Skills",
+    "other_ai": "找其他 AI",
+}
+
+# 小腦判定的合法動作（none = 她只是想想想，不做任何事）
+_IDLE_ACTIONS = ("none",) + tuple(ACTIVITY_LABELS)
+
 
 def _affect_block():
     """她此刻的心情（tools.affect），让空闲时的决定也带着情绪。"""
@@ -45,6 +65,26 @@ def _affect_block():
         return (render_affect_block() or "").strip()
     except Exception:
         return ""
+
+
+def _json_from_text(text):
+    """從模型回覆裡抓出第一個 JSON 物件；解析失敗就回空 dict。
+
+    執行器被要求只輸出 JSON，但模型偶爾會包上解釋或程式碼圍欄，這裡做一層容錯。
+    """
+    import json
+
+    if not isinstance(text, str):
+        return {}
+    start = text.find("{")
+    end = text.rfind("}")
+    if start < 0 or end <= start:
+        return {}
+    try:
+        data = json.loads(text[start:end + 1])
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
 
 
 def _aesthetic_path():
@@ -185,29 +225,48 @@ class IdleEngine:
             except Exception:
                 pass
         try:
-            # Step 1: Let Aize choose an activity and determine thinking direction
-            activity, thinking_topic = self._choose_activity()
+            # Step 1（大腦）：她完全自由地想，不給任何格式、不給標籤菜單
+            thought = self._idle_think()
+            if thought and self.callback:
+                self.callback({
+                    "type": "internal_thought",
+                    "thought": f"[獨白] {thought}"
+                })
+
+            # Step 2（小腦）：執行器 Agent 讀她的獨白，判斷她是否真的想做動作
+            action, plan = self._route_thought(thought)
+            thinking_topic = plan or thought
             
             if self.callback:
                 self.callback({
                     "type": "internal_thought",
-                    "thought": f"[Idle Activity] Aize chooses: {activity}"
+                    "thought": (f"[Idle Activity] 小腦判定：{ACTIVITY_LABELS.get(action, action)}"
+                                + (f"｜{plan}" if plan else ""))
                 })
             
-            if any(k in activity for k in ("操作电脑", "控制电脑", "电脑操作", "玩电脑", "用电脑")):
-                # 闲时自主操作电脑：Aize 自己定目标，交给 computer-control 技能执行
-                self._do_desktop_control(thinking_topic, activity)
-            elif "音乐" in activity or "作曲" in activity or "乐理" in activity:
+            if action == "none":
+                # 她只是想想想：把獨白留在記憶裡，不強迫做事
+                if thought and self.memory is not None:
+                    try:
+                        add_thought(self.memory, thought, thought_type="idle")
+                        save_memory(self.memory)
+                    except Exception:
+                        pass
+            elif action == "desktop":
+                # 閒時自主操作電腦：小腦從獨白裡提取出具體目標，交給 computer-control 執行
+                self._do_desktop_control(plan or thought, ACTIVITY_LABELS["desktop"])
+            elif action == "music":
                 # 音乐自学：按曲风收集音频 + NumPy 频谱分析，更新音色档案
                 self._do_music_learning()
-            elif "审美" in activity or "美学" in activity:
+            elif action == "aesthetic":
                 # 审美自学：爬图 + Pillow 分析 + 网上文本理解
                 self._do_aesthetic_learning()
-            elif any(k in activity for k in ("情感", "情绪", "人格", "目标")):
+            elif action == "persona":
                 # 自我学习类活动：走内部学习，不要当成「找用户说话」发到聊天界面
-                kind = "persona" if ("人格" in activity or "目标" in activity) else "emotion"
-                self._do_self_learning(kind)
-            elif activity == "3. 自己思考" and thinking_topic:
+                self._do_self_learning("persona")
+            elif action == "emotion":
+                self._do_self_learning("emotion")
+            elif action == "think":
                 # Step 2: GAN debates around the chosen topic
                 if self.callback:
                     self.callback({
@@ -237,7 +296,7 @@ class IdleEngine:
                         "type": "gan_complete",
                         "gan_result": gan_result
                     })
-            elif activity == "4. 找用户说话":
+            elif action == "talk":
                 # Aize wants to talk to user：真正把開場白生成出來（break_silence 任務），
                 # 完成後經事件匯流排 PO 到網頁聊天界面，而不是只留一條思考日誌
                 if self.callback:
@@ -253,15 +312,15 @@ class IdleEngine:
                 except Exception as e:
                     if self.callback:
                         self.callback({"type": "error", "error": f"break_silence queue failed: {e}"})
-            elif "社交" in activity or "social" in activity.lower():
-                # Aize 選擇去社交平台逛逛/發動態
+            elif action == "social":
+                # 社交平台：內容照舊餵給她，由她自己決定要不要回、點表情、發動態（邏輯不變）
                 self._do_social_activity(thinking_topic)
             else:
-                # Other activities, just log
+                # web / game / skill / other_ai：目前只記錄想法，還沒有對應執行器
                 if self.callback:
                     self.callback({
                         "type": "internal_thought",
-                        "thought": f"[Idle Activity] {activity} - {thinking_topic}"
+                        "thought": f"[Idle Activity] {ACTIVITY_LABELS.get(action, action)} - {plan}"
                     })
                 
         except Exception as e:
@@ -381,13 +440,17 @@ class IdleEngine:
                      + (f"，进度：{progress}" if progress else "")
                      + f"；{minutes} 分钟后继续")
 
-    def _choose_activity(self):
-        """让Aize选择空闲活动和思考方向"""
+    def _idle_think(self):
+        """獨處第一步（大腦）：讓她完全自由地想。
+
+        這裡**不規定任何輸出格式**——不要求欄位、不給標籤、不給活動菜單。
+        她只是用自己的語氣把此刻的念頭寫下來，就像人真的在心裡自言自語。
+        """
         from llm import chat
         from core.data.prompts_manager import load_prompt
-        
+
         prompt = load_prompt("idle_activity_choice")
-        # 空闲活动选择同样要带 Aize 自我人格（用户自定义提示词在前、人格在后）
+        # 带 Aize 自我人格（用户自定义提示词在前、人格在后）
         try:
             _persona_text = persona_block("idle", self.memory)
             if _persona_text:
@@ -397,28 +460,36 @@ class IdleEngine:
         _feel = _affect_block()
         if _feel:
             prompt = prompt + "\n\n" + _feel
-        
+
         try:
-            response = chat(prompt).strip()
-            
-            activity = ""
-            topic = ""
-            
-            for line in response.split('\n'):
-                line = line.strip()
-                if line.startswith("活动：") or line.startswith("活动:"):
-                    activity = line.replace("活动：", "").replace("活动:", "").strip()
-                elif line.startswith("话题：") or line.startswith("话题:"):
-                    topic = line.replace("话题：", "").replace("话题:", "").strip()
-            
-            if not activity:
-                activity = "3. 自己思考"
-            if not topic and activity == "3. 自己思考":
-                topic = "人工智能的发展趋势"
-            
-            return activity, topic
-        except Exception as e:
-            return "3. 自己思考", "日常思考"
+            return chat(prompt).strip()
+        except Exception:
+            return ""
+
+    def _route_thought(self, thought):
+        """獨處第二步（小腦 / 執行器 Agent）：讀她的自由獨白，判斷她想不想動手。
+
+        她說「我想找主人聊聊天」，大腦不需要知道這對應哪個動作；
+        由這個執行器把它翻譯成動作詞表裡的一項，再交給對應的技能去跑。
+        返回 (action, plan)；action 取 _IDLE_ACTIONS（none = 只是想想，不做事）。
+        """
+        if not thought:
+            return "none", ""
+        from llm import chat
+        from core.data.prompts_manager import load_prompt
+
+        prompt = load_prompt("idle_intent_executor")
+        prompt = prompt.replace("{thought}", thought)
+        try:
+            raw = chat(prompt).strip()
+            data = _json_from_text(raw)
+            action = str(data.get("action") or "none").strip().lower()
+            plan = str(data.get("plan") or "").strip()
+            if action not in _IDLE_ACTIONS:
+                action = "none"
+            return action, plan
+        except Exception:
+            return "none", ""
 
     def _do_self_learning(self, kind):
         """空闲自学：直接两次 LLM 调用，不走 function-calling 工具循环。

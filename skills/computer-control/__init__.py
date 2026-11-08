@@ -490,6 +490,39 @@ def _apply_step(step: Dict[str, Any]) -> str:
     return action
 
 
+def _describe_step(step: Dict[str, Any]) -> str:
+    """把模型返回的动作转成一句适合展示的当前操作描述。"""
+    action = str(step.get("action", "")).strip().lower()
+    if action == "done":
+        return "目标已完成"
+    if action == "wait":
+        return "等待界面响应"
+    if action == "move":
+        return "移动鼠标"
+    if action == "click":
+        return "点击界面"
+    if action == "double_click":
+        return "双击界面"
+    if action == "right_click":
+        return "右键点击"
+    if action == "drag":
+        return "拖动界面元素"
+    if action == "scroll":
+        return "滚动页面"
+    if action == "type":
+        text = str(step.get("text", "") or "")
+        return f"输入「{text[:24]}」"
+    if action == "key":
+        return f"按下 {step.get('key', '')}"
+    if action == "hotkey":
+        keys = step.get("keys") or []
+        if isinstance(keys, str):
+            keys = keys.split("+")
+        joined = "+".join(str(k).strip() for k in keys)
+        return f"快捷键 {joined}"
+    return action or "执行中"
+
+
 def _run_goal(goal: str, max_steps: int = 30, max_seconds: int = 600) -> Dict[str, Any]:
     goal = str(goal or "").strip()
     if not goal:
@@ -501,7 +534,7 @@ def _run_goal(goal: str, max_steps: int = 30, max_seconds: int = 600) -> Dict[st
     history = []
     _RUNNING.update(active=True, goal=goal, steps=0, started_at=started)
     _write_state(active=True, goal=goal, steps=0, max_steps=max_steps,
-                 started_at=started, observation="")
+                 started_at=started, observation="", action="观察屏幕", transient=False)
     try:
         for index in range(1, max_steps + 1):
             _check_stop()
@@ -525,7 +558,8 @@ def _run_goal(goal: str, max_steps: int = 30, max_seconds: int = 600) -> Dict[st
                             "reason": str(step.get("reason", ""))[:120]})
             _RUNNING["steps"] = index
             _write_state(active=True, steps=index,
-                         observation=str(step.get("observation", ""))[:120])
+                         observation=str(step.get("observation", ""))[:120],
+                         action=_describe_step(step))
             if note == "done":
                 return {"success": True, "goal": goal, "steps": history,
                         "observation": step.get("observation", ""), "elapsed": round(time.time() - started, 1)}
@@ -535,7 +569,7 @@ def _run_goal(goal: str, max_steps: int = 30, max_seconds: int = 600) -> Dict[st
         return {"success": False, "error": str(error), "steps": history, "stop_reason": "exception"}
     finally:
         _RUNNING.update(active=False, goal="", steps=0, started_at=0.0)
-        _write_state(active=False, steps=0, observation="")
+        _write_state(active=False, steps=0, observation="", action="", goal="", transient=False)
 
 
 def _look_prompt(prompt: str, image_path: str) -> Dict[str, Any]:
@@ -544,12 +578,41 @@ def _look_prompt(prompt: str, image_path: str) -> Dict[str, Any]:
 
 # ---------------------------------------------------------------- 统一入口
 
+# 模型偶尔会用自然语言式的动作名，归一化到真实动作
+_ACTION_ALIASES = {
+    "move_mouse": "move", "mouse_move": "move", "move_to": "move", "mousemove": "move",
+    "capture": "screenshot", "capture_screen": "screenshot", "take_screenshot": "screenshot",
+    "screen_shot": "screenshot", "screenshot_screen": "screenshot", "snap": "screenshot",
+    "left_click": "click", "mouse_click": "click", "doubleclick": "double_click",
+    "press": "key", "press_key": "key", "key_press": "key",
+    "type_text": "type", "input": "type", "write": "type", "input_text": "type",
+    "hot_key": "hotkey", "shortcut": "hotkey",
+    "wheel": "scroll", "mouse_scroll": "scroll",
+    "observe": "look", "see": "look", "watch": "look",
+    "run": "run_goal", "goal": "run_goal", "task": "run_goal", "execute_goal": "run_goal",
+}
+
+_ACTION_LIST = ("status/screenshot/look/move/click/double_click/right_click/drag/scroll/"
+                "type/key/hotkey/run_goal/stop")
+
+
+def _mark_control(action: str, input_data: Dict[str, Any]) -> None:
+    """单步输入动作成功后写瞬时状态（transient，几秒即过期），
+    让外部观察者（WinIsland 插件）在逐动作控制时也能看到「正在操作」。"""
+    try:
+        desc = _describe_step({"action": action,
+                               **{k: v for k, v in input_data.items() if k != "action"}})
+        _write_state(active=True, transient=True, action=desc, observation="")
+    except Exception:
+        pass
+
 
 def execute(input_data: Any) -> Dict:
     if not isinstance(input_data, dict):
         return {"success": False, "error": "input 必须是 JSON 对象，例如 {\"action\": \"status\"}"}
 
     action = str(input_data.get("action", "") or "").strip().lower()
+    action = _ACTION_ALIASES.get(action, action)
     if not action:
         return {"success": True, "actions": [
             "status", "screenshot", "look", "move", "click", "double_click", "right_click",
@@ -559,8 +622,10 @@ def execute(input_data: Any) -> Dict:
         # 状态文件优先（跨实例/跨进程），缺失时退回本实例内存状态
         state = _read_state()
         running = state if state else dict(_RUNNING)
-        # updated_at 超过 120s 未刷新且标记 active，说明写状态的进程已死
-        if running.get("active") and time.time() - float(running.get("updated_at", 0) or 0) > 120:
+        # updated_at 超过一定时间未刷新且标记 active，说明写状态的进程已死
+        # 单步动作写的是瞬时状态（transient），6 秒无更新即视为已结束
+        ttl = 6 if running.get("transient") else 120
+        if running.get("active") and time.time() - float(running.get("updated_at", 0) or 0) > ttl:
             running = dict(running, active=False, stale=True)
         return {"success": True, **_screen_size(), "enabled": _enabled(),
                 "running": running, "stopped": _stop_requested()}
@@ -589,31 +654,39 @@ def execute(input_data: Any) -> Dict:
         _check_stop()
         if action == "move":
             _move(input_data.get("x"), input_data.get("y"), float(input_data.get("duration", 0) or 0))
+            _mark_control(action, input_data)
             return {"success": True, "action": action}
         if action in ("click", "double_click", "right_click"):
             _click(input_data.get("x"), input_data.get("y"),
                    button="right" if action == "right_click" else str(input_data.get("button", "left")),
                    clicks=2 if action == "double_click" else int(input_data.get("clicks", 1)))
+            _mark_control(action, input_data)
             return {"success": True, "action": action}
         if action == "drag":
             _drag(input_data.get("x"), input_data.get("y"), input_data.get("x2"), input_data.get("y2"),
                   float(input_data.get("duration", 0.4) or 0.4))
+            _mark_control(action, input_data)
             return {"success": True, "action": action}
         if action == "scroll":
             _scroll(int(input_data.get("amount", -3) or -3))
+            _mark_control(action, input_data)
             return {"success": True, "action": action}
         if action == "type":
-            return {"success": True, "action": action, "via": _type_text(input_data.get("text", ""))}
+            via = _type_text(input_data.get("text", ""))
+            _mark_control(action, input_data)
+            return {"success": True, "action": action, "via": via}
         if action == "key":
             _press_key(input_data.get("key", ""))
+            _mark_control(action, input_data)
             return {"success": True, "action": action}
         if action == "hotkey":
             keys = input_data.get("keys") or []
             if isinstance(keys, str):
                 keys = [k.strip() for k in keys.split("+") if k.strip()]
             _hotkey(keys)
+            _mark_control(action, input_data)
             return {"success": True, "action": action}
     except Exception as error:
         return {"success": False, "action": action, "error": str(error)}
 
-    return {"success": False, "error": f"未知 action: {action}"}
+    return {"success": False, "error": f"未知 action: {action}（可用：{_ACTION_LIST}）"}
