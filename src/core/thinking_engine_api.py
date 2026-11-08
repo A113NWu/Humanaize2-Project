@@ -2179,7 +2179,9 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                         if pend else "Aize 没有正式申请过 Autopilot。")
         prompt = prompt.replace("{user_text}", text[:600]).replace("{pending}", pending_desc)
         try:
-            raw = chat(prompt, max_tokens=200, temperature=0.2, timeout=45, max_retries=0).strip()
+            # 判定模型可能带 reasoning，200 tokens 会被思考过程吃光而返回空 content；
+            # 授权判定还要在慢机器上跑完整提示，45 秒容易误判为未授权。
+            raw = chat(prompt, max_tokens=400, temperature=0.2, timeout=180, max_retries=0).strip()
         except Exception as error:
             logger.warning(f"[Autopilot] license decision failed: {error}")
             return ""
