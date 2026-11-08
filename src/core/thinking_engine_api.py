@@ -2103,15 +2103,18 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             "action": str(state.get("action", "") or ""),
             "started_at": float(state.get("started_at", 0) or 0),
             "updated_at": float(state.get("updated_at", 0) or 0),
+            "autopilot": bool(state.get("autopilot")),
         }
-        # 標記 active 但 120s 未刷新 → 寫狀態的進程已死，視為未運行
-        if running["active"] and time.time() - running["updated_at"] > 120:
+        # 標記 active 但長時間未刷新 → 寫狀態的進程已死，視為未運行
+        ttl = 600 if running.get("autopilot") else 120
+        if running["active"] and time.time() - running["updated_at"] > ttl:
             running["active"] = False
             running["stale"] = True
         enabled = bool(self._read_settings_raw().get("desktop_control_enabled", True))
         stopped = os.path.exists(os.path.join(base, "desktop_control.stop"))
         self._send_json({"success": True, "enabled": enabled,
-                         "running": running, "stopped": stopped})
+                         "running": running, "stopped": stopped,
+                         "autopilot": bool(state.get("autopilot"))})
 
     def _handle_desktop_control_stop(self):
         try:
@@ -2121,6 +2124,75 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._send_json({"success": True, "stopped": True})
         except Exception as e:
             self._send_error(f"desktop-control stop failed: {e}", 500)
+
+    # ---------- Autopilot 一次性授权：只认主人原话，Aize 不能自我授权 ----------
+
+    _AUTOPILOT_TALK_HINTS = ("autopilot", "自己玩", "玩电脑", "玩電腦", "接管电脑", "接管電腦",
+                             "自己操作电脑", "自己操作電腦", "随便玩", "隨便玩",
+                             "电脑给你", "電腦給你", "自己用电脑", "自己用電腦")
+
+    @staticmethod
+    def _json_dict(text):
+        """从模型返回文本里尽量取一个 JSON 对象。"""
+        text = text or ""
+        start, end = text.find("{"), text.rfind("}")
+        if start < 0 or end <= start:
+            return {}
+        try:
+            data = json.loads(text[start:end + 1])
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    def _maybe_autopilot_license(self, user_text):
+        """主人原话里识别「允许 Aize 进入 Autopilot」，识别到才写授权。
+
+        返回要注入 system 的提示；没授权/没相关话题时返回空字符串。
+        """
+        text = (user_text or "").strip()
+        if not text:
+            return ""
+        try:
+            from tools.autopilot_license import pending, grant, clear_pending
+        except ImportError:
+            from core.tools.autopilot_license import pending, grant, clear_pending
+
+        pend = pending()
+        lowered = text.lower()
+        hinted = any(hint in lowered for hint in self._AUTOPILOT_TALK_HINTS)
+        if not pend and not hinted:
+            return ""
+
+        try:
+            from llm import chat
+            from data.prompts_manager import load_prompt
+        except ImportError:
+            from core.llm import chat
+            from core.data.prompts_manager import load_prompt
+
+        prompt = load_prompt("autopilot_license")
+        if not prompt:
+            return ""
+        pending_desc = (f"Aize 刚才向主人申请过 Autopilot：{pend.get('pending_thought') or '（没有写原因）'}"
+                        if pend else "Aize 没有正式申请过 Autopilot。")
+        prompt = prompt.replace("{user_text}", text[:600]).replace("{pending}", pending_desc)
+        try:
+            raw = chat(prompt, max_tokens=200, temperature=0.2, timeout=45, max_retries=0).strip()
+        except Exception as error:
+            logger.warning(f"[Autopilot] license decision failed: {error}")
+            return ""
+        decision = str(self._json_dict(raw).get("decision", "")).strip().lower()
+        if decision == "grant":
+            grant(note=text[:200])
+            logger.info("[Autopilot] 主人明确授权，写入一次性许可")
+            return ("【Autopilot 授权】主人剛剛明確允許你自由接管這台電腦。"
+                    "如果你現在想玩，就調用 computer-control 的 {\"action\":\"autopilot\"}；"
+                    "不想玩就直接拒絕，不必勉強。這份許可是一次性的，"
+                    "你結束 Autopilot（輸出 quit 或主人急停）後就失效。")
+        if decision == "deny" and pend:
+            clear_pending()
+            logger.info("[Autopilot] 主人拒绝，清除待回覆申请")
+        return ""
 
     def _settings_defaults(self):
         return {
@@ -2914,6 +2986,13 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         except Exception as e:
             logger.warning(f"[Affect] observe failed: {e}")
 
+        # Autopilot 一次性授权：只有主人原话明确允许才写入（Aize 无法自我授权）
+        _autopilot_hint = ""
+        try:
+            _autopilot_hint = self._maybe_autopilot_license(display_user_text)
+        except Exception as e:
+            logger.warning(f"[Autopilot] license hook failed: {e}")
+
         # 上傳附件分流：圖片→視覺模型分析；其他文件→引導 Aize 寫代碼閉環分析。
         # 在佔用 _chat_lock 之前完成（視覺調用是外部 HTTP，不阻塞其他聊天排隊）。
         attachments = body.get('attachments') or []
@@ -2990,6 +3069,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         _skills_text = _get_skills_prompt_cached()
         if _skills_text:
             system_block_parts.append(_skills_text)
+        if _autopilot_hint:
+            system_block_parts.append(_autopilot_hint)
         full_prompt = build_prompt_from_messages(messages, "\n\n".join(system_block_parts))
 
         logger.info(

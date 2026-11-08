@@ -78,6 +78,33 @@ def _screenshot_dir() -> str:
     return path
 
 
+def _license_mod():
+    """Autopilot 一次性授權模塊（只有引擎能寫入許可）。"""
+    for mod in ("tools.autopilot_license", "core.tools.autopilot_license", "autopilot_license"):
+        try:
+            return __import__(mod, fromlist=["is_granted"])
+        except Exception:
+            continue
+    return None
+
+
+def _licensed() -> bool:
+    mod = _license_mod()
+    try:
+        return bool(mod and mod.is_granted())
+    except Exception:
+        return False
+
+
+def _revoke_license() -> None:
+    mod = _license_mod()
+    try:
+        if mod:
+            mod.revoke()
+    except Exception:
+        pass
+
+
 # ------------------------------------------------------- 跨实例状态 / 急停信号
 #
 # 技能模块可能被多次独立加载（importlib 每次新建模块对象），模块级 _STOP/_RUNNING
@@ -576,6 +603,112 @@ def _look_prompt(prompt: str, image_path: str) -> Dict[str, Any]:
     return _look(prompt, image_path, max_tokens=500)
 
 
+_AUTOPILOT_PROMPT = """你正在 Autopilot：这台 Windows 电脑完全交给你，没有固定目标，你可以做任何自己想做的事（玩游戏、看东西、整理、探索……）。主人已经明确允许，不用再问。
+
+本次你自己定的方向：{goal}
+
+已执行的步骤：{steps}
+
+看这张截图（图片尺寸等于屏幕尺寸 {width}x{height}），决定下一步只做一个动作。
+想结束时就输出 quit。
+
+只返回 JSON，不要解释：
+{{"observation": "你看到的画面要点", "action": "click|double_click|right_click|move|drag|scroll|type|key|hotkey|wait|quit",
+  "x_ratio": 0.0, "y_ratio": 0.0, "x2_ratio": 0.0, "y2_ratio": 0.0,
+  "text": "", "key": "", "keys": [], "scroll": 0,
+  "reason": "你为什么想做这件事"}}
+
+规则：
+- 坐标一律用 0~1 的相对比例（x_ratio 是横向占比，y_ratio 是纵向占比）
+- 只做你想做的事，不要为了「别闲着」硬找动作
+- 不要做不可逆或危险的事（删除数据、付款、给真人发消息、改系统设置）
+- 觉得玩够了、不想玩了、或者该回到主人身边了，action 用 quit
+"""
+
+
+def _request_autopilot(thought: str = "") -> Dict[str, Any]:
+    """向主人申请 Autopilot 许可（只写「已申请」标记，不能自己发许可）。"""
+    mod = _license_mod()
+    if mod is None:
+        return {"success": False, "error": "授权模块不可用"}
+    if _licensed():
+        return {"success": True, "already_granted": True}
+    asked = False
+    try:
+        asked = bool(mod.mark_pending(thought))
+    except Exception as error:
+        return {"success": False, "error": str(error)}
+    if asked:
+        return {"success": True, "need_permission": True,
+                "instruction": "先向主人说明你想自己玩电脑，等他明确同意后再调用 autopilot。"}
+    return {"success": True, "need_permission": True, "recently_asked": True,
+            "instruction": "你刚刚已经问过主人了，等他回复；不要重复追问。"}
+
+
+def _run_autopilot(goal: str = "") -> Dict[str, Any]:
+    """Autopilot：截图→自己决定→执行→再截图，直到她输出 quit。
+
+    没有步数/时长上限（她说了算）；退出方式：她输出 quit、主人急停、或出错。
+    一次许可只对一轮有效，退出即失效。
+    """
+    if not _licensed():
+        return {"success": False, "error": "未经主人明确许可，不能进入 Autopilot。"
+                                          "先用 action=autopilot_request 向主人申请。"}
+    if not _enabled():
+        return {"success": False, "error": "桌面控制已在设置中关闭（desktop_control_enabled=false）"}
+
+    goal = str(goal or "").strip()
+    _clear_stop()
+    started = time.time()
+    history = []
+    _RUNNING.update(active=True, goal=goal or "自己玩电脑", steps=0, started_at=started)
+    _write_state(active=True, autopilot=True, goal=goal or "自己玩电脑", steps=0,
+                 max_steps=0, started_at=started, observation="", action="观察屏幕",
+                 transient=False)
+    try:
+        index = 0
+        while True:
+            _check_stop()
+            index += 1
+            shot = _screenshot(f"auto_{int(started)}_{index}")
+            size = _screen_size()
+            prompt = _AUTOPILOT_PROMPT.format(
+                goal=goal or "（没有指定，你自己决定）",
+                steps=json.dumps(history[-8:], ensure_ascii=False),
+                width=size["width"], height=size["height"])
+            raw = _look_prompt(prompt, shot)
+            if not raw["success"]:
+                return {"success": False, "error": raw.get("error"), "steps": history,
+                        "screenshot": shot}
+            step = _parse_step(raw["observation"])
+            if not step:
+                return {"success": False, "error": "模型未返回可解析的动作 JSON",
+                        "raw": (raw.get("observation") or "")[:400], "steps": history,
+                        "screenshot": shot}
+
+            if str(step.get("action", "")).strip().lower() in ("quit", "done", "exit", "退出", "结束", "結束"):
+                return {"success": True, "quit": True, "goal": goal, "steps": history,
+                        "observation": step.get("observation", ""),
+                        "elapsed": round(time.time() - started, 1)}
+
+            _apply_step(step)
+            history.append({"step": index, "action": step.get("action"),
+                            "observation": str(step.get("observation", ""))[:120],
+                            "reason": str(step.get("reason", ""))[:120]})
+            _RUNNING["steps"] = index
+            _write_state(active=True, autopilot=True, steps=index,
+                         observation=str(step.get("observation", ""))[:120],
+                         action=_describe_step(step))
+            time.sleep(0.4)
+    except Exception as error:
+        return {"success": False, "error": str(error), "steps": history, "stop_reason": "exception"}
+    finally:
+        _RUNNING.update(active=False, goal="", steps=0, started_at=0.0)
+        _write_state(active=False, autopilot=False, steps=0, observation="",
+                     action="", goal="", transient=False)
+        _revoke_license()
+
+
 # ---------------------------------------------------------------- 统一入口
 
 # 模型偶尔会用自然语言式的动作名，归一化到真实动作
@@ -590,10 +723,12 @@ _ACTION_ALIASES = {
     "wheel": "scroll", "mouse_scroll": "scroll",
     "observe": "look", "see": "look", "watch": "look",
     "run": "run_goal", "goal": "run_goal", "task": "run_goal", "execute_goal": "run_goal",
+    "auto": "autopilot", "auto_pilot": "autopilot", "play_computer": "autopilot",
+    "request_autopilot": "autopilot_request", "ask_permission": "autopilot_request",
 }
 
 _ACTION_LIST = ("status/screenshot/look/move/click/double_click/right_click/drag/scroll/"
-                "type/key/hotkey/run_goal/stop")
+                "type/key/hotkey/run_goal/autopilot/autopilot_request/stop")
 
 
 def _mark_control(action: str, input_data: Dict[str, Any]) -> None:
@@ -616,7 +751,8 @@ def execute(input_data: Any) -> Dict:
     if not action:
         return {"success": True, "actions": [
             "status", "screenshot", "look", "move", "click", "double_click", "right_click",
-            "drag", "scroll", "type", "key", "hotkey", "run_goal", "stop"]}
+            "drag", "scroll", "type", "key", "hotkey", "run_goal", "autopilot",
+            "autopilot_request", "stop"]}
 
     if action == "status":
         # 状态文件优先（跨实例/跨进程），缺失时退回本实例内存状态
@@ -624,18 +760,31 @@ def execute(input_data: Any) -> Dict:
         running = state if state else dict(_RUNNING)
         # updated_at 超过一定时间未刷新且标记 active，说明写状态的进程已死
         # 单步动作写的是瞬时状态（transient），6 秒无更新即视为已结束
-        ttl = 6 if running.get("transient") else 120
+        ttl = 6 if running.get("transient") else (600 if running.get("autopilot") else 120)
         if running.get("active") and time.time() - float(running.get("updated_at", 0) or 0) > ttl:
             running = dict(running, active=False, stale=True)
+        mod = _license_mod()
+        try:
+            lic = mod.status() if mod else {}
+        except Exception:
+            lic = {}
         return {"success": True, **_screen_size(), "enabled": _enabled(),
-                "running": running, "stopped": _stop_requested()}
+                "running": running, "stopped": _stop_requested(),
+                "autopilot": bool(running.get("autopilot")), "autopilot_license": lic}
 
     if action == "stop":
         _request_stop()
         return {"success": True, "stopped": True}
 
+    if action == "autopilot_request":
+        return _request_autopilot(str(input_data.get("thought", "")
+                                     or input_data.get("goal", "") or ""))
+
     if not _enabled():
         return {"success": False, "error": "桌面控制已在设置中关闭（desktop_control_enabled=false）"}
+
+    if action == "autopilot":
+        return _run_autopilot(str(input_data.get("goal", "") or ""))
 
     if action == "screenshot":
         path = _screenshot(str(input_data.get("name", "")))

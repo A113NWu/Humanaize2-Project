@@ -41,6 +41,7 @@ _AESTHETIC_DB_NAME = "aesthetic_db.json"
 # 大腦（她的自由獨白）完全不需要知道這些名字，也不輸出任何格式。
 ACTIVITY_LABELS = {
     "desktop": "操作電腦",
+    "autopilot": "自己玩電腦",
     "music": "學習音樂",
     "aesthetic": "學習審美",
     "emotion": "學習人類情感",
@@ -293,6 +294,9 @@ class IdleEngine:
             elif action == "desktop":
                 # 閒時自主操作電腦：小腦從獨白裡提取出具體目標，交給 computer-control 執行
                 self._do_desktop_control(plan or thought, ACTIVITY_LABELS["desktop"])
+            elif action == "autopilot":
+                # 她想自己玩電腦：有主人許可就直接接管；沒有就向主人申請
+                self._do_autopilot(plan or thought)
             elif action == "music":
                 # 音乐自学：按曲风收集音频 + NumPy 频谱分析，更新音色档案
                 self._do_music_learning()
@@ -1129,6 +1133,67 @@ class IdleEngine:
                 save_memory(self.memory)
             except Exception:
                 pass
+
+    def _do_autopilot(self, thought: str = ""):
+        """她想自己玩电脑。
+
+        有主人给的一次性许可 → 加载 computer-control，进入 Autopilot 循环
+        （截图→自己决定→执行→再截图，直到她输出 quit）。
+        没有许可 → 只向主人申请，绝不自己给自己发许可。
+        """
+        def _thought(msg):
+            if self.callback:
+                self.callback({"type": "internal_thought", "thought": msg})
+
+        try:
+            from tools.autopilot_license import is_granted, mark_pending
+        except ImportError:
+            from core.tools.autopilot_license import is_granted, mark_pending
+
+        thought = (thought or "").strip()
+
+        if is_granted():
+            mod = self._load_skill_module("computer-control")
+            if mod is None:
+                _thought("[Autopilot] 技能未加载（skills/computer-control 缺失）")
+                return
+            _thought(f"[Autopilot] 主人许可有效，开始自己玩电脑：{thought or '自己决定'}")
+            try:
+                result = mod.execute({"action": "autopilot", "goal": thought})
+            except Exception as error:
+                result = {"success": False, "error": str(error)}
+            if result.get("success"):
+                _thought(f"[Autopilot] 结束：{result.get('observation') or '她自己退出了'}")
+            else:
+                _thought(f"[Autopilot] 中断：{result.get('error') or result.get('stop_reason')}")
+            if self.memory is not None:
+                try:
+                    add_thought(self.memory,
+                                f"[Autopilot] {thought or '自己玩电脑'}｜"
+                                f"{'正常结束' if result.get('success') else '中断'}",
+                                thought_type="action")
+                    save_memory(self.memory)
+                except Exception:
+                    pass
+            return
+
+        # 没有许可：向她确认是否要问主人（有冷却，避免反覆骚扰）
+        if not mark_pending(thought):
+            _thought("[Autopilot] 最近已经问过主人了，等回复；这次不重复申请")
+            return
+
+        _thought(f"[Autopilot] 没有主人许可，先向主人申请：{thought or '想自己玩电脑'}")
+        try:
+            from thinking_engine_api import ThinkingEngineState
+            engine = ThinkingEngineState().get_thinking_engine()
+            if engine is not None:
+                engine.queue_break_silence_task(
+                    prompt=("你一个人待着，突然很想自己在电脑上玩一会儿/随便操作一下。"
+                            "去问主人能不能让你进入 Autopilot。直接对他说，一两句话，"
+                            f"说说你想做什么（{thought or '随便玩玩'}）；主人不同意也完全没关系。"),
+                    memory=self.memory)
+        except Exception as error:
+            _thought(f"[Autopilot] 申请发送失败：{error}")
 
     def _do_social_activity(self, plan: str = ""):
         """閒時社交活動：把站点内容（提及/时间线/表情说明）原样喂给 Aize，
