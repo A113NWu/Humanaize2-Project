@@ -22,9 +22,15 @@ import time
 import uuid
 
 try:
-    from .config import DATA_DIR
+    from ..app_paths import app_data_dir as _app_data_dir
 except ImportError:
-    from config import DATA_DIR
+    try:
+        from app_paths import app_data_dir as _app_data_dir
+    except ImportError:
+        _app_data_dir = None
+
+# 測試可覆寫；留空時走 app_paths，避免依賴 config 的導入路徑
+DATA_DIR = ""
 
 __all__ = [
     "RULE_PREFIX",
@@ -149,8 +155,17 @@ _WORD_RE = re.compile(r"[a-zA-Z]{2,}")
 # 路径与读写
 # ---------------------------------------------------------------------------
 def _data_dir() -> str:
-    """数据目录（测试可 monkeypatch 覆盖）。"""
-    return DATA_DIR
+    """数据目录：测试覆写 > app_paths > 项目根 data/。"""
+    if DATA_DIR:
+        return DATA_DIR
+    if _app_data_dir is not None:
+        try:
+            return _app_data_dir()
+        except Exception:
+            pass
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__)))))
+    return os.path.join(root, "data")
 
 
 def _path() -> str:
