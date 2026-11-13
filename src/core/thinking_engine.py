@@ -42,6 +42,25 @@ def _runtime_env_text():
         "- 解壓用 unzip 或 tar。"
     )
 
+def _causal_rules_text(user_question: str) -> str:
+    """按当前这句话检索因果规则，生成可注入的提示块（失败返回空串）。"""
+    try:
+        try:
+            from data.causal_rules import prompt_block, search, mark_used
+        except ImportError:
+            from core.data.causal_rules import prompt_block, search, mark_used
+        block = prompt_block(user_question)
+        if block:
+            try:
+                mark_used([item["rule"]["id"] for item in search(user_question)])
+            except Exception:
+                pass
+        return block
+    except Exception as e:
+        logger.warning(f"[CausalRules] prompt block failed: {e}")
+        return ""
+
+
 from memory import add, add_thought, save_memory
 from llm.llm_enhanced import generate_with_emotion_feedback, generate_with_emotion_feedback_stream
 from Agent import Agent
@@ -490,6 +509,8 @@ class ThinkingEngine:
 
         # 經驗數據庫屬於 Solve 模式專用，日常聊天不再檢索/注入，避免答非所問
         exp_text = "None."
+        # 因果規則：按當前這句話匹配，放在問題之後、GAN 之前，讓模型先走因果鏈再回應
+        causal_text = _causal_rules_text(user_question) or "None."
 
         return (
             "MAIN PROMPT:\n"
@@ -502,6 +523,8 @@ class ThinkingEngine:
             f"{exp_text}\n\n"
             "CURRENT USER QUESTION:\n"
             f"{str(user_question or '').strip()}\n\n"
+            "CAUSAL RULES:\n"
+            f"{causal_text}\n\n"
             "GAN PROMPT:\n"
             f"{gan_text}\n\n"
             "OTHER PROMPTS:\n"

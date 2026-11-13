@@ -61,6 +61,7 @@ PROMPT_FILES = {
     "idle_intent_executor": "idle_intent_executor.txt",
     "idle_reconsider": "idle_reconsider.txt",
     "autopilot_license": "autopilot_license.txt",
+    "causal_rules": "causal_rules.txt",
     "social_post": "social_post.txt",
     "social_decide": "social_decide.txt",
     # GAN 相关

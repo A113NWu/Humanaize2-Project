@@ -123,6 +123,19 @@ def _invalidate_skills_prompt_cache():
     _SKILLS_PROMPT_CACHE["text"] = None
 
 
+def _causal_rules_block(user_text: str) -> str:
+    """按當前這句話匹配因果規則並渲染成提示塊；失敗返回空串。"""
+    try:
+        try:
+            from data.causal_rules import prompt_block
+        except ImportError:
+            from core.data.causal_rules import prompt_block
+        return prompt_block(user_text)
+    except Exception as e:
+        logger.warning(f"[CausalRules] prompt block failed: {e}")
+        return ""
+
+
 # 運行時技能管理器實例（進程級緩存，與 Agent 內部使用同一個 skills 目錄）
 _SKILLS_MANAGER_CACHE = {"mgr": None}
 
@@ -1551,6 +1564,9 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             _skills_text = _get_skills_prompt_cached()
             if _skills_text:
                 system_block_parts.append(_skills_text)
+            _causal_text = _causal_rules_block(text)
+            if _causal_text:
+                system_block_parts.append(_causal_text)
 
             messages = [{"role": "user", "content": text}]
             full_prompt = build_prompt_from_messages(messages, "\n\n".join(system_block_parts))
@@ -3073,6 +3089,10 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         _skills_text = _get_skills_prompt_cached()
         if _skills_text:
             system_block_parts.append(_skills_text)
+        # 因果規則：按主人這句話匹配，放在技能清單之後，先立因果鏈再回應
+        _causal_text = _causal_rules_block(display_user_text)
+        if _causal_text:
+            system_block_parts.append(_causal_text)
         if _autopilot_hint:
             system_block_parts.append(_autopilot_hint)
         full_prompt = build_prompt_from_messages(messages, "\n\n".join(system_block_parts))
