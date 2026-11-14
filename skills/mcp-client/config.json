@@ -2,7 +2,7 @@
   "servers": {
     "tulpa": {
       "url": "http://127.0.0.1:18777/mcp",
-      "token": "",
+      "token": "uyo7Gc_cWgcu94HFrCXBtn0vVqHY0lcX1kBJ6uzW7hU",
       "headers": {},
       "timeout": 240,
       "enabled": true,

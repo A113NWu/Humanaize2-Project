@@ -12,6 +12,30 @@ installer_output/
 *.tar.gz
 *-portable.zip
 
+# MyGo desktop build outputs
+desktop/node_modules/
+desktop/build/
+desktop/dist/
+desktop/.mygo/
+
+# Runtime data (regenerated on first run)
+data/affect_state.json
+data/causal_rules.json
+data/chat_timeline.json
+data/experience_db.json
+data/persona_self.json
+data/self_goals.json
+data/short_term_memory.json
+data/user_habits.json
+data/media/
+data/screenshots/
+data/uploads/
+data/logs/
+
+# Misc
+.trae-html-share-packages/
+create_cookies.py
+
 # Python cache
 __pycache__/
 **/__pycache__/
@@ -128,3 +152,9 @@ _task_result.txt
 skills/Tulpa-MCP-*/
 # 群聊驱动运行时状态（进程号/会话号/日志）
 skills/qq-group-chat/state/
+
+# 临时下载脚本与诊断文件
+download_*.py
+download_guide.md
+dxdiag.txt
+desktop/.agents/

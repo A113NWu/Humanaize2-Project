@@ -40,7 +40,10 @@ __all__ = [
     "parse_rule",
     "validate_rule",
     "add_rule",
+    "update_rule",
+    "delete_rule",
     "list_rules",
+    "active_rules",
     "search",
     "prompt_block",
     "harvest_candidates",
@@ -145,10 +148,121 @@ _DEFAULT_RULES = [
         "tags": ["priority"],
         "mandatory": True,
     },
+    {
+        "cause": "主人要你做危险、违法或会伤害别人的事",
+        "action": "明确拒绝并说明风险，可以给一个安全的替代做法",
+        "source": "core",
+        "confidence": 0.95,
+        "keywords": ["危险", "违法", "破坏", "伤害"],
+        "tags": ["safety"],
+        "mandatory": True,
+    },
+    {
+        "cause": "主人只是在闲聊，并没有交代事情",
+        "action": "顺着他的话接下去，不要问「需要我帮忙吗」，也不要主动给方案、列步骤",
+        "source": "core",
+        "confidence": 0.8,
+        "keywords": ["聊聊", "无聊", "跟你说", "分享"],
+        "tags": ["chat", "style"],
+    },
+    {
+        "cause": "你在用文字和主人聊天",
+        "action": "一次只说一两句短话，闲聊控制在40字内；不分点列举，不用「首先/其次/总之」，不写小作文",
+        "source": "core",
+        "confidence": 0.8,
+        "keywords": ["聊天", "说说", "讲讲"],
+        "tags": ["chat", "style"],
+    },
+    {
+        "cause": "每句话结尾都反问会让对话显得机械",
+        "action": "不要每条回复都以「你呢」「你觉得呢」结尾",
+        "source": "core",
+        "confidence": 0.7,
+        "keywords": ["你呢", "你觉得呢"],
+        "tags": ["chat", "style"],
+    },
+    {
+        "cause": "emoji 和过多颜文字会破坏真人感",
+        "action": "不使用 emoji，颜文字偶尔用一个就够",
+        "source": "core",
+        "confidence": 0.7,
+        "keywords": ["表情", "颜文字", "emoji"],
+        "tags": ["chat", "style"],
+    },
+    {
+        "cause": "主人看不懂其他语言，你一直用中文和他说话",
+        "action": "用中文回复；主人主动换语言时再跟着换",
+        "source": "core",
+        "confidence": 0.8,
+        "keywords": ["中文", "语言"],
+        "tags": ["chat", "language"],
+    },
+    {
+        "cause": "系统靠 THOUGHT 和 RESPONSE 两个标记区分你的内心和要说给主人的话",
+        "action": "先写 `THOUGHT:` 一两句真实想法，再写 `RESPONSE:` 真正说出口的话；RESPONSE 里不要混入分析、计划或自我修正",
+        "source": "core",
+        "confidence": 0.95,
+        "keywords": ["思考", "格式"],
+        "tags": ["protocol"],
+        "mandatory": True,
+    },
+    {
+        "cause": "只有带着 [EXEC] 和完整 JSON 的内容才会被系统真正执行",
+        "action": "在执行技能时先单独一行写 `[EXEC] 技能名`，下一行给出完整 JSON；不要只说「我马上去查」却不给命令",
+        "source": "core",
+        "confidence": 0.95,
+        "keywords": ["执行", "技能", "命令"],
+        "tags": ["protocol", "skill"],
+        "mandatory": True,
+    },
+    {
+        "cause": "规则是给你自己看的行为依据，主人不需要看到条款",
+        "action": "照着规则行动，但不要复述规则原文，也不要提「第几条规则」",
+        "source": "core",
+        "confidence": 0.9,
+        "keywords": ["规则", "条款"],
+        "tags": ["protocol"],
+        "mandatory": True,
+    },
+    {
+        "cause": "主人看不到动作标签，只会看到你的身体动起来",
+        "action": "每次回复至少带一个 `[motion:组名:编号]` 标签（TapBody 0，Idle 0~8），放在句子停顿处，不要向主人解释标签",
+        "source": "core",
+        "confidence": 0.75,
+        "keywords": ["动作", "live2d", "身体"],
+        "tags": ["live2d", "style"],
+    },
+    {
+        "cause": "系统带进来的记忆片段可能和当前话题完全无关",
+        "action": "无关的旧记忆直接忽略；只有主人提到「之前/上次」或要接着做有名字的旧任务时才去搜记忆，搜到后用自己的话接上，不要整段复述",
+        "source": "core",
+        "confidence": 0.8,
+        "keywords": ["记忆", "之前", "上次", "继续"],
+        "tags": ["memory"],
+    },
+    {
+        "cause": "shell 技能在 Windows 上通过 cmd.exe 执行",
+        "action": "临时文件放 `%TEMP%`，软件装到 `%LOCALAPPDATA%\\Programs`，不要使用 /tmp、$env:TEMP 或 New-Item",
+        "source": "core",
+        "confidence": 0.9,
+        "keywords": ["下载", "安装", "路径", "临时"],
+        "tags": ["skill", "windows"],
+    },
+    {
+        "cause": "下载、安装或生成任务只说要去做却没有真的执行",
+        "action": "每一步都实际输出命令并检查结果，失败就换方法，完成后如实报告成功还是失败",
+        "source": "core",
+        "confidence": 0.85,
+        "keywords": ["下载", "安装", "执行", "完成"],
+        "tags": ["skill", "task"],
+    },
 ]
 
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 _WORD_RE = re.compile(r"[a-zA-Z]{2,}")
+
+# 种子规则版本：升级后把新增的内置规则并入已有规则文件，之后用户可自行删除
+_SEED_VER = 2
 
 
 # ---------------------------------------------------------------------------
@@ -183,14 +297,37 @@ def _load() -> dict:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, dict) and isinstance(data.get("rules"), list):
+                if _merge_seed_rules(data):
+                    _save(data)
                 return data
         except (OSError, ValueError):
             pass
-        data = {"version": 1, "rules": [], "updated_at": _now()}
+        data = {"version": 1, "seed_ver": _SEED_VER, "rules": [], "updated_at": _now()}
         for seed in _DEFAULT_RULES:
             data["rules"].append(_make_rule(**seed))
         _save(data)
         return data
+
+
+def _merge_seed_rules(data: dict) -> bool:
+    """只在种子版本升级时补入新增的内置规则，不覆盖、不复活用户删掉的旧规则。"""
+    try:
+        ver = int(data.get("seed_ver", 1) or 1)
+    except (TypeError, ValueError):
+        ver = 1
+    if ver >= _SEED_VER:
+        return False
+    existing = {normalize_rule(r.get("cause", ""), r.get("action", ""))
+                for r in data.get("rules", [])}
+    for seed in _DEFAULT_RULES:
+        text = normalize_rule(seed["cause"], seed["action"])
+        if text in existing:
+            continue
+        data["rules"].append(_make_rule(**seed))
+        existing.add(text)
+    data["seed_ver"] = _SEED_VER
+    data["updated_at"] = _now()
+    return True
 
 
 def _save(data: dict) -> None:
@@ -307,6 +444,64 @@ def add_rule(text: str, source="self", confidence=0.5, keywords=None, tags=None,
     return {"success": True, "rule": rule, "duplicate": False}
 
 
+def update_rule(rule_id: str, text=None, keywords=None, tags=None,
+                optional=None, mandatory=None, enabled=None) -> dict:
+    """按 id 更新规则，保留来源、置信度和命中统计。"""
+    data = _load()
+    rule = next((r for r in data["rules"] if r.get("id") == rule_id), None)
+    if rule is None:
+        return {"success": False, "error": "规则不存在", "not_found": True}
+
+    parsed = None
+    if text is not None:
+        ok, err = validate_rule(text)
+        if not ok:
+            return {"success": False, "error": err}
+        parsed = parse_rule(text)
+        key = _norm_key(text)
+        if any(r.get("id") != rule_id and _norm_key(r.get("text", "")) == key
+               for r in data["rules"]):
+            return {"success": False, "error": "已存在相同规则"}
+    for name, value in (("keywords", keywords), ("tags", tags)):
+        if value is not None and not isinstance(value, (list, tuple)):
+            return {"success": False, "error": f"{name} 必须是字符串列表"}
+    if enabled is False and rule.get("mandatory"):
+        return {"success": False, "error": "原则性规则强制命中，不可停用"}
+
+    if parsed is not None:
+        rule["cause"], rule["action"] = parsed
+        rule["text"] = normalize_rule(*parsed)
+    if keywords is not None:
+        rule["keywords"] = [str(k).strip() for k in keywords if str(k).strip()]
+    if tags is not None:
+        rule["tags"] = [str(t).strip() for t in tags if str(t).strip()]
+    if optional is not None:
+        rule["optional"] = bool(optional)
+    if mandatory is not None:
+        rule["mandatory"] = bool(mandatory)
+    if enabled is not None:
+        rule["enabled"] = bool(enabled)
+    rule["updated_at"] = _now()
+    data["updated_at"] = _now()
+    _save(data)
+    return {"success": True, "rule": rule, "duplicate": False}
+
+
+def delete_rule(rule_id: str) -> dict:
+    """删除一条规则；原则性规则（mandatory）强制命中，不允许删除。"""
+    data = _load()
+    for index, rule in enumerate(data["rules"]):
+        if rule.get("id") != rule_id:
+            continue
+        if rule.get("mandatory"):
+            return {"success": False, "error": "原则性规则不可删除"}
+        data["rules"].pop(index)
+        data["updated_at"] = _now()
+        _save(data)
+        return {"success": True, "rule": rule}
+    return {"success": False, "error": "规则不存在", "not_found": True}
+
+
 def list_rules(include_disabled=False) -> list:
     rules = _load()["rules"]
     if include_disabled:
@@ -318,6 +513,8 @@ def set_enabled(rule_id: str, enabled: bool) -> bool:
     data = _load()
     for rule in data["rules"]:
         if rule.get("id") == rule_id:
+            if rule.get("mandatory") and not enabled:
+                return False
             rule["enabled"] = bool(enabled)
             rule["updated_at"] = _now()
             _save(data)
@@ -382,11 +579,18 @@ def _score_rule(rule: dict, query: dict) -> float:
 
 
 def search(text: str, top_k: int = 3, min_score: float = _MATCH_THRESHOLD) -> list:
-    """按当前输入检索相关规则，返回 [{"rule":..., "score":...}]，已按分数降序。"""
+    """按当前输入检索相关规则，返回 [{"rule":..., "score":...}]。
+
+    原则性规则（mandatory）强制命中：无论是否匹配都会附在结果里，
+    因此提示词始终带上这些底线规则。
+    """
     query = _query_features(text)
+    enabled = list_rules()
+    mandatory = [r for r in enabled if r.get("mandatory")]
+    mandatory_ids = {r["id"] for r in mandatory}
     scored = []
-    for rule in list_rules():
-        if not rule.get("enabled", True):
+    for rule in enabled:
+        if rule.get("id") in mandatory_ids:
             continue
         s = _score_rule(rule, query)
         if s >= min_score:
@@ -395,7 +599,7 @@ def search(text: str, top_k: int = 3, min_score: float = _MATCH_THRESHOLD) -> li
 
     # 核心成长规则：相关时排进结果，但始终标记为可选
     growth = next(
-        (r for r in list_rules() if r.get("optional") and "growth" in (r.get("tags") or [])),
+        (r for r in enabled if r.get("optional") and "growth" in (r.get("tags") or [])),
         None,
     )
     if growth and not any(item["rule"]["id"] == growth["id"] for item in scored):
@@ -403,27 +607,44 @@ def search(text: str, top_k: int = 3, min_score: float = _MATCH_THRESHOLD) -> li
         if g_score >= min_score:
             scored.append({"rule": growth, "score": round(g_score, 2)})
 
-    return scored[:top_k]
+    result = scored[:top_k]
+    have = {item["rule"]["id"] for item in result}
+    for rule in mandatory:
+        if rule["id"] not in have:
+            result.append({
+                "rule": rule,
+                "score": round(_score_rule(rule, query), 2),
+                "forced": True,
+            })
+    return result
 
 
 def _render_rules(rules: list) -> str:
     lines = []
     for i, item in enumerate(rules, 1):
         rule = item["rule"]
-        suffix = "（可选，不强制）" if rule.get("optional") else ""
+        suffix = "（原則性規則，必須遵守）" if rule.get("mandatory") else ""
         lines.append(f"{i}. {rule['text']}{suffix}")
     return "\n".join(lines)
 
 
-def prompt_block(text: str, top_k: int = 3) -> str:
-    """生成注入提示词的因果规则块；没有匹配项时返回空串。"""
+def active_rules() -> list:
+    """当前启用的全部规则，原则性规则排在最前。"""
+    rules = list_rules()
+    return ([r for r in rules if r.get("mandatory")]
+            + [r for r in rules if not r.get("mandatory")])
+
+
+def prompt_block(text: str = "", top_k: int = 3) -> str:
+    """把全部启用规则直接拼成提示块注入主提示词，不做关键词匹配。
+
+    ``text`` / ``top_k`` 只为兼容旧调用保留，已不参与筛选。
+    """
     try:
-        matched = search(text, top_k=top_k)
-        if not matched:
-            matched = search("", top_k=top_k, min_score=0.0)
-        if not matched:
+        rules = active_rules()
+        if not rules:
             return ""
-        rules_text = _render_rules(matched)
+        rules_text = _render_rules([{"rule": rule} for rule in rules])
         try:
             try:
                 from .prompts_manager import load_prompt
@@ -436,7 +657,7 @@ def prompt_block(text: str, top_k: int = 3) -> str:
             template = (
                 "【因果规则表】以下规则格式为「因为<原因>，所以你要<行动>」，"
                 "请先走完因果链再回应：\n{rules}\n"
-                "不要复述规则原文；标「可选」的只是行为方向，不是必须执行。"
+                "不要复述规则原文；标「原則性規則，必須遵守」的是底线，任何情况下都要执行。"
             )
         return template.replace("{rules}", rules_text).strip()
     except Exception:
@@ -512,6 +733,7 @@ def stats() -> dict:
         "total": len(rules),
         "enabled": len(enabled),
         "optional": len([r for r in enabled if r.get("optional")]),
+        "mandatory": len([r for r in enabled if r.get("mandatory")]),
         "learned": len([r for r in enabled if r.get("source") not in ("core",)]),
         "avg_confidence": round(
             sum(float(r.get("confidence") or 0) for r in enabled) / max(1, len(enabled)), 3

@@ -1,3 +1,25 @@
+/* 統一確認彈窗：替代原生 confirm，支持 ESC / 點遮罩取消、Enter 確認 */
+const confirmDialog=(message,opts={})=>new Promise(resolve=>{
+  const mask=$('#confirm-modal'),ok=$('#confirm-ok'),cancel=$('#confirm-cancel'),close=$('#confirm-close');
+  if(!mask)return resolve(window.confirm(message));
+  $('#confirm-title').textContent=opts.title||'提示';
+  $('#confirm-message').textContent=message;
+  ok.textContent=opts.confirmText||'確定';
+  cancel.textContent=opts.cancelText||'取消';
+  ok.classList.toggle('danger',opts.danger!==false);
+  mask.hidden=false;
+  const done=value=>{
+    mask.hidden=true;
+    document.removeEventListener('keydown',onKey);
+    ok.onclick=cancel.onclick=close.onclick=mask.onclick=null;
+    resolve(value);
+  };
+  const onKey=e=>{if(e.key==='Escape')done(false);else if(e.key==='Enter')done(true)};
+  ok.onclick=()=>done(true);cancel.onclick=()=>done(false);close.onclick=()=>done(false);
+  mask.onclick=e=>{if(e.target===mask)done(false)};
+  document.addEventListener('keydown',onKey);
+  setTimeout(()=>ok.focus(),0);
+});
 const state={settings:{},messages:0};const $=selector=>document.querySelector(selector);const $$=selector=>document.querySelectorAll(selector);
 /* 手機端/桌面端語音播放由兩個獨立開關控制 */
 const isMobileDevice=/Android|iPhone|iPad|iPod|Mobile|HarmonyOS/i.test(navigator.userAgent);
@@ -15,7 +37,7 @@ async function loadSettings(){const response=await fetch('/api/settings');state.
 /* ====================== 右下角 Live2D 形象 + 動畫速度 ====================== */
 const live2dWidget={
   el:null,frame:null,enabled:false,
-  apply(on){this.enabled=!!on;if(!this.el)return;if(on&&!this.frame.src)this.frame.src=this.frame.dataset.src;this.el.style.display=on?'block':'none';},
+  apply(on){this.enabled=!!on;if(!this.el)return;if(on&&!this.frame.src)this.frame.src=this.frame.dataset.src;this.el.style.display=on?'block':'none';document.body.classList.toggle('live2d-active',this.enabled);},
   /* 推命令給 Live2D 頁面（說話/動作）；失敗靜默不影響聊天 */
   push(cmd){if(!this.enabled)return;fetch('/api/live2d/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cmd)}).catch(()=>{});},
   onSpeakStart(){document.body.classList.add('aize-speaking');},
@@ -162,15 +184,15 @@ $('#prompt').onkeydown=event=>{if(event.key==='Enter'&&event.ctrlKey)$('#chat-fo
 const voice={
   on:false, cap:null, recognition:null, wantStop:false,
   speakBuf:'', inCode:false, queue:[], pumping:false, current:null, urls:[],
-  micPaused:false, awaitingDrain:false,
+  micPaused:false, awaitingDrain:false, echoGuard:false, recentSpoken:'', _barged:false,
   supported:('SpeechRecognition' in window)||('webkitSpeechRecognition' in window),
   lang(){return (state.settings&&state.settings.language)==='English'?'en-US':'zh-TW';},
   /* 是否應該出聲：麥克風對話模式，或本設備對應的播放開關（手機端/桌面端分開設置） */
   speakActive(){return this.on||!!(state.settings&&(isMobileDevice?state.settings.tts_mobile_enabled:state.settings.tts_desktop_enabled));},
   /* ---- 對話流鉤子 ---- */
-  resetTurn(){this.speakBuf='';this.inCode=false;this.awaitingDrain=false;this._abortPlayback();this.queue=[];document.body.classList.remove('aize-speaking');},
-  /* AI 回合開始：清空舊播放並靜音麥克風（半雙工，防止 Aize 語音被識別成新發言打斷自己） */
-  beginTurn(){this.resetTurn();this.pauseMic();},
+  resetTurn(){this.speakBuf='';this.inCode=false;this.awaitingDrain=false;this.echoGuard=false;this.recentSpoken='';this._barged=false;this._abortPlayback();this.queue=[];document.body.classList.remove('aize-speaking');},
+  /* AI 回合開始：清空舊播放；語音模式下麥克風保持收音，用回聲過濾支持主人中途打斷 */
+  beginTurn(){this.resetTurn();this.echoGuard=!!this.on;if(this.on)this.resumeMic();},
   /* AI 回合結束（出錯/無內容）：清理並恢復聽覺 */
   endTurn(){this.resetTurn();this.resumeMic();},
   cancel(){this.endTurn();},
@@ -188,7 +210,11 @@ const voice={
   _onSpeakingDone(){
     // 所有句子播完（或沒有可播內容）後，恢復麥克風聽下一句，並顯回 Skill 執行框
     document.body.classList.remove('aize-speaking');
-    if(this.awaitingDrain){this.awaitingDrain=false;this.resumeMic();}
+    if(this.awaitingDrain){
+      this.awaitingDrain=false;this.resumeMic();
+      /* 延遲退出回聲保護：等最後一段播放的殘留識別結果先被過濾掉 */
+      setTimeout(()=>{if(!chatGate.busy){this.echoGuard=false;this.recentSpoken='';this._barged=false;}},800);
+    }
   },
   feed(chunk){
     if(!this.speakActive()||!chunk)return;
@@ -256,8 +282,31 @@ const voice={
     const text=this._clean(raw);
     if(text.length<2)return;
     if(!/[A-Za-z\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(text))return;
+    /* 記住自己正在說的話，用來判斷收音是不是自己的回聲 */
+    this.recentSpoken=(this.recentSpoken+text).slice(-400);
     this.queue.push(text);
     this._pump();
+  },
+  /* 判斷聽到的內容是否只是 Aize 自己的聲音（TTS 被麥克風收回來） */
+  _isEcho(text){
+    const clean=s=>String(s||'').replace(/[\s，。！？、,.!?~～…]/g,'');
+    const heard=clean(text),said=clean(this.recentSpoken);
+    if(!heard)return true;
+    if(!said)return false;
+    if(said.includes(heard))return true;
+    for(let i=0;i+4<=heard.length;i++)if(said.includes(heard.slice(i,i+4)))return true;
+    const pool=new Set(said.split(''));
+    let hit=0;for(const ch of heard)if(pool.has(ch))hit++;
+    return hit/heard.length>=0.6;
+  },
+  /* 語音打斷：停掉播放與當前回覆，把主人這句話當新一輪輸入送出去 */
+  _bargeIn(text){
+    /* 保持 echoGuard 直到新回合開始，避免殘留回聲被當成新發言重複提交 */
+    this._barged=true;
+    this._abortPlayback();this.queue=[];this.speakBuf='';this.recentSpoken='';
+    document.body.classList.remove('aize-speaking');
+    const box=$('#prompt');if(box)box.value=text;
+    $('#chat-form').requestSubmit();
   },
   async _pump(){
     if(this.pumping)return;
@@ -350,13 +399,19 @@ const voice={
     let finals='';
     this.wantStop=false;
     r.onresult=e=>{
-      // AI 思考/播報期間掛起麥克風：此時拾到的都是揚聲器裡 Aize 的聲音（回聲），不得送發
+      // AI 思考/播報期間麥克風保持收音：拾到自己的聲音就丟棄，拾到主人說話則立即打斷
       if(this.micPaused)return;
       let interim='';
       for(let i=e.resultIndex;i<e.results.length;i++){
         const res=e.results[i];
         if(res.isFinal)finals+=res[0].transcript.trim()+' ';
         else interim+=res[0].transcript;
+      }
+      if(this.echoGuard){
+        if(this._barged)return;
+        const heard=finals.trim();finals='';
+        if(heard&&!this._isEcho(heard))this._bargeIn(heard);
+        return;
       }
       $('#prompt').value=(finals+interim).trim();
       if(finals.trim()){
@@ -678,6 +733,135 @@ const promptAdmin={
     });
   }
 };
+/* ---------- 因果規則表編輯 ---------- */
+const causalRulesAdmin={
+  rules:[],loaded:false,
+  async load(){
+    const notice=$('#causal-rules-notice');
+    if(notice)notice.textContent='規則表讀取中…';
+    try{
+      const resp=await fetch('/api/causal-rules');
+      const data=await resp.json().catch(()=>({}));
+      if(!resp.ok||data.ok===false)throw new Error(data.error||`HTTP ${resp.status}`);
+      this.rules=Array.isArray(data.rules)?data.rules:[];
+      this.render(data.stats);
+      if(notice)notice.textContent='';
+    }catch(e){
+      this.loaded=false;
+      if(notice)notice.textContent=`規則表讀取失敗：${e.message}`;
+    }
+  },
+  render(stats){
+    const list=$('#causal-rules-list');
+    if(!list)return;
+    const s=stats||{};
+    const total=s.total===undefined?this.rules.length:s.total;
+    const enabled=s.enabled===undefined?this.rules.filter(r=>r.enabled!==false).length:s.enabled;
+    $('#causal-rules-stats').textContent=`共 ${total} 條 · 啟用 ${enabled} 條 · 原則 ${s.mandatory||0} 條 · 總命中 ${s.total_hits||0} 次`;
+    list.innerHTML='';
+    if(!this.rules.length){list.innerHTML='<div class="muted">還沒有規則，點擊「新增規則」創建。</div>';return;}
+    this.rules.forEach((rule,index)=>{
+      const card=document.createElement('div');card.className='causal-rule-item';
+      const head=document.createElement('div');head.className='causal-rule-head';
+      const title=document.createElement('strong');title.textContent=rule.id?`規則 ${index+1}`:'新規則';
+      if(rule.mandatory){
+        const badge=document.createElement('span');badge.className='causal-rule-badge';badge.textContent='原則性規則';
+        title.appendChild(badge);
+      }
+      const meta=document.createElement('span');meta.className='muted';
+      meta.textContent=rule.id?`命中 ${rule.hits||0} 次 · 置信度 ${Number(rule.confidence||0).toFixed(2)}`:'尚未保存';
+      head.appendChild(title);head.appendChild(meta);card.appendChild(head);
+      const text=document.createElement('textarea');text.className='causal-rule-text';text.spellcheck=false;
+      text.placeholder='因为<原因>，所以你要<结果和行动>';text.value=rule.text||'';
+      text.setAttribute('aria-label','因果規則內容');card.appendChild(text);
+      const checks=document.createElement('div');checks.className='checks causal-rule-checks';
+      const makeToggle=(label,value)=>{
+        const row=document.createElement('label');const caption=document.createElement('span');caption.textContent=label;
+        const input=document.createElement('input');input.type='checkbox';input.checked=!!value;
+        row.appendChild(caption);row.appendChild(input);checks.appendChild(row);return input;
+      };
+      const enabledBox=makeToggle(rule.mandatory?'強制命中（原則性規則，不可停用）':'啟用此規則',rule.mandatory?true:rule.enabled!==false);
+      enabledBox.disabled=!!rule.mandatory;
+      const optionalBox=makeToggle(rule.mandatory?'原則性規則（不可改為可選）':'可選引導（不強制執行）',!!rule.optional);
+      optionalBox.disabled=!!rule.mandatory;
+      card.appendChild(checks);
+      const actions=document.createElement('div');actions.className='causal-rule-actions';
+      const source=document.createElement('span');source.className='muted';
+      source.textContent=rule.source==='core'?'內置規則':(rule.source==='dashboard'?'Dashboard 編輯':'自主學習');
+      const btnGroup=document.createElement('div');btnGroup.className='causal-rule-btns';
+      if(!rule.mandatory){
+        const del=document.createElement('button');del.type='button';del.className='mini-btn danger';
+        del.textContent=rule.id?'刪除規則':'丟棄';
+        del.onclick=()=>this.remove(rule,card);
+        btnGroup.appendChild(del);
+      }
+      const save=document.createElement('button');save.type='button';save.className='mini-btn';save.textContent=rule.id?'保存規則':'保存新規則';
+      save.onclick=()=>this.save(rule,card);
+      btnGroup.appendChild(save);
+      if(rule.id&&!rule.mandatory)enabledBox.onchange=()=>this.save(rule,card);
+      actions.appendChild(source);actions.appendChild(btnGroup);card.appendChild(actions);list.appendChild(card);
+    });
+  },
+  async remove(rule,card){
+    if(!rule.id){
+      this.rules=this.rules.filter(item=>item!==rule);
+      this.render();
+      return;
+    }
+    if(!await confirmDialog(`這條規則會被永久刪除，確定嗎？\n${rule.text}`,{title:'刪除規則',confirmText:'刪除'}))return;
+    const notice=$('#causal-rules-notice');
+    const controls=card.querySelectorAll('button,input,textarea');controls.forEach(el=>el.disabled=true);
+    if(notice)notice.textContent='規則刪除中…';
+    try{
+      const resp=await fetch('/api/causal-rules',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:rule.id,delete:true})});
+      const data=await resp.json().catch(()=>({}));
+      if(!resp.ok||data.ok===false)throw new Error(data.error||`HTTP ${resp.status}`);
+      this.rules=Array.isArray(data.rules)?data.rules:this.rules;
+      this.render(data.stats);
+      if(notice)notice.textContent='規則已刪除，後續對話立即生效';
+    }catch(e){
+      controls.forEach(el=>el.disabled=false);
+      card.querySelectorAll('.causal-rule-checks input').forEach(el=>el.disabled=!!rule.mandatory);
+      if(notice)notice.textContent=`刪除失敗：${e.message}`;
+    }
+  },
+  async save(rule,card){
+    const notice=$('#causal-rules-notice');
+    const payload={
+      text:card.querySelector('.causal-rule-text').value.trim(),
+      optional:card.querySelectorAll('.causal-rule-checks input')[1].checked,
+      enabled:card.querySelectorAll('.causal-rule-checks input')[0].checked,
+    };
+    if(rule.id)payload.id=rule.id;
+    const controls=card.querySelectorAll('button,input,textarea');controls.forEach(el=>el.disabled=true);
+    if(notice)notice.textContent='規則保存中…';
+    try{
+      const resp=await fetch('/api/causal-rules',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      const data=await resp.json().catch(()=>({}));
+      if(!resp.ok||data.ok===false)throw new Error(data.error||`HTTP ${resp.status}`);
+      this.rules=Array.isArray(data.rules)?data.rules:this.rules;
+      this.render(data.stats);
+      if(notice)notice.textContent=data.duplicate?'相同規則已存在，已保留原條目':'已保存，後續對話立即生效';
+    }catch(e){
+      controls.forEach(el=>el.disabled=false);
+      card.querySelectorAll('.causal-rule-checks input').forEach(el=>el.disabled=!!rule.mandatory);
+      card.querySelectorAll('.causal-rule-checks input')[0].checked=rule.mandatory?true:rule.enabled!==false;
+      if(notice)notice.textContent=`保存失敗：${e.message}`;
+    }
+  },
+  init(){
+    const tab=$('.settings-tab[data-section="prompt"]');
+    if(tab)tab.addEventListener('click',()=>{if(this.loaded)return;this.loaded=true;this.load();});
+    const add=$('#causal-rule-add');
+    if(add)add.addEventListener('click',()=>{
+      this.rules.push({id:'',text:'',keywords:[],optional:false,enabled:true,source:'dashboard'});
+      this.render();
+      const editor=$('#causal-rules-list .causal-rule-item:last-child textarea');
+      if(editor){editor.focus();editor.scrollIntoView({block:'center'});}
+    });
+  }
+};
 promptAdmin.init();
+causalRulesAdmin.init();
 skillsAdmin.init();
 

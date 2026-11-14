@@ -85,6 +85,53 @@ def test_toggle_skill_roundtrip(server):
     assert st == 200 and body["enabled"] is True
 
 
+def test_causal_rules_dashboard_roundtrip(server, tmp_path, monkeypatch):
+    from core.data import causal_rules as cr
+
+    monkeypatch.setattr(cr, "DATA_DIR", str(tmp_path))
+    st, body, _ = _get("/api/causal-rules")
+    _require_no_auth(st)
+    assert st == 200
+    initial = json.loads(body)
+    assert initial["ok"] is True and len(initial["rules"]) >= 6
+
+    st, created = _post("/api/causal-rules", {
+        "text": "因为主人在进行仪表盘验证，所以你要先确认规则已经保存",
+        "keywords": ["仪表盘验证"], "optional": False,
+    })
+    assert st == 200 and created["ok"] is True, created
+    rule_id = created["rule"]["id"]
+    assert created["rule"]["source"] == "dashboard"
+
+    st, updated = _post("/api/causal-rules", {
+        "id": rule_id,
+        "text": "因为主人正在检查规则编辑器，所以你要确认修改已经生效",
+        "keywords": ["规则编辑器"], "optional": True, "enabled": True,
+    })
+    assert st == 200 and updated["rule"]["optional"] is True
+    assert updated["rule"]["keywords"] == ["规则编辑器"]
+    assert any(item["rule"]["id"] == rule_id
+               for item in cr.search("我正在检查规则编辑器", top_k=10))
+
+    st, invalid = _post("/api/causal-rules", {"id": rule_id, "text": "错误格式"})
+    assert st == 400 and invalid["ok"] is False
+
+    st, disabled = _post("/api/causal-rules", {"id": rule_id, "enabled": False})
+    assert st == 200 and disabled["rule"]["enabled"] is False
+    assert all(item["rule"]["id"] != rule_id
+               for item in cr.search("我正在检查规则编辑器", top_k=10))
+
+    st, removed = _post("/api/causal-rules", {"id": rule_id, "delete": True})
+    assert st == 200 and removed["deleted"] is True
+    assert all(item["id"] != rule_id for item in removed["rules"])
+
+    mandatory = next(r for r in removed["rules"] if r.get("mandatory"))
+    st, blocked = _post("/api/causal-rules", {"id": mandatory["id"], "delete": True})
+    assert st == 400 and blocked["ok"] is False
+    assert any(item["id"] == mandatory["id"]
+               for item in cr.list_rules(include_disabled=True))
+
+
 def test_sse_receives_live_event(server):
     sse_got = threading.Event()
     sse_payload = {}

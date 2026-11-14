@@ -5,7 +5,6 @@ Humanaize - 主要進入點
     humanaize2 boot               - 啟動瀏覽器管理面板（默認模式）
     humanaize2 boot -m cli        - 啟動 CLI 聊天介面（同窗口交互）
     humanaize2 boot -m gui        - 啟動 GUI 介面
-    humanaize2 boot -m win-gui    - 啟動 Windows 現代化 GUI 介面
     humanaize2 boot -m solve [-r <file>] [--hsn] [-gan] [--sandbox <dir>] [problem]
                                   - 啟動解決模式
     humanaize2 boot -m guard [--background|-b] [--start-when-boot|-s] - 啟動守護模式
@@ -1174,33 +1173,6 @@ def boot_gui():
     root.mainloop()
 
 
-def boot_windows_gui():
-    """启动 Windows 专属现代化 GUI"""
-    _check_and_start_server()
-
-    # 后台检查更新
-    _check_updates_background()
-    
-    import warnings
-    warnings.filterwarnings("ignore")
-    
-    import os
-    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-    os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
-    
-    try:
-        import tensorflow as tf
-        tf.get_logger().setLevel('ERROR')
-    except:
-        pass
-    
-    import customtkinter as ctk
-    from ui.windows_gui import ModernWindowsUI
-    root = ctk.CTk()
-    app = ModernWindowsUI(root)
-    root.mainloop()
-
-
 def boot_solve(args):
     """啟動問題解決模式"""
     if not _check_and_start_server():
@@ -1376,7 +1348,6 @@ def _print_usage():
     print("  humanaize2 boot             - Start browser dashboard (default)")
     print("  humanaize2 boot -m cli      - Start CLI chat interface (same-window interaction)")
     print("  humanaize2 boot -m gui      - Start GUI interface")
-    print("  humanaize2 boot -m win-gui  - Start Windows modern GUI interface")
     print("  humanaize2 boot -m solve [-r <file>] [--hsn] [-gan] [--sandbox <dir>] [problem]")
     print("                              - Start problem solving mode")
     print("  humanaize2 boot -m guard [--background|-b] [--start-when-boot|-s]")
@@ -1446,13 +1417,8 @@ def main():
             print("Starting GUI interface...")
             boot_gui()
         elif mode == "win-gui":
-            choice = random.randint(0, 4)
-            if choice == 3 and ascii_art:
-                print(ascii_art)
-            else:
-                print(speeches[choice])
-            print("Starting Windows modern GUI interface...")
-            boot_windows_gui()
+            print("'win-gui' 模式已移除，請直接啟動主程式（會自動打開 MyGo 桌面窗口）。")
+            print("如需網頁端 Dashboard，請於瀏覽器造訪 http://127.0.0.1:8082/")
         elif mode == "solve":
             choice = random.randint(0, 4)
             if choice == 3 and ascii_art:

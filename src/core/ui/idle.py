@@ -1,4 +1,4 @@
-import threading, time
+import threading, time, re, json
 import os
 import sys
 
@@ -37,58 +37,49 @@ _idle_engine_instance = None
 
 _AESTHETIC_DB_NAME = "aesthetic_db.json"
 
-# 執行器（小腦）可用的動作。這是小腦的「動作詞表」，
-# 大腦（她的自由獨白）完全不需要知道這些名字，也不輸出任何格式。
-ACTIVITY_LABELS = {
-    "desktop": "操作電腦",
-    "autopilot": "自己玩電腦",
-    "music": "學習音樂",
-    "aesthetic": "學習審美",
-    "emotion": "學習人類情感",
-    "persona": "更新自我人格",
-    "social": "社交網站",
-    "talk": "找主人說話",
-    "think": "自己想事情",
-    "web": "上網看帖子",
-    "game": "玩遊戲",
-    "skill": "寫 Skills",
-    "other_ai": "找其他 AI",
-    "other": "其他（她自己的想法）",
-}
+# 閒置時她直接輸出技能調用（[EXEC] 名稱 {參數 JSON}），不再有「小腦」分類器
+_SKILL_CALL_RE = re.compile(r"\[EXEC\]\s*([A-Za-z0-9_\-]+)\s*(\{[\s\S]*?\})?\s*$")
 
-# 小腦判定的合法動作（none = 她只是想想想，不做任何事）
-_IDLE_ACTIONS = ("none",) + tuple(ACTIVITY_LABELS)
-
-# 猶豫覆核最多幾輪；一直改主意到上限就視為放棄這個決定
-_MAX_RECONSIDER = 3
+_skill_manager = None
 
 
-def _norm_action(value):
-    """把模型可能回的中文活動名 / 大小寫差異，歸一成動作詞表裡的一項。"""
-    text = str(value or "").strip()
-    if not text:
-        return "none"
-    key = text.lower()
-    if key in _IDLE_ACTIONS:
-        return key
-    for act, label in ACTIVITY_LABELS.items():
-        if text == label:
-            return act
-    return "none"
+def _get_skills_manager():
+    global _skill_manager
+    if _skill_manager is None:
+        from tools.skills_manager import SkillsManager
+        _skill_manager = SkillsManager()
+    return _skill_manager
 
 
-def _norm_decision(value):
-    """把「維持 / 改 / 放棄」的中英文寫法歸一，認不出就回空字串。"""
-    text = str(value or "").strip().lower()
-    if text in ("keep", "change", "abandon"):
-        return text
-    if "abandon" in text or "放弃" in text or "放棄" in text or "算了" in text:
-        return "abandon"
-    if "change" in text or "改" in text or "换" in text or "換" in text:
-        return "change"
-    if "keep" in text or "维持" in text or "維持" in text or "保持" in text or "继续" in text or "繼續" in text:
-        return "keep"
-    return ""
+def _parse_skill_calls(text):
+    """從獨白裡取出她要執行的技能調用，返回 [(名稱, 參數)]。"""
+    calls = []
+    if not isinstance(text, str):
+        return calls
+    for line in text.splitlines():
+        match = _SKILL_CALL_RE.search(line.strip())
+        if not match:
+            continue
+        name = match.group(1).strip()
+        raw = match.group(2)
+        params = {}
+        if raw:
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    params = parsed
+            except Exception:
+                params = {}
+        calls.append((name, params))
+    return calls
+
+
+def _strip_skill_calls(text):
+    """思考日誌裡不顯示 [EXEC] 調用行，只留她自己的想法。"""
+    if not isinstance(text, str):
+        return ""
+    lines = [line for line in text.splitlines() if not _SKILL_CALL_RE.search(line.strip())]
+    return "\n".join(lines).strip()
 
 
 def _affect_block():
@@ -98,26 +89,6 @@ def _affect_block():
         return (render_affect_block() or "").strip()
     except Exception:
         return ""
-
-
-def _json_from_text(text):
-    """從模型回覆裡抓出第一個 JSON 物件；解析失敗就回空 dict。
-
-    執行器被要求只輸出 JSON，但模型偶爾會包上解釋或程式碼圍欄，這裡做一層容錯。
-    """
-    import json
-
-    if not isinstance(text, str):
-        return {}
-    start = text.find("{")
-    end = text.rfind("}")
-    if start < 0 or end <= start:
-        return {}
-    try:
-        data = json.loads(text[start:end + 1])
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
 
 
 def _aesthetic_path():
@@ -258,113 +229,25 @@ class IdleEngine:
             except Exception:
                 pass
         try:
-            # Step 1（大腦）：她完全自由地想，不給任何格式、不給標籤菜單
+            # Step 1（大腦）：她完全自由地想；想找主人说话就在独白里直接调用技能
             thought = self._idle_think()
-            if thought and self.callback:
+            display = _strip_skill_calls(thought)
+            if display and self.callback:
                 self.callback({
                     "type": "internal_thought",
-                    "thought": f"[獨白] {thought}"
+                    "thought": f"[獨白] {display}"
                 })
 
-            # Step 2（小腦）：執行器讀獨白 → 決定動作 → 再扔回給她猶豫覆核
-            action, plan, note = self._decide(thought)
-            thinking_topic = plan or thought
+            # Step 2：她自己决定要做什么——写了 [EXEC] 就执行对应技能，没有就只是想想
+            for name, params in _parse_skill_calls(thought):
+                self._execute_idle_skill(name, params)
 
-            if note and self.callback:
-                self.callback({
-                    "type": "internal_thought",
-                    "thought": f"[猶豫] {note}"
-                })
-            
-            if self.callback:
-                self.callback({
-                    "type": "internal_thought",
-                    "thought": (f"[Idle Activity] 小腦判定：{ACTIVITY_LABELS.get(action, action)}"
-                                + (f"｜{plan}" if plan else ""))
-                })
-            
-            if action == "none":
-                # 她只是想想想：把獨白留在記憶裡，不強迫做事
-                if thought and self.memory is not None:
-                    try:
-                        add_thought(self.memory, thought, thought_type="idle")
-                        save_memory(self.memory)
-                    except Exception:
-                        pass
-            elif action == "desktop":
-                # 閒時自主操作電腦：小腦從獨白裡提取出具體目標，交給 computer-control 執行
-                self._do_desktop_control(plan or thought, ACTIVITY_LABELS["desktop"])
-            elif action == "autopilot":
-                # 她想自己玩電腦：有主人許可就直接接管；沒有就向主人申請
-                self._do_autopilot(plan or thought)
-            elif action == "music":
-                # 音乐自学：按曲风收集音频 + NumPy 频谱分析，更新音色档案
-                self._do_music_learning()
-            elif action == "aesthetic":
-                # 审美自学：爬图 + Pillow 分析 + 网上文本理解
-                self._do_aesthetic_learning()
-            elif action == "persona":
-                # 自我学习类活动：走内部学习，不要当成「找用户说话」发到聊天界面
-                self._do_self_learning("persona")
-            elif action == "emotion":
-                self._do_self_learning("emotion")
-            elif action == "think":
-                # Step 2: GAN debates around the chosen topic
-                if self.callback:
-                    self.callback({
-                        "type": "internal_thought",
-                        "thought": f"[Thinking Direction] {thinking_topic}"
-                    })
-                
-                debate = self.gan.self_debate(is_user_topic=True, user_topic=thinking_topic)
-                synthesis = debate.get('synthesis', '')
-                gan_result = {
-                    "topic": getattr(self.gan, "topic", ""),
-                    "synthesis": synthesis,
-                    "reply_a": getattr(self.gan, "reply_a", ""),
-                    "reply_b": getattr(self.gan, "reply_b", "")
-                }
-                
-                if self.memory is not None:
-                    add_thought(self.memory, synthesis, thought_type="gan")
-                    save_memory(self.memory)
-                
-                if self.callback:
-                    self.callback({
-                        "type": "internal_thought",
-                        "thought": f"[Self-thought] {synthesis}"
-                    })
-                    self.callback({
-                        "type": "gan_complete",
-                        "gan_result": gan_result
-                    })
-            elif action == "talk":
-                # Aize wants to talk to user：真正把開場白生成出來（break_silence 任務），
-                # 完成後經事件匯流排 PO 到網頁聊天界面，而不是只留一條思考日誌
-                if self.callback:
-                    self.callback({
-                        "type": "internal_thought",
-                        "thought": f"[Idle Activity] Aize wants to talk to user: {thinking_topic}"
-                    })
+            if thought and self.memory is not None:
                 try:
-                    from thinking_engine_api import ThinkingEngineState
-                    engine = ThinkingEngineState().get_thinking_engine()
-                    if engine is not None:
-                        engine.queue_break_silence_task(prompt=thinking_topic or "", memory=self.memory)
-                except Exception as e:
-                    if self.callback:
-                        self.callback({"type": "error", "error": f"break_silence queue failed: {e}"})
-            elif action == "social":
-                # 社交平台：內容照舊餵給她，由她自己決定要不要回、點表情、發動態（邏輯不變）
-                self._do_social_activity(thinking_topic)
-            else:
-                # web / game / skill / other_ai：目前只記錄想法，還沒有對應執行器
-                if self.callback:
-                    self.callback({
-                        "type": "internal_thought",
-                        "thought": f"[Idle Activity] {ACTIVITY_LABELS.get(action, action)} - {plan}"
-                    })
-                
+                    add_thought(self.memory, display or thought, thought_type="idle")
+                    save_memory(self.memory)
+                except Exception:
+                    pass
         except Exception as e:
             if self.callback:
                 self.callback({"type": "error", "error": f"GAN thinking failed: {e}"})
@@ -502,84 +385,61 @@ class IdleEngine:
         _feel = _affect_block()
         if _feel:
             prompt = prompt + "\n\n" + _feel
+        _memory_block = self._idle_memory_block()
+        if _memory_block:
+            prompt = prompt + "\n\n" + _memory_block
 
         try:
             return chat(prompt).strip()
         except Exception:
             return ""
 
-    def _route_thought(self, thought):
-        """獨處第二步（小腦 / 執行器 Agent）：讀她的自由獨白，判斷她想不想動手。
-
-        她說「我想找主人聊聊天」，大腦不需要知道這對應哪個動作；
-        由這個執行器把它翻譯成動作詞表裡的一項，再交給對應的技能去跑。
-        返回 (action, plan)；action 取 _IDLE_ACTIONS（none = 只是想想，不做事）。
-        """
-        if not thought:
-            return "none", ""
-        from llm import chat
-        from core.data.prompts_manager import load_prompt
-
-        prompt = load_prompt("idle_intent_executor")
-        prompt = prompt.replace("{thought}", thought)
+    def _idle_memory_block(self):
+        """閒置思考要帶著記憶：最近的短期記憶 + 長期記憶（對話與階段摘要）。"""
+        parts = []
         try:
-            raw = chat(prompt).strip()
-            data = _json_from_text(raw)
-            action = _norm_action(data.get("action"))
-            plan = str(data.get("plan") or "").strip()
-            return action, plan
+            from memory.short_term import format_for_prompt
+            short = (format_for_prompt(max_chars=1800) or "").strip()
+            if short:
+                parts.append(short)
         except Exception:
-            return "none", ""
+            pass
+        try:
+            from memory import build_history_string
+            history = build_history_string(self.memory or {}).strip()
+            if history:
+                parts.append("[長期記憶｜最近的對話]\n" + history[-1600:])
+        except Exception:
+            pass
+        try:
+            summaries = (self.memory or {}).get("summaries") or []
+            recent = [str(item)[:300] for item in summaries[-5:] if str(item).strip()]
+            if recent:
+                parts.append("[長期記憶｜階段摘要]\n" + "\n".join(f"- {item}" for item in recent))
+        except Exception:
+            pass
+        return "\n\n".join(parts)
 
-    def _decide(self, thought):
-        """猶豫機制：小腦給出決定後，把這個決定再扔回給她本人一次。
-
-        她要拿邏輯把利弊擺清楚（為什麼行 / 為什麼不行），再回答「維持 / 改 / 放棄」。
-        - 回答「維持」＝兩次結果一致 → 交給執行器執行
-        - 回答「改」   → 用新決定重複整個過程，直到兩次一致
-        - 回答「放棄」或改到上限 → 這一輪什麼都不做
-        返回 (action, plan, note)，note 是她最後一次猶豫的理由。
-        """
-        action, plan = self._route_thought(thought)
-        if action == "none":
-            return "none", "", ""
-
-        note = ""
-        for _ in range(_MAX_RECONSIDER):
-            verdict = self._reconsider(thought, action, plan)
-            note = str(verdict.get("reason") or "").strip() or note
-            decision = _norm_decision(verdict.get("decision"))
-
-            if decision == "abandon":
-                return "none", "", note
-
-            if decision == "change":
-                new_action = _norm_action(verdict.get("action"))
-                if new_action == "none":
-                    return "none", "", note
-                action, plan = new_action, str(verdict.get("plan") or "").strip()
-                continue
-
-            # keep（或無法解析）：維持原決定 → 兩次一致，可以執行
-            return action, plan, note
-
-        # 反覆改主意到上限 → 放棄
-        return "none", "", note
-
-    def _reconsider(self, thought, action, plan):
-        """把她的決定交還給她自己覆核，要求用邏輯權衡利弊。"""
-        from llm import chat
-        from core.data.prompts_manager import load_prompt
+    def _execute_idle_skill(self, name, params):
+        """執行她在獨白裡寫下的技能調用，例如 [EXEC] Speak-To-User {...}。"""
+        def _thought(msg):
+            if self.callback:
+                try:
+                    self.callback({"type": "internal_thought", "thought": msg})
+                except Exception:
+                    pass
 
         try:
-            prompt = load_prompt("idle_reconsider")
-            prompt = (prompt
-                      .replace("{thought}", thought or "")
-                      .replace("{action_label}", ACTIVITY_LABELS.get(action, action))
-                      .replace("{plan}", plan or "（她还没写清具体目标）"))
-            return _json_from_text(chat(prompt).strip())
-        except Exception:
-            return {}
+            result = _get_skills_manager().execute_skill(name, params or {})
+        except Exception as e:
+            _thought(f"[Skill] {name} 執行失敗：{e}")
+            return False
+        ok = (not result.get("error")) and result.get("success", True) is not False if isinstance(result, dict) else True
+        if ok:
+            _thought(f"[Skill] {name} 已執行")
+        else:
+            _thought(f"[Skill] {name} 失敗：{str(result)[:200]}")
+        return ok
 
     def _do_self_learning(self, kind):
         """空闲自学：直接两次 LLM 调用，不走 function-calling 工具循环。

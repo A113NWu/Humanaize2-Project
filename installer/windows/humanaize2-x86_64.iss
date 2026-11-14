@@ -3,7 +3,7 @@
 ; 版本號可由構建腳本覆蓋：ISCC /DAppVersion=2.3.14
 
 #ifndef AppVersion
-  #define AppVersion "2.5.0"
+  #define AppVersion "2.6.0"
 #endif
 
 [Setup]
@@ -46,6 +46,8 @@ Name: "addtopath"; Description: "Add to PATH environment variable (use 'humanaiz
 [Files]
 ; 主程式（PyInstaller --onefile，使用最新已驗證的 EXE）
 Source: "installer_output\x86_64\Humanaize2.exe"; DestDir: "{app}"; Flags: ignoreversion
+; MyGo 桌面端窗口（與網頁端 Dashboard 同界面，啟動時自動打開）
+Source: "desktop\build\windows-amd64\Humanaize2-Desktop.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; humanaize2 命令啟動腳本（讓用戶可在任意目錄使用 'humanaize2' 命令）
 Source: "installer\windows\humanaize2.cmd"; DestDir: "{app}"; Flags: ignoreversion
 ; Skills 目錄（可寫，供運行時安裝/更新技能）

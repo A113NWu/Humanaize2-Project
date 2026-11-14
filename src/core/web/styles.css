@@ -5,20 +5,20 @@
    （圖片缺失時瀏覽器自動跳過，回落到底層極光漸變）。
    ============================================================ */
 :root{
-  --text:#eef7f4;
-  --muted:#9db7b8;
+  --text:#f4fbf8;
   --accent:#92e4d2;
   --accent-deep:#5fc7b4;
   --accent-2:#ffab8a;
-  --line:rgba(255,255,255,.16);
-  --line-strong:rgba(255,255,255,.30);
-  --glass:rgba(20,36,46,.38);
-  --glass-strong:rgba(12,24,32,.60);
-  --glass-sidebar:rgba(9,19,26,.52);
-  --glass-input:rgba(255,255,255,.08);
+  --muted:#c3d6d5;
+  --line:rgba(255,255,255,.20);
+  --line-strong:rgba(255,255,255,.34);
+  --glass:rgba(12,23,31,.72);
+  --glass-strong:rgba(8,16,23,.84);
+  --glass-sidebar:rgba(6,14,20,.80);
+  --glass-input:rgba(255,255,255,.10);
   --glass-highlight:linear-gradient(150deg,rgba(255,255,255,.22),rgba(255,255,255,.04) 42%,rgba(255,255,255,.09));
   --shadow:0 24px 70px rgba(0,0,0,.38);
-  --blur:blur(30px) saturate(170%);
+  --blur:blur(26px) saturate(135%);
 }
 
 *{box-sizing:border-box}
@@ -29,7 +29,7 @@ body{
   color:var(--text);
   font:14px/1.5 'Segoe UI',system-ui,sans-serif;
   background:
-    linear-gradient(180deg,rgba(7,13,18,.30),rgba(7,13,18,.52)),
+    rgba(5,10,14,.68),
     url('/background') center/cover no-repeat,
     radial-gradient(1100px 700px at 12% -8%,rgba(255,158,120,.28),transparent 55%),
     radial-gradient(1000px 750px at 92% 6%,rgba(110,210,195,.26),transparent 55%),
@@ -98,10 +98,16 @@ button,input,select,textarea{font:inherit}
 .connection{display:flex;align-items:center;gap:9px;padding:22px 12px 5px;color:var(--muted);font-size:12px}
 .status-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent)}
 
-.workspace{min-width:0;flex:1;padding:30px clamp(18px,4vw,54px)}
-.workspace-header{display:flex;align-items:end;gap:18px;max-width:1080px;margin:0 auto 25px}
-.workspace-header h1{font-size:28px;font-weight:600;margin:5px 0 0;text-shadow:0 2px 10px rgba(0,0,0,.35)}
-.breadcrumb{font-size:11px;color:var(--muted);letter-spacing:.12em}
+.workspace{position:relative;min-width:0;flex:1;padding:0;height:100vh;overflow:hidden}
+.workspace>.view{position:relative;z-index:1}
+/* 標題欄浮在內容之上：主體面板從最頂端開始，不再被標題擠出一段空白 */
+.workspace-header{
+  position:absolute;top:0;left:0;right:0;z-index:3;display:flex;align-items:center;gap:18px;
+  margin:0;padding:9px 20px 20px;pointer-events:none;background:transparent;
+}
+.workspace-header>*{pointer-events:auto}
+.workspace-header h1{font-size:18px;font-weight:600;margin:0;text-shadow:0 2px 10px rgba(0,0,0,.35)}
+.breadcrumb{display:none}
 .service-address{
   margin-left:auto;color:var(--muted);font-size:12px;
   padding:6px 13px;border:1px solid var(--line);border-radius:999px;
@@ -109,8 +115,8 @@ button,input,select,textarea{font:inherit}
 }
 .mobile-menu{display:none;margin:0}
 
-.view{display:none;max-width:1080px;margin:auto}
-.view.active{display:block;animation:viewIn .3s cubic-bezier(.22,.8,.36,1)}
+.view{display:none;width:100%}
+.view.active{display:block;height:100%;overflow:auto;animation:viewIn .3s cubic-bezier(.22,.8,.36,1)}
 @keyframes viewIn{from{opacity:0;transform:translateY(10px) scale(.995)}to{opacity:1;transform:none}}
 @media(prefers-reduced-motion:reduce){.view.active{animation:none}}
 
@@ -132,8 +138,14 @@ button,input,select,textarea{font:inherit}
 .muted{color:var(--muted);font-weight:400;font-size:12px}
 
 /* ---------- 聊天 ---------- */
-.chat-panel{height:calc(100vh - 150px);min-height:510px;display:flex;flex-direction:column}
-.messages{flex:1;overflow:auto;padding:22px;display:flex;flex-direction:column;gap:12px}
+.chat-panel{height:100%;min-height:0;display:flex;flex-direction:column}
+/* 主区域鋪滿：貼邊面板去掉圓角與左右邊框，避免四周留白 */
+.view>.panel{height:100%;display:flex;flex-direction:column}
+.view>.panel>.panel-header{flex:0 0 auto;padding-top:50px}
+.settings-view .settings-layout{gap:0;height:100%}
+.settings-view .settings-nav{border-right:1px solid var(--line);border-bottom:0;height:auto;padding-top:64px}
+.settings-view .settings-content{border-left:0;border-right:0;border-bottom:0;min-height:100%;padding-top:74px}
+.messages{flex:1;overflow:auto;padding:72px 22px 22px;display:flex;flex-direction:column;gap:12px}
 .message{
   max-width:80%;padding:12px 16px;border-radius:16px;white-space:pre-wrap;
   text-shadow:0 1px 2px rgba(0,0,0,.28);
@@ -143,7 +155,7 @@ button,input,select,textarea{font:inherit}
 @media(prefers-reduced-motion:reduce){.message{animation:none}}
 .assistant{
   align-self:flex-start;
-  background:linear-gradient(150deg,rgba(255,171,138,.30),rgba(255,157,131,.10));
+  background:linear-gradient(150deg,rgba(255,171,138,.26),rgba(255,157,131,.08)),rgba(30,25,24,.86);
   border:1px solid rgba(255,190,155,.38);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.24),0 10px 28px rgba(0,0,0,.22);
   backdrop-filter:blur(20px) saturate(160%);
@@ -151,7 +163,7 @@ button,input,select,textarea{font:inherit}
 }
 .user{
   align-self:flex-end;
-  background:linear-gradient(150deg,rgba(146,228,210,.30),rgba(110,200,185,.10));
+  background:linear-gradient(150deg,rgba(146,228,210,.26),rgba(110,200,185,.08)),rgba(18,36,36,.86);
   border:1px solid rgba(146,228,210,.32);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.24),0 10px 28px rgba(0,0,0,.22);
   backdrop-filter:blur(20px) saturate(160%);
@@ -244,14 +256,15 @@ select option{background:#14262f;color:var(--text)}
 }
 
 /* ---------- 日誌面板 ---------- */
-.log-panel{min-height:calc(100vh - 150px)}
+.log-panel{min-height:0}
 .log-output{
   margin:0;padding:22px;white-space:pre-wrap;color:#c5dfd9;
   font:14px/1.8 Consolas,'Courier New',monospace;
+  flex:1;min-height:0;overflow:auto;
 }
 
 /* ---------- 狀態卡片 ---------- */
-.status-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
+.status-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;padding:70px 0 20px}
 .status-card{padding:22px;display:flex;flex-direction:column;gap:12px}
 .status-card strong{font-size:25px;font-weight:500}
 
@@ -284,6 +297,32 @@ select option{background:#14262f;color:var(--text)}
 .save-row{display:flex;align-items:center;justify-content:flex-end;gap:15px;margin-top:25px;padding-top:18px;border-top:1px solid var(--line)}
 .notice{color:var(--accent);font-size:12px;margin-right:auto}
 .prompt-editor{width:100%;box-sizing:border-box;min-height:420px;font-family:Consolas,'Cascadia Mono',monospace;font-size:12.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word;overflow:auto;resize:vertical}
+.causal-rules{margin-top:30px;padding-top:22px;border-top:1px solid var(--line)}
+.causal-rules-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.causal-rules-head h3{margin:0;font-size:17px}
+.causal-rules-head .mini-btn{flex:none}
+.causal-rules-notice{min-height:20px;margin:0 0 10px}
+.causal-rules-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:14px;align-items:start}
+body.live2d-active .causal-rules-list{padding-bottom:420px}
+.causal-rule-item{
+  padding:16px 18px;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(160deg,rgba(255,255,255,.06),rgba(255,255,255,.02)),rgba(9,18,24,.55);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.10);
+  transition:border-color .18s,background .18s,transform .18s;
+}
+.causal-rule-item:focus-within{border-color:rgba(146,228,210,.42);background:linear-gradient(160deg,rgba(146,228,210,.10),rgba(255,255,255,.02))}
+.causal-rule-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;font-size:12px}
+.causal-rule-head strong{font-size:13px;letter-spacing:.02em}
+.causal-rule-badge{display:inline-block;margin-left:8px;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:600;color:#ffcbb4;border:1px solid rgba(255,171,138,.55);background:rgba(255,171,138,.14)}
+.settings-content .causal-rule-text{width:100%;min-height:84px;resize:vertical;line-height:1.6;margin-bottom:12px}
+.causal-rule-checks{margin:0 0 12px;gap:9px}
+.causal-rule-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:11px}
+.causal-rule-actions .mini-btn{flex:none}
+.causal-rule-btns{display:flex;align-items:center;gap:8px;margin-left:auto}
+.mini-btn.danger{color:#ffe2dc;background:linear-gradient(145deg,rgba(255,138,120,.9),rgba(192,72,62,.92));box-shadow:0 6px 16px rgba(192,72,62,.28),inset 0 1px 0 rgba(255,255,255,.35)}
+@media(max-width:760px){
+  .causal-rule-head{align-items:flex-start;flex-direction:column;gap:3px}
+}
 
 /* ============================================================
    聊天氣泡內的思考/日誌區（按 thought_type 分色，顏色不可合併）
@@ -333,16 +372,17 @@ select option{background:#14262f;color:var(--text)}
   }
   .sidebar.open{transform:translateX(0)}
   .mobile-menu{display:block}
-  .workspace{padding:18px 12px}
-  .workspace-header{align-items:center;margin-bottom:20px}
+  .workspace{padding:0}
+  .workspace-header{align-items:center;margin:0;padding:16px 16px 12px}
   .workspace-header h1{font-size:22px}
   .service-address{display:none}
   .settings-layout{grid-template-columns:1fr}
-  .settings-nav{display:flex;gap:4px}
+  .settings-nav{display:flex;gap:4px;padding-top:56px}
   .settings-tab{text-align:center}
-  .settings-content{padding:18px}
+  .settings-content{padding:64px 18px 18px}
   .checks,.form-row,.status-grid{grid-template-columns:1fr}
-  .chat-panel{height:calc(100vh - 125px)}
+  .status-grid{padding-top:64px}
+  .chat-panel{height:100%}
 }
 
 /* ===== Skill 執行輸出（終端風格區塊） ===== */
@@ -357,7 +397,7 @@ body.aize-speaking .skill-cmd-start,
 body.aize-speaking .skill-cmd-result{display:none !important}
 
 /* ===== GAN 思考面板（事件流，復用對話氣泡內 thought-line 配色） ===== */
-.thought-stream{display:flex;flex-direction:column;gap:3px;overflow-y:auto}
+.thought-stream{display:flex;flex-direction:column;gap:3px;overflow-y:auto;flex:1;min-height:0}
 .thought-stream .thought-line{font:12px/1.7 Consolas,monospace;padding:1px 2px}
 .thought-line.t-social{color:#ff8fd1}
 .thought-line.t-internal{color:#8fb8af}
@@ -456,3 +496,20 @@ body.aize-speaking .skill-cmd-result{display:none !important}
 @media(max-width:760px){
   #live2d-box{width:190px;height:270px;right:6px;bottom:72px}
 }
+
+/* ---------- 確認彈窗 ---------- */
+.modal-mask{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(3,8,12,.62);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.modal-mask[hidden]{display:none}
+.modal-card{width:min(430px,100%);padding:20px 22px 18px;border-radius:16px;border:1px solid var(--line-strong);background:linear-gradient(160deg,rgba(255,255,255,.08),rgba(255,255,255,.02)),rgba(12,23,31,.98);box-shadow:0 30px 80px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.18);animation:modalIn .18s ease-out}
+@keyframes modalIn{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}
+.modal-head{display:flex;align-items:center;gap:10px}
+.modal-icon{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:700;color:#0b1a1f;background:linear-gradient(145deg,#ffd08a,#ffab5e)}
+.modal-head h3{margin:0;font-size:15px;font-weight:600}
+.modal-close{margin-left:auto;border:0;background:transparent;color:var(--muted);font-size:20px;line-height:1;cursor:pointer;padding:2px 4px}
+.modal-close:hover{color:var(--text)}
+.modal-message{margin:14px 0 20px;color:#dbe9e6;font-size:13.5px;line-height:1.7;white-space:pre-wrap}
+.modal-actions{display:flex;justify-content:flex-end;gap:10px}
+.modal-btn{min-width:78px;height:34px;padding:0 16px;border-radius:9px;border:1px solid var(--line-strong);background:rgba(255,255,255,.08);color:var(--text);cursor:pointer;font-weight:600;transition:filter .15s,transform .15s}
+.modal-btn:hover{filter:brightness(1.12)}
+.modal-btn:active{transform:translateY(1px)}
+.modal-btn.danger{border-color:rgba(255,120,110,.55);background:linear-gradient(145deg,#f2685e,#d6403a);color:#fff}

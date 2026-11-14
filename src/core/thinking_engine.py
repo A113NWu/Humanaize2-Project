@@ -43,16 +43,16 @@ def _runtime_env_text():
     )
 
 def _causal_rules_text(user_question: str) -> str:
-    """按当前这句话检索因果规则，生成可注入的提示块（失败返回空串）。"""
+    """把所有启用的因果规则直接注入提示块（失败返回空串）。"""
     try:
         try:
-            from data.causal_rules import prompt_block, search, mark_used
+            from data.causal_rules import prompt_block, active_rules, mark_used
         except ImportError:
-            from core.data.causal_rules import prompt_block, search, mark_used
-        block = prompt_block(user_question)
+            from core.data.causal_rules import prompt_block, active_rules, mark_used
+        block = prompt_block()
         if block:
             try:
-                mark_used([item["rule"]["id"] for item in search(user_question)])
+                mark_used([rule["id"] for rule in active_rules()])
             except Exception:
                 pass
         return block

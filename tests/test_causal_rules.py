@@ -41,7 +41,7 @@ def test_growth_rule_is_optional_not_mandatory(rules):
     assert "成长" in growth["cause"]
     assert "因为……所以……" in growth["action"]
     assert growth.get("mandatory") is False
-    assert "可选" in rules.prompt_block("我想上网找点规律")
+    assert growth["text"] in rules.prompt_block("我想上网找点规律")
 
 
 @pytest.mark.parametrize("text", [
@@ -102,6 +102,49 @@ def test_prompt_block_contains_usage_contract(rules):
     assert "不要复述规则原文" in block
 
 
+def test_prompt_block_injects_all_enabled_rules_without_matching(rules):
+    block = rules.prompt_block("今天天气不错")
+    for rule in rules.list_rules():
+        assert rule["text"] in block
+    disabled = rules.add_rule("因为主人在打扫房间，所以你要把东西收好")["rule"]
+    rules.set_enabled(disabled["id"], False)
+    assert disabled["text"] not in rules.prompt_block("今天天气不错")
+
+
+def test_update_rule_edits_text_keywords_and_preserves_stats(rules):
+    created = rules.add_rule(
+        "因为主人在整理资料，所以你要先归类再给出摘要",
+        source="self", confidence=0.6, keywords=["资料"], tags=["task"],
+    )
+    original = created["rule"]
+    rules.mark_used([original["id"]])
+    updated = rules.update_rule(
+        original["id"],
+        text="因为主人在整理文件，所以你要先分类再给出摘要",
+        keywords=["文件", "整理"], optional=True, enabled=False,
+    )
+    assert updated["success"] is True
+    rule = updated["rule"]
+    assert rule["id"] == original["id"]
+    assert rule["cause"] == "主人在整理文件"
+    assert rule["action"] == "先分类再给出摘要"
+    assert rule["text"] == "因为主人在整理文件，所以你要先分类再给出摘要"
+    assert rule["keywords"] == ["文件", "整理"]
+    assert rule["optional"] is True and rule["enabled"] is False
+    assert rule["source"] == "self" and rule["confidence"] == original["confidence"]
+    assert rule["hits"] == 1
+
+
+def test_update_rule_rejects_invalid_duplicate_and_missing(rules):
+    first = rules.add_rule("因为主人在阅读，所以你要保持简洁")["rule"]
+    second = rules.add_rule("因为主人在写作，所以你要先确认主题")["rule"]
+    assert rules.update_rule(first["id"], text="格式不对")["success"] is False
+    duplicate = rules.update_rule(first["id"], text=second["text"])
+    assert duplicate["success"] is False and "相同" in duplicate["error"]
+    missing = rules.update_rule("cr_missing", enabled=False)
+    assert missing["success"] is False and missing["not_found"] is True
+
+
 def test_disable_excludes_from_search(rules):
     sleep_rule = next(r for r in rules.list_rules() if "晚还没有休息" in r["text"])
     assert rules.set_enabled(sleep_rule["id"], False) is True
@@ -139,6 +182,45 @@ def test_stats_reports_learned_rules(rules):
     info = rules.stats()
     assert info["learned"] >= 1
     assert info["enabled"] >= 1
+
+
+def test_delete_rule_removes_guidance_but_protects_mandatory(rules):
+    created = rules.add_rule("因为主人在整理照片，所以你要先备份再处理")["rule"]
+    assert rules.delete_rule(created["id"])["success"] is True
+    assert all(r["id"] != created["id"] for r in rules.list_rules(include_disabled=True))
+
+    mandatory = next(r for r in rules.list_rules() if r.get("mandatory"))
+    blocked = rules.delete_rule(mandatory["id"])
+    assert blocked["success"] is False and "不可删除" in blocked["error"]
+    assert any(r["id"] == mandatory["id"] for r in rules.list_rules())
+
+    missing = rules.delete_rule("cr_missing")
+    assert missing["success"] is False and missing["not_found"] is True
+
+
+def test_mandatory_rules_always_hit_and_cannot_be_disabled(rules):
+    mandatory = [r for r in rules.list_rules() if r.get("mandatory")]
+    assert len(mandatory) >= 1
+
+    for rule in mandatory:
+        assert rules.update_rule(rule["id"], enabled=False)["success"] is False
+        assert rules.set_enabled(rule["id"], False) is False
+        ids = [item["rule"]["id"] for item in rules.search("今天天气不错", top_k=3)]
+        assert rule["id"] in ids
+        assert rule["text"] in rules.prompt_block("今天天气不错")
+
+
+def test_guidance_rules_are_not_forced(rules):
+    guidance = [r for r in rules.list_rules() if not r.get("mandatory")]
+    assert len(guidance) > len([r for r in rules.list_rules() if r.get("mandatory")])
+    matched_ids = [item["rule"]["id"] for item in rules.search("今天天气不错", top_k=3)]
+    away = next(r for r in guidance if "出门" in r.get("text", ""))
+    assert away["id"] not in matched_ids
+
+
+def test_stats_reports_mandatory_count(rules):
+    info = rules.stats()
+    assert info["mandatory"] == len([r for r in rules.list_rules() if r.get("mandatory")])
 
 
 def test_mark_used_counts_hits(rules):

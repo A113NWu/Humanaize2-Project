@@ -1204,6 +1204,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._handle_chat_history()
         elif parsed.path == '/api/prompt':
             self._handle_get_prompt()
+        elif parsed.path == '/api/causal-rules':
+            self._handle_get_causal_rules()
         elif parsed.path == '/api/chat/timeline':
             self._handle_chat_timeline()
         elif parsed.path == '/api/voice/capabilities':
@@ -1352,6 +1354,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._handle_save_settings()
         elif parsed.path == '/api/prompt':
             self._handle_save_prompt()
+        elif parsed.path == '/api/causal-rules':
+            self._handle_save_causal_rule()
         elif parsed.path == '/api/login':
             self._handle_login()
         elif parsed.path == '/api/logout':
@@ -2060,6 +2064,67 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._send_json({"ok": False, "error": f"寫入失敗：{exc}"}, status=500)
             return
         self._send_json({"ok": True, "path": path})
+
+    def _causal_rules_module(self):
+        try:
+            from core.data import causal_rules
+        except ImportError:
+            from data import causal_rules
+        return causal_rules
+
+    def _handle_get_causal_rules(self):
+        """返回完整规则表（含停用项），供 Dashboard 直接编辑。"""
+        try:
+            rules = self._causal_rules_module()
+            self._send_json({
+                "ok": True,
+                "rules": rules.list_rules(include_disabled=True),
+                "stats": rules.stats(),
+            })
+        except Exception as exc:
+            logger.error(f"[CausalRules] dashboard read failed: {exc}")
+            self._send_json({"ok": False, "error": f"讀取規則表失敗：{exc}"}, status=500)
+
+    def _handle_save_causal_rule(self):
+        """新增或更新一条规则；每次读取数据文件，因此保存后立即参与匹配。"""
+        try:
+            data = self._read_json_body() or {}
+            rules = self._causal_rules_module()
+            keywords = data.get("keywords")
+            if keywords is not None and not isinstance(keywords, list):
+                self._send_json({"ok": False, "error": "keywords 必須是字符串列表"}, status=400)
+                return
+            rule_id = str(data.get("id") or "").strip()
+            deleted = False
+            if data.get("delete"):
+                result = rules.delete_rule(rule_id)
+                deleted = bool(result.get("success"))
+            elif rule_id:
+                changes = {}
+                for key in ("text", "keywords", "optional", "enabled"):
+                    if key in data:
+                        changes[key] = data[key]
+                result = rules.update_rule(rule_id, **changes)
+            else:
+                result = rules.add_rule(
+                    data.get("text", ""), source="dashboard",
+                    keywords=keywords, optional=bool(data.get("optional", False)),
+                )
+            if not result.get("success"):
+                status = 404 if result.get("not_found") else 400
+                self._send_json({"ok": False, "error": result.get("error", "保存失敗")}, status=status)
+                return
+            self._send_json({
+                "ok": True,
+                "rule": result.get("rule"),
+                "deleted": deleted,
+                "duplicate": bool(result.get("duplicate")),
+                "rules": rules.list_rules(include_disabled=True),
+                "stats": rules.stats(),
+            })
+        except Exception as exc:
+            logger.error(f"[CausalRules] dashboard save failed: {exc}")
+            self._send_json({"ok": False, "error": f"保存規則失敗：{exc}"}, status=500)
 
     def _status_payload(self):
         memory = ThinkingEngineState().get_memory() or {}

@@ -2,6 +2,8 @@
 
 import sys
 import os
+import re
+from datetime import datetime, timedelta
 
 # PyInstaller --windowed 模式下 sys.stdout/stderr 可能为 None，需要修复
 # 否则 loguru 等库尝试添加 sys.stdout 作为 sink 时会报 TypeError
@@ -206,24 +208,91 @@ def _attach_parent_console():
         return False
 
 
+def _launch_desktop_window(dashboard_url):
+    """啟動 MyGo 桌面端窗口（與網頁端 Dashboard 同界面）。
+
+    桌面端是獨立的 WebView2 窗口，直接加載本地 Dashboard URL。
+    找不到桌面端 exe 時（例如開發態）回退到瀏覽器打開，避免功能中斷。
+    """
+    import subprocess
+    exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+    desktop_exe = os.path.join(exe_dir, "Humanaize2-Desktop.exe")
+    if os.path.exists(desktop_exe):
+        try:
+            subprocess.Popen([desktop_exe, dashboard_url], cwd=exe_dir)
+            print(f"[INFO] Desktop window launched: {desktop_exe}")
+            return
+        except Exception as e:
+            print(f"[WARN] failed to launch desktop window: {e}", file=sys.stderr)
+    # 回退：開發態或桌面端未打包時，用瀏覽器打開
+    try:
+        webbrowser.open(dashboard_url)
+    except Exception as e:
+        print(f"[WARN] failed to open browser: {e}", file=sys.stderr)
+
+
+def _setup_file_logging():
+    """無日誌窗口啟動時，把 stdout/stderr 重定向到日誌文件，便於排查。
+
+    日誌文件位於 data 目錄（開發態為項目 data/，安裝版為安裝目錄 data/），
+    按日期滾動，保留最近 7 天。
+    """
+    # 日誌目錄：打包態為 exe 同級 data/logs，開發態為項目根 data/logs
+    if getattr(sys, "frozen", False):
+        base_dir = os.path.dirname(os.path.abspath(sys.executable))
+    else:
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    log_dir = os.path.join(base_dir, "data", "logs")
+    os.makedirs(log_dir, exist_ok=True)
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    log_path = os.path.join(log_dir, f"humanaize2-{today}.log")
+
+    # 清理 7 天前的日誌
+    try:
+        cutoff = datetime.now() - timedelta(days=7)
+        for name in os.listdir(log_dir):
+            m = re.match(r"humanaize2-(\d{4}-\d{2}-\d{2})\.log$", name)
+            if m:
+                try:
+                    if datetime.strptime(m.group(1), "%Y-%m-%d") < cutoff:
+                        os.remove(os.path.join(log_dir, name))
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    try:
+        fp = open(log_path, "a", encoding="utf-8", buffering=1)
+        sys.stdout = fp
+        sys.stderr = fp
+        print(f"\n===== Humanaize2 启动 {datetime.now().isoformat(timespec='seconds')} =====")
+        return log_path
+    except Exception:
+        return None
+
+
 def main():
-    """啟動後端服務並打開瀏覽器管理面板；帶參數時路由到 core.main 的模式分發。"""
-    # --tray / --no-console：無日誌窗口啟動，直接最小化到系統托盤
+    """啟動後端服務並打開 MyGo 桌面端；默認不彈日誌窗口，日誌寫入文件。"""
+    # --show-log：顯式彈出日誌控制台窗口（便於現場調試）
+    _show_log = "--show-log" in sys.argv[1:]
+    # --tray / --no-console：向後兼容，等同於默認行為（無日誌窗口）
     _tray_flags = {"--tray", "--no-console"}
-    _args = set(sys.argv[1:])
-    tray_only = bool(_args) and _args.issubset(_tray_flags)
 
     # 帶參數（boot -m cli / boot -m gui / settings / solve 等）時交給 core/main.py
-    # 的 dispatch，修復打包版 CLI 模式無法啟動的問題（argv 之前被完全忽略）。
-    if len(sys.argv) > 1 and not tray_only:
+    # 的 dispatch，修復打包版 CLI 模式無法啟動的問題。
+    _other_args = [a for a in sys.argv[1:] if a not in _tray_flags and a != "--show-log"]
+    if _other_args:
         _attach_parent_console()
         from main import main as core_main
         core_main()
         return
 
-    # 默認啟動：彈出日誌窗口；分配失敗（或 --tray）則無窗口，靠托盤圖標存活
-    if not tray_only:
+    # 默認啟動：隱藏日誌窗口，日誌寫文件；只有 --show-log 才彈控制台
+    if _show_log:
         _show_log_window()
+    else:
+        _setup_file_logging()
 
     # 检查并启动 LLM 服务器
     from core.main import _check_and_start_server
@@ -359,10 +428,12 @@ def main():
 
     _start_silence_watcher()
 
-    dashboard_url = f"http://{server.host}:{server.port}/"
-    print(f"[INFO] Browser dashboard started: {dashboard_url}")
-    if not tray_only:
-        webbrowser.open(dashboard_url)
+    # server.host 是監聽地址 0.0.0.0，不能直接給 WebView2/瀏覽器用；
+    # 本機訪問一律走 127.0.0.1，局域網設備用自己的 IP 訪問 8082。
+    dashboard_url = f"http://127.0.0.1:{server.port}/"
+    print(f"[INFO] Dashboard started: {dashboard_url}")
+    # 默認啟動 MyGo 桌面端窗口；用戶也可在瀏覽器訪問同 URL（局域網設備同理）
+    _launch_desktop_window(dashboard_url)
 
     # 系統托盤：有日誌窗口時關閉窗口後靠托盤存活；--tray 啟動時只有托盤。
     # 消息循環必須跑在主線程（PumpMessages 阻塞），替代原先的 sleep 循環。

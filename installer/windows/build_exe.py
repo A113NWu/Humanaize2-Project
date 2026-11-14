@@ -539,6 +539,7 @@ def build_exe(arch="x86_64", create_zip=False, create_installer=False, onefile=F
 
     # Create Inno Setup installer (Windows only)
     if create_installer and IS_WINDOWS:
+        _build_desktop(arch)
         _create_installer(arch, version, exe_path, output_dir)
 
     return exe_path
@@ -614,6 +615,56 @@ Visit: https://github.com/A113NWu/Humanaize2-Project
     zip_size_mb = os.path.getsize(zip_path) / (1024 * 1024)
     print(f"  [OK] Created: {zip_path}")
     print(f"  Size: {zip_size_mb:.2f} MB")
+
+
+def _build_desktop(arch):
+    """Build the MyGo desktop window (Humanaize2-Desktop.exe).
+
+    The desktop app is a thin WebView2 shell that loads the local web
+    dashboard. It is built with Go + Bun; if either toolchain is missing we
+    skip it and warn, so the Python exe build still succeeds.
+    """
+    desktop_dir = os.path.join(PROJECT_ROOT, "desktop")
+    if not os.path.isdir(desktop_dir):
+        print("[DESKTOP] desktop/ not found, skipping desktop build")
+        return None
+
+    def has(cmd):
+        return shutil.which(cmd) is not None
+
+    if not (has("go") and (has("bun") or has("npm"))):
+        print("[DESKTOP] Go/Bun toolchain missing, skipping desktop build")
+        return None
+
+    print("[DESKTOP] Building Humanaize2-Desktop.exe ...")
+    env = os.environ.copy()
+    env.setdefault("GOPROXY", "https://goproxy.cn,direct")
+    # 構建鏈可能不在當前進程 PATH 上（例如 python.exe 由 IDE 啟動時），
+    # 主動補上常見的 Go / Bun 安裝路徑，避免桌面端被跳過。
+    extra_paths = [
+        r"C:\Program Files\Go\bin",
+        r"C:\Go\bin",
+        os.path.expandvars(r"%USERPROFILE%\AppData\Roaming\npm"),
+        os.path.expandvars(r"%USERPROFILE%\.bun\bin"),
+        os.path.expandvars(r"%LOCALAPPDATA%\Programs\bun"),
+    ]
+    env["PATH"] = os.pathsep.join(extra_paths + [env.get("PATH", "")])
+    try:
+        subprocess.run(
+            ["bun", "run", "build"],
+            cwd=desktop_dir, env=env, check=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        print(f"[DESKTOP] build failed: {e}")
+        return None
+
+    goarch = "amd64" if arch == "x86_64" else "arm64"
+    exe = os.path.join(desktop_dir, "build", f"windows-{goarch}", "Humanaize2-Desktop.exe")
+    if os.path.exists(exe):
+        print(f"[DESKTOP] built: {exe}")
+        return exe
+    print("[DESKTOP] build produced no executable")
+    return None
 
 
 def _create_installer(arch, version, exe_path, output_dir):
