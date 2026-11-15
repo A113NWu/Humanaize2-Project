@@ -3,7 +3,7 @@
 ; 版本號可由構建腳本覆蓋：ISCC /DAppVersion=2.3.14
 
 #ifndef AppVersion
-  #define AppVersion "2.6.1"
+  #define AppVersion "2.6.2"
 #endif
 
 [Setup]
@@ -57,9 +57,12 @@ Source: "installer\windows\humanaize2.cmd"; DestDir: "{app}"; Flags: ignoreversi
 ; noregerror：個別文件被占用時跳過而非中止整個安裝。
 ; 只包含真正的技能目录；Tulpa-MCP-* 等第三方工具目录不随包分发
 Source: "skills\*"; DestDir: "{app}\skills"; Excludes: "venv\*,mc-bot\node_modules\*,mc-bot\models\*,mc-bot\vendor\*,mc-bot\logs\*,Tulpa-MCP-*\*,qq-group-chat\state\*"; Flags: ignoreversion recursesubdirs createallsubdirs noregerror
-; 配置與運行時資料；ui_settings.json 是用戶自己的設置，絕不隨包分發、也不覆蓋已有文件
+; 配置與運行時資料
+; data\ 內的運行時文件（memory.json、聊天記錄、情緒狀態等）是用戶數據，
+; 既不隨包分發（Excludes 排除構建機上的殘留），也不覆蓋用戶已有文件
+; （onlyifdoesntexist：只補缺失的種子文件，如 emotion_lexicon/personality/t2i_templates）。
 Source: "config\version.json"; DestDir: "{app}\config"; Flags: ignoreversion
-Source: "data\*"; DestDir: "{app}\data"; Excludes: "media\*,uploads\*,logs\*,temp\*,ui_settings.json"; Flags: ignoreversion recursesubdirs createallsubdirs noregerror
+Source: "data\*"; DestDir: "{app}\data"; Excludes: "media\*,screenshots\*,uploads\*,logs\*,temp\*,ui_settings.json,memory.json,memory_db.json,chat_timeline.json,affect_state.json,causal_rules.json,experience_db.json,persona_self.json,self_goals.json,short_term_memory.json,user_habits.json,cmd_config.json,sensitive_words.txt,misskey_watch_state.json"; Flags: onlyifdoesntexist recursesubdirs createallsubdirs noregerror
 ; 網頁資源（虛擬攝像頭背景等，統一使用 Assets 目錄）
 Source: "Assets\*"; DestDir: "{app}\Assets"; Flags: ignoreversion recursesubdirs createallsubdirs noregerror
 ; 文檔

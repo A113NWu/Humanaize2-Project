@@ -501,8 +501,10 @@ class ThinkingEngine:
         # 避免每次請求都灌入大量歷史把上下文撐爆、或被舊話題帶偏。
         memory_text = ("No memory is attached automatically. "
                        "If this message continues an ongoing task or refers to earlier turns, "
-                       "you MUST call the memory-search skill first and check what you were doing; "
-                       "never pretend to remember. Call it whenever unsure.")
+                       "you may call the memory-search skill ONCE (at most) to check what you were "
+                       "doing; never pretend to remember. Do NOT call it repeatedly or 'just to "
+                       "confirm' — each task allows at most one memory-search and later ones will "
+                       "be rejected. If you already know what to do, proceed with the next action.")
         other_text = "\n\n".join(str(item).strip() for item in (other_prompts or []) if str(item).strip())
         other_text = other_text or "None."
         gan_text = str(gan_prompt or "").strip() or "None."
@@ -770,10 +772,14 @@ class ThinkingEngine:
                 try:
                     followup_out = out
                     seen_calls = set()
+                    mem_search_used = 0
+                    mem_nudges = 0
                     # 首輪已執行的調用一併計入去重：模型若在 followup 第一輪就原樣重複
                     # （典型：拿著搜索結果又搜一次），能立刻被停滯檢測抓住並糾偏。
                     for _sn, _si in self._extract_skill_calls(actual_reply)[1]:
                         seen_calls.add(f"{_sn}:{json.dumps(_si, sort_keys=True, ensure_ascii=False)}")
+                        if self._is_memory_search(_sn):
+                            mem_search_used += 1
                     stall_nudges = 0
                     cont_nudges = 0
                     for loop_idx in range(20):
@@ -825,6 +831,27 @@ class ThinkingEngine:
                             if self.on_response and fcleaned.strip():
                                 self.on_response({"type": "chat_response", "reply": fcleaned.strip()})
                             break
+
+                        # Memory_Search 防濫用：記憶檢索每任務最多 1 次。
+                        # 換關鍵詞重複檢索逃得過精確簽名去重，會把多輪操作額度全部佔滿，
+                        # 這裡直接攔截多餘的 memory-search，強制模型推進實際任務。
+                        if any(self._is_memory_search(nm) for nm, _ in f_calls):
+                            mem_search_used += sum(1 for nm, _ in f_calls if self._is_memory_search(nm))
+                            if mem_search_used > 1:
+                                f_calls = [(nm, inp) for nm, inp in f_calls
+                                           if not self._is_memory_search(nm)]
+                                if not f_calls:
+                                    if mem_nudges < 2:
+                                        mem_nudges += 1
+                                        logger.warning(f"Followup round {loop_idx + 1}: "
+                                                       f"redundant memory-search intercepted")
+                                        followup_out = self._memory_search_limit_feedback(user_text)
+                                        continue
+                                    logger.warning(f"Followup round {loop_idx + 1}: "
+                                                   f"repeated memory-search only, stopping.")
+                                    if fcleaned.strip() and self.on_response:
+                                        self.on_response({"type": "chat_response", "reply": fcleaned.strip()})
+                                    break
 
                         # 進度檢查：重複調用視為停滯
                         call_signatures = tuple(
@@ -1198,9 +1225,13 @@ class ThinkingEngine:
                         # 若她決定收尾（輸出純文本總結），就展示給用戶並結束循環。
                         followup_out = out
                         seen_calls = set()  # 進度追蹤：檢測重複調用，避免死循環
+                        mem_search_used = 0
+                        mem_nudges = 0
                         # 首輪調用計入去重（同非流式路徑）
                         for _sn, _si in self._extract_skill_calls(full_reply)[1]:
                             seen_calls.add(f"{_sn}:{json.dumps(_si, sort_keys=True, ensure_ascii=False)}")
+                            if self._is_memory_search(_sn):
+                                mem_search_used += 1
                         stall_nudges = 0
                         cont_nudges = 0
                         for loop_idx in range(20):  # 最多 20 輪，防止無限循環
@@ -1252,6 +1283,26 @@ class ThinkingEngine:
                                             self.on_response({"type": "chat_response", "reply": cleaned_sentence})
                                             self._notify_stream_callbacks(cleaned_sentence, target_info, memory)
                                 break
+
+                            # Memory_Search 防濫用：記憶檢索每任務最多 1 次（同非流式路徑），
+                            # 換關鍵詞重複檢索逃得過精確簽名去重，會佔滿多輪操作額度。
+                            if any(self._is_memory_search(nm) for nm, _ in f_calls):
+                                mem_search_used += sum(1 for nm, _ in f_calls if self._is_memory_search(nm))
+                                if mem_search_used > 1:
+                                    f_calls = [(nm, inp) for nm, inp in f_calls
+                                               if not self._is_memory_search(nm)]
+                                    if not f_calls:
+                                        if mem_nudges < 2:
+                                            mem_nudges += 1
+                                            logger.warning(f"Followup round {loop_idx + 1}: "
+                                                           f"redundant memory-search intercepted")
+                                            followup_out = self._memory_search_limit_feedback(user_text)
+                                            continue
+                                        logger.warning(f"Followup round {loop_idx + 1}: "
+                                                       f"repeated memory-search only, stopping.")
+                                        if fcleaned.strip() and self.on_response:
+                                            self.on_response({"type": "chat_response", "reply": fcleaned.strip()})
+                                        break
 
                             # 進度檢查：同一輪內若所有調用都已執行過，視為停滯，強制收尾
                             call_signatures = tuple(
@@ -1785,6 +1836,24 @@ class ThinkingEngine:
                      "build_video → build_mv → sample_frames（analyze_audio 已成功就直接 render_frames）；"
                      "搜索 / 資料任務則把已有結果整理好調用 file-write 寫入文件。"
                      "不要只說要做什麼，必須輸出 [EXEC] + 一行合法技能 JSON。",
+            "user_original_request": str(user_text or "")[:300]
+        }, ensure_ascii=False)
+
+    @staticmethod
+    def _is_memory_search(name):
+        """判斷技能調用是否為記憶檢索（模型常寫 Memory_Search / memory_search）。"""
+        return (name or "").strip().lower().replace("_", "-") == "memory-search"
+
+    @staticmethod
+    def _memory_search_limit_feedback(user_text=""):
+        """followup 中重複 memory-search 時的糾偏：記憶檢索每任務只允許一次。"""
+        import json as _json
+        return _json.dumps({
+            "success": False,
+            "error": "你又調用了 memory-search。記憶檢索每個任務最多一次，"
+                     "用不同關鍵詞重複檢索不會帶來新信息，只會把多輪操作額度全部佔滿。"
+                     "剛才的檢索結果就是全部可用的歷史，請立刻輸出下一個實際推進任務的 "
+                     "[EXEC] 技能調用（或直接總結收尾），不要再調用 memory-search。",
             "user_original_request": str(user_text or "")[:300]
         }, ensure_ascii=False)
 

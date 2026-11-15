@@ -98,6 +98,11 @@ class SkillsManager:
                 os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "skills"),
                 os.path.join(os.path.dirname(__file__), "skills")
             ]
+            if getattr(sys, "frozen", False):
+                # 打包態：技能目錄在 exe 旁邊的 skills\，__file__（_MEIPASS）
+                # 猜不到這裡，必須優先用 exe 路徑解析，否則 SKILL.md 掃不到、
+                # 技能明明開啟卻報 not found。
+                possible_dirs.insert(0, os.path.join(os.path.dirname(sys.executable), "skills"))
             for dir_path in possible_dirs:
                 if os.path.isdir(dir_path) and len(os.listdir(dir_path)) > 0:
                     self.skills_dir = dir_path
@@ -549,10 +554,17 @@ class SkillsManager:
         
         # 如果技能不存在，检查是否有默认执行器
         if not skill:
-            # 检查是否有默认执行器（即使技能未加载）
-            if skill_name in self._skill_executors:
+            # 检查是否有默认执行器（即使技能未加载；大小写不敏感，模型常写 Speak-To-User / Memory_Search）
+            executor = self._skill_executors.get(skill_name)
+            if executor is None:
+                lowered = (skill_name or "").strip().lower()
+                for exec_name, exec_fn in self._skill_executors.items():
+                    if exec_name.lower() == lowered:
+                        executor = exec_fn
+                        break
+            if executor is not None:
                 try:
-                    result = self._skill_executors[skill_name](input_data)
+                    result = executor(input_data)
                     return self._adapt_response_language(result, language)
                 except Exception as e:
                     error_messages = {

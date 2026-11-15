@@ -100,7 +100,8 @@ function applyUiLanguage(){
         if(!v)continue;
         const key=v.trim();
         if(!UI_I18N_ZH_EN.hasOwnProperty(key))continue;
-        const ds='zh'+attr.charAt(0).toUpperCase()+attr.slice(1);
+        /* dataset 屬性名不允許連字符：aria-label → zhAriaLabel（對應 data-zh-aria-label） */
+        const ds='zh'+attr.split('-').map(s=>s.charAt(0).toUpperCase()+s.slice(1)).join('');
         if(!node.dataset[ds])node.dataset[ds]=v;
         node.setAttribute(attr,en?UI_I18N_ZH_EN[key]:node.dataset[ds]);
       }
