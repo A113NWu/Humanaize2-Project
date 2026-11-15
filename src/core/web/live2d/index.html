@@ -111,6 +111,17 @@
   });
   document.getElementById('stage').appendChild(app.view);
 
+  // ── CPU 优化 ──────────────────────────────────────────────
+  // 渲染（app.ticker）與模型更新（Ticker.shared）預設都跑螢幕更新率，
+  // 桌寵常駐顯示時會持續吃 CPU。這裡限到 30fps，頁面不可見時完全暫停。
+  app.ticker.maxFPS = 30;
+  if (PIXI.Ticker.shared) PIXI.Ticker.shared.maxFPS = 30;
+  document.addEventListener('visibilitychange', () => {
+    const tickers = [app.ticker, PIXI.Ticker.shared].filter(Boolean);
+    if (document.hidden) tickers.forEach(t => t.stop());
+    else tickers.forEach(t => t.start());
+  });
+
   let model = null;
   let audioCtx = null;
   let watchdogTimer = null;

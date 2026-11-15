@@ -703,6 +703,14 @@ def _synthesize_kokoro(opts: SynthesizeOptions, _api_url: str) -> Dict[str, Any]
 # 路由：synthesize_speech 统一入口
 # ============================================================
 
+def _default_voice_for_text(provider: str, text: str) -> str:
+    """未指定音色时按文本语种选默认音色（英文文本不再用中文声朗读）。"""
+    lang = detect_language(text, "")
+    if provider == "kokoro":
+        return "af_heart" if lang == "en" else "zf_001"
+    return "en-US-AriaNeural" if lang == "en" else "zh-CN-XiaoxiaoNeural"
+
+
 def _resolve_provider_defaults(opts: SynthesizeOptions) -> Tuple[str, str, str, str]:
     """基于 provider 推断默认的 api_url / api_model / voice"""
     use_provider = (opts.provider or os.getenv("HUMANAIZE_TTS_PROVIDER")
@@ -737,19 +745,19 @@ def _resolve_provider_defaults(opts: SynthesizeOptions) -> Tuple[str, str, str, 
         use_voice = default_voice or "alloy"
         use_model = default_model or "tts-1"
     elif use_provider == "edge_tts":
-        use_voice = default_voice or "zh-CN-XiaoxiaoNeural"
+        use_voice = default_voice or _default_voice_for_text("edge_tts", opts.text)
         use_api_url = env_api_url or ""
     elif use_provider == "kokoro":
-        use_voice = default_voice or "zf_001"
+        use_voice = default_voice or _default_voice_for_text("kokoro", opts.text)
         use_api_url = env_api_url or ""
     elif use_provider in ("auto", ""):
         # 默認優先本地 Kokoro（音質好、免聯網），不可用再回落 edge_tts
         if _kokoro_backend() is not None:
             use_provider = "kokoro"
-            use_voice = default_voice or "zf_001"
+            use_voice = default_voice or _default_voice_for_text("kokoro", opts.text)
         else:
             use_provider = "edge_tts" if edge_tts else "pyttsx3"
-            use_voice = default_voice or "zh-CN-XiaoxiaoNeural"
+            use_voice = default_voice or _default_voice_for_text("edge_tts", opts.text)
         use_api_url = env_api_url or ""
 
     return use_provider, env_api_key, use_voice, use_model, use_api_url  # type: ignore

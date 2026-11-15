@@ -138,7 +138,7 @@ class ThinkingEngine:
     # Aize 在回覆中寫 [motion:組名] 或 [motion:組名:編號] 控制身體動作；
     # 標籤在出口統一剝離（用戶/TTS 看不到），動作推給 Live2D hub，
     # 面板浮窗與虛擬攝像頭頁輪詢同一 hub，天然同步。
-    _MOTION_TAG_RE = re.compile(r"\[\s*motion\s*:\s*([A-Za-z]+)\s*(?::\s*(\d+)\s*)?\]", re.IGNORECASE)
+    _MOTION_TAG_RE = re.compile(r"\[\s*motion\s*[:：]\s*([A-Za-z][\w\-]*)\s*(?:[:：\s]+\s*(\d+)\s*)?\]", re.IGNORECASE)
 
     @property
     def on_response(self):
@@ -177,8 +177,9 @@ class ThinkingEngine:
             return " "
         cleaned = cls._MOTION_TAG_RE.sub(_sub, text)
         cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
-        # 標籤貼在中文標點後面時會留下一個空格，收掉；英文逗號後的空格保留
-        cleaned = re.sub(r"([，。；、])\s+", r"\1", cleaned)
+        # 標籤貼在中文標點旁邊時會留下一個空格，收掉；英文逗號後的空格保留
+        cleaned = re.sub(r"([，。；、！？…])\s+", r"\1", cleaned)
+        cleaned = re.sub(r"\s+([，。；、！？…])", r"\1", cleaned)
         return cleaned.strip(), motions
 
     def _push_live2d_motions(self, motions):

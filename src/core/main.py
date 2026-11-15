@@ -1033,7 +1033,6 @@ def _read_ascii():
 
 
 def boot_cli():
-    _check_and_start_server()
     from ui.cli import HumanaizeCLI
     cli = HumanaizeCLI()
     cli.run()
@@ -1079,7 +1078,6 @@ def _start_autonomous_background(memory, thinking_engine):
 
 def boot_web_dashboard():
     """启动本地服务并打开浏览器管理面板。"""
-    _check_and_start_server()
     _check_updates_background()
 
     from memory.memory import load_memory
@@ -1146,8 +1144,6 @@ def _check_updates_background():
 
 
 def boot_gui():
-    _check_and_start_server()
-
     # 后台检查更新
     _check_updates_background()
     
@@ -1175,10 +1171,6 @@ def boot_gui():
 
 def boot_solve(args):
     """啟動問題解決模式"""
-    if not _check_and_start_server():
-        print("[ERROR] Failed to start LLM server. Exiting...")
-        return
-
     from tools.solve_mode import SolveMode
     
     solver = SolveMode()

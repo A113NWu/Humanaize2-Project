@@ -8,7 +8,7 @@ Humanaize 2.0 版本管理模块
      隨 exe 一起更新；Inno 升級只換本體、不動用戶 config 時也能拿到正確版本）
   2. 打包後可執行文件同目錄的 config/version.json（綠色版/外部釘選版本覆蓋用）
   3. 項目倉庫 config/version.json（開發態）
-  4. Linux 系统目录 / 当前目录兜底
+  4. Linux 系統目錄 / 当前目錄兜底
 """
 
 import json
@@ -19,7 +19,7 @@ import sys
 _version_cache = None
 
 # 找不到任何 version.json 时的兜底版本（发布前随版本號一併更新）
-FALLBACK_VERSION = "2.6.0"
+FALLBACK_VERSION = "2.6.1"
 
 
 def _candidate_paths():

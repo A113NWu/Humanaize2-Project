@@ -21,10 +21,11 @@ _NIF_GUID = 0x00000020
 
 
 class TrayIcon:
-    def __init__(self, tooltip="Humanaize2", dashboard_url=None, on_exit=None):
+    def __init__(self, tooltip="Humanaize2", dashboard_url=None, on_exit=None, on_open=None):
         self._tooltip = tooltip
         self._dashboard_url = dashboard_url
         self._on_exit = on_exit
+        self._on_open = on_open
         self._hwnd = None
         self._ready = threading.Event()
 
@@ -67,6 +68,12 @@ class TrayIcon:
         win32gui.DestroyMenu(menu)
 
     def _open_dashboard(self):
+        if self._on_open:
+            try:
+                self._on_open()
+                return
+            except Exception:
+                pass
         if self._dashboard_url:
             webbrowser.open(self._dashboard_url)
 

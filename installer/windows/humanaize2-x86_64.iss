@@ -3,7 +3,7 @@
 ; 版本號可由構建腳本覆蓋：ISCC /DAppVersion=2.3.14
 
 #ifndef AppVersion
-  #define AppVersion "2.6.0"
+  #define AppVersion "2.6.1"
 #endif
 
 [Setup]
@@ -67,12 +67,12 @@ Source: "docs\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "docs\README.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\Humanaize 2.0 Agent (x64)"; Filename: "{app}\Humanaize2.exe"; Parameters: "boot"; WorkingDir: "{app}"
+Name: "{group}\Humanaize 2.0 Agent (x64)"; Filename: "{app}\Humanaize2.exe"; WorkingDir: "{app}"
 Name: "{group}\Uninstall Humanaize 2.0 Agent"; Filename: "{uninstallexe}"
-Name: "{commondesktop}\Humanaize 2.0 Agent (x64)"; Filename: "{app}\Humanaize2.exe"; Parameters: "boot"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{commondesktop}\Humanaize 2.0 Agent (x64)"; Filename: "{app}\Humanaize2.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\Humanaize2.exe"; Description: "{cm:LaunchProgram,Humanaize 2.0 Agent}"; Parameters: "boot"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\Humanaize2.exe"; Description: "{cm:LaunchProgram,Humanaize 2.0 Agent}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"

@@ -190,11 +190,11 @@ _DEFAULT_RULES = [
         "tags": ["chat", "style"],
     },
     {
-        "cause": "主人看不懂其他语言，你一直用中文和他说话",
-        "action": "用中文回复；主人主动换语言时再跟着换",
+        "cause": "主人设定了你要用哪种语言和他说话",
+        "action": "用主人设定的语言回复；主人主动换语言时立刻跟着换",
         "source": "core",
         "confidence": 0.8,
-        "keywords": ["中文", "语言"],
+        "keywords": ["中文", "英文", "语言", "English"],
         "tags": ["chat", "language"],
     },
     {
@@ -262,7 +262,13 @@ _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 _WORD_RE = re.compile(r"[a-zA-Z]{2,}")
 
 # 种子规则版本：升级后把新增的内置规则并入已有规则文件，之后用户可自行删除
-_SEED_VER = 2
+_SEED_VER = 3
+
+# v3：语言规则文案升级（旧文案强制「用中文」，会覆盖主人的语言设置），迁移时就地替换
+_OLD_LANG_CAUSE = "主人看不懂其他语言，你一直用中文和他说话"
+_OLD_LANG_ACTION = "用中文回复；主人主动换语言时再跟着换"
+_NEW_LANG_CAUSE = "主人设定了你要用哪种语言和他说话"
+_NEW_LANG_ACTION = "用主人设定的语言回复；主人主动换语言时立刻跟着换"
 
 
 # ---------------------------------------------------------------------------
@@ -317,6 +323,17 @@ def _merge_seed_rules(data: dict) -> bool:
         ver = 1
     if ver >= _SEED_VER:
         return False
+    # v3：旧语言规则文案就地替换（只在文案与旧版完全一致时改，用户改过的不动）
+    if ver < 3:
+        old_text = normalize_rule(_OLD_LANG_CAUSE, _OLD_LANG_ACTION)
+        for rule in data.get("rules", []):
+            if normalize_rule(rule.get("cause", ""), rule.get("action", "")) != old_text:
+                continue
+            rule["cause"] = _NEW_LANG_CAUSE
+            rule["action"] = _NEW_LANG_ACTION
+            rule["text"] = normalize_rule(_NEW_LANG_CAUSE, _NEW_LANG_ACTION)
+            rule["keywords"] = ["中文", "英文", "语言", "English"]
+            rule["updated_at"] = _now()
     existing = {normalize_rule(r.get("cause", ""), r.get("action", ""))
                 for r in data.get("rules", [])}
     for seed in _DEFAULT_RULES:

@@ -1,2 +1,0 @@
-Web search results for your question:
-{search_summary}

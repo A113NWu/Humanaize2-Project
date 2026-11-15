@@ -2,10 +2,10 @@
 const confirmDialog=(message,opts={})=>new Promise(resolve=>{
   const mask=$('#confirm-modal'),ok=$('#confirm-ok'),cancel=$('#confirm-cancel'),close=$('#confirm-close');
   if(!mask)return resolve(window.confirm(message));
-  $('#confirm-title').textContent=opts.title||'提示';
+  $('#confirm-title').textContent=opts.title||_t('提示');
   $('#confirm-message').textContent=message;
-  ok.textContent=opts.confirmText||'確定';
-  cancel.textContent=opts.cancelText||'取消';
+  ok.textContent=opts.confirmText||_t('確定');
+  cancel.textContent=opts.cancelText||_t('取消');
   ok.classList.toggle('danger',opts.danger!==false);
   mask.hidden=false;
   const done=value=>{
@@ -21,6 +21,94 @@ const confirmDialog=(message,opts={})=>new Promise(resolve=>{
   setTimeout(()=>ok.focus(),0);
 });
 const state={settings:{},messages:0};const $=selector=>document.querySelector(selector);const $$=selector=>document.querySelectorAll(selector);
+/* ============ 界面中英切換（i18n） ============ */
+const UI_I18N_ZH_EN={
+'对话':'Chat','GAN 思考':'GAN Thoughts','Skill 输出':'Skill Output','系统状态':'System Status','设置':'Settings',
+'检查中':'Checking…','在线':'Online','离线':'Offline','本地模型':'Local Model','读取中':'Loading…','消息数量':'Messages',
+'OpenAI compatible':'OpenAI compatible','你好，我已准备好。':'Hi, I\'m ready.',
+'输入消息...（右下角麦克风可开启语音对话，回形针可上传文件）':'Type a message… (mic for voice, paperclip for files)',
+'发送':'Send','实时输出（含闲时思考与社交活动）':'Live stream (idle thoughts & social activity)','等待思考事件...':'Waiting for thought events…',
+'Skill 执行输出':'Skill execution output','运行日志':'runtime log','暂无 Skill 输出。':'No skill output yet.',
+'API 服务':'API Service','模型':'Model','系統版本':'Version',
+'显示风格':'Display','基本配置':'Basic','提示词与规则表':'Prompts & Rules','技能管理':'Skills','安全性':'Security',
+'调整面板的显示方式。':'Customize how the panel looks.','语言':'Language','主题':'Theme','動畫速度':'Animation speed',
+'快':'Fast','標準':'Standard','慢（推薦）':'Slow (recommended)','很慢':'Very slow',
+'在右下角顯示 Live2D 形象（Aize 說話時會動）':'Show Live2D avatar at bottom-right (Aize moves while speaking)',
+'模型、推理和连接参数。':'Model, inference and connection parameters.','模型名称':'Model name','自定义模型路径':'Custom model path','LLM 服务 URL':'LLM service URL',
+'最大 Tokens':'Max Tokens','技能提示词':'Skills prompt','启用 GAN 思考':'Enable GAN thinking','主动打破沉默':'Proactively break silence',
+'手機端播放 Aize 語音（回覆自動朗讀）':'Mobile: play Aize voice (auto-read replies)','桌面端播放 Aize 語音（Live2D 形象開口）':'Desktop: play Aize voice (Live2D speaks)',
+'Guard 与反制措施的运行策略。':'Guard and countermeasure runtime strategy.','启用 Guard':'Enable Guard','Guard 自动启动':'Guard auto-start','Guard 防火墙':'Guard firewall',
+'网络监控':'Network monitor','系统监控':'System monitor','启用反制措施':'Enable countermeasures','反制实验室模式':'Countermeasure lab mode',
+'Guard 间隔（秒）':'Guard interval (sec)','最大警告数':'Max warnings','反制冷却（秒）':'Countermeasure cooldown (sec)',
+'网络访问':'Network access','允许局域网设备访问此面板':'Allow LAN devices to access this panel',
+'开启后，同一局域网的设备可通过 http://<本机IP>:8082 访问；关闭时仅本机可访问（立即生效）。':'When on, devices on the same LAN can access via http://<local-ip>:8082; when off, only this machine (immediate).',
+'账户登录':'Account login','账户名':'Username','留空表示不启用登录':'Leave blank to disable login','密码':'Password','留空不修改':'Leave blank to keep current',
+'设置账户名和密码后，打开面板需先登录；清空账户名并保存即可关闭登录。':'After setting username & password, the panel requires login; clear username & save to disable login.',
+'啟用或停用 Aize 可用的 Skill，變更後立即生效。':'Enable or disable Aize\'s Skills; changes take effect immediately.',
+'技能列表載入中…首次打開需掃描全部技能，可能要等十幾秒。':'Loading skill list… first open scans all skills, may take ~10s.',
+'直接编辑 Aize 的人设与说话规则（agent_prompt.txt），保存后下一句回复立即生效，无需重启。':'Edit Aize\'s persona & speech rules (agent_prompt.txt); saved changes apply to the next reply, no restart needed.',
+'提示词加载中…':'Loading prompt…','保存提示词':'Save prompt','因果规则表':'Causal Rule Table','新增规则':'Add rule',
+'规则表随设置页加载。':'Rule table loads with the settings page.',
+'统一格式：因为<原因>，所以你要<结果和行动>。所有启用的规则会按顺序直接追加到主提示词后面，不做关键词匹配；大部分规则是引导，原則性規則会优先列出且不可删除或停用。':'Format: because <cause>, therefore <action>. All enabled rules are appended in order to the main prompt (no keyword matching); most are guidance, principle rules are listed first and cannot be deleted or disabled.',
+'打开此设置项时加载规则表。':'Loads when you open this section.',
+'保存设置':'Save settings','提示':'Notice','確定':'OK','取消':'Cancel',
+'已保存':'Saved','保存失败':'Save failed','读取失败':'Load failed',
+'正在執行 Skill…':'Running Skill…','輸出 Output':'Output','思考中...':'Thinking…','錯誤：AI 沒有產生任何有效內容':'Error: AI produced no valid content',
+'请求失败':'Request failed','文件還在上傳中，請稍候再發送':'Files are still uploading, please wait','判斷要不要打斷…':'Deciding whether to interrupt…',
+'判斷器不可用':'Interrupt judge unavailable','中斷判斷':'Interrupt decision',
+'拖動移動 Aize，雙擊回到默認位置':'Drag to move Aize, double-click to reset',
+'收合侧边栏':'Collapse sidebar','上傳文件':'Upload file','開啟語音對話':'Start voice conversation','關閉':'Close',
+'未设置':'Not set','未设置密码':'No password set','已设置密码（留空不修改）':'Password set (leave blank to keep)',
+'Thinking Engine':'Thinking Engine'
+};
+/* 需要跳過的動態內容容器（氣泡 / 思考流 / Skill 輸出 / 規則列表），避免翻譯用戶數據 */
+function _isDynamicArea(el){
+  if(!el)return false;
+  let n=el;
+  while(n&&n.nodeType===1){
+    if(n.id&&['messages','thought-output','skill-output','causal-rules-list','skills-list','prompt-editor','confirm-message'].includes(n.id))return true;
+    if(n.classList&&(n.classList.contains('message')||n.classList.contains('skill-output')||n.classList.contains('thought-log')||n.classList.contains('reply-text')))return true;
+    n=n.parentNode;
+  }
+  return false;
+}
+/* 當前語言：English → en，否則 zh */
+function currentLang(){return (state.settings&&state.settings.language)==='English'?'en':'zh'}
+function _t(zh){if(currentLang()==='zh')return zh;return UI_I18N_ZH_EN.hasOwnProperty(zh)?UI_I18N_ZH_EN[zh]:zh}
+function applyUiLanguage(){
+  const en=currentLang()==='en';
+  const walk=(root)=>{
+    const walker=document.createTreeWalker(root,NodeFilter.SHOW_ELEMENT,null);
+    let node;
+    while((node=walker.nextNode())){
+      /* 跳過 <select> 的 <option>：其文本即提交值，翻譯會破壞後端匹配 */
+      if(node.tagName==='OPTION')continue;
+      if(_isDynamicArea(node))continue;
+      /* 葉子文本：元素沒有元素子節點時才替換其純文本 */
+      const hasElChild=[...node.childNodes].some(c=>c.nodeType===1);
+      if(!hasElChild){
+        const raw=node.textContent;
+        const key=(raw||'').trim();
+        if(key&&UI_I18N_ZH_EN.hasOwnProperty(key)){
+          if(!node.dataset.zhText)node.dataset.zhText=raw;
+          node.textContent=en?UI_I18N_ZH_EN[key]:node.dataset.zhText;
+        }
+      }
+      /* placeholder / title / aria-label */
+      for(const attr of['placeholder','title','aria-label']){
+        const v=node.getAttribute(attr);
+        if(!v)continue;
+        const key=v.trim();
+        if(!UI_I18N_ZH_EN.hasOwnProperty(key))continue;
+        const ds='zh'+attr.charAt(0).toUpperCase()+attr.slice(1);
+        if(!node.dataset[ds])node.dataset[ds]=v;
+        node.setAttribute(attr,en?UI_I18N_ZH_EN[key]:node.dataset[ds]);
+      }
+    }
+  };
+  walk(document.body);
+}
+/* ============================================ */
 /* 手機端/桌面端語音播放由兩個獨立開關控制 */
 const isMobileDevice=/Android|iPhone|iPad|iPod|Mobile|HarmonyOS/i.test(navigator.userAgent);
 /* 401 統一處理：任何 API 返回未登錄 → 刷新頁面（服務器會在 / 返回登錄頁） */
@@ -29,11 +117,11 @@ const basicSettings=$('[data-section-view="basic"]');basicSettings.insertAdjacen
 /* 富文本渲染：轉義 HTML 後再套用輕量 Markdown（標題/粗體/斜體/行內碼/代碼塊/列表/鏈接）。
    歷史記錄與流式結尾都走這裡，保證刷新前後排版一致，不會退化成純文字。 */
 function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
-function renderRich(el,text){let src=String(text||'');src=src.replace(/\[\s*motion\s*:\s*[A-Za-z]+\s*(?::\s*\d+\s*)?\]/gi,'').trim();const parts=src.split('```');el.innerHTML=parts.map((p,i)=>{if(i%2===1){const j=p.indexOf('\n');const code=j>=0?p.slice(j+1):p;return `<pre><code>${escHtml(code)}</code></pre>`}let h=escHtml(p);h=h.replace(/`([^`\n]+)`/g,'<code>$1</code>');h=h.replace(/^#{1,6} (.+)$/gm,'<div class="md-h">$1</div>');h=h.replace(/^\s*[-*] (.+)$/gm,'<div class="md-li">• $1</div>');h=h.replace(/^\s*\d+\. (.+)$/gm,'<div class="md-li">$1</div>');h=h.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');h=h.replace(/(^|[^*])\*([^*\n]+)\*/g,'$1<em>$2</em>');h=h.replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');return h.replace(/\n/g,'<br>')}).join('');el.classList.add('rich-text')}
+function renderRich(el,text){let src=String(text||'');src=src.replace(/\[\s*motion\s*[:：]\s*[A-Za-z][\w\-]*\s*(?:[:：\s]+\s*\d+\s*)?\]/gi,'').trim();const parts=src.split('```');el.innerHTML=parts.map((p,i)=>{if(i%2===1){const j=p.indexOf('\n');const code=j>=0?p.slice(j+1):p;return `<pre><code>${escHtml(code)}</code></pre>`}let h=escHtml(p);h=h.replace(/`([^`\n]+)`/g,'<code>$1</code>');h=h.replace(/^#{1,6} (.+)$/gm,'<div class="md-h">$1</div>');h=h.replace(/^\s*[-*] (.+)$/gm,'<div class="md-li">• $1</div>');h=h.replace(/^\s*\d+\. (.+)$/gm,'<div class="md-li">$1</div>');h=h.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');h=h.replace(/(^|[^*])\*([^*\n]+)\*/g,'$1<em>$2</em>');h=h.replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');return h.replace(/\n/g,'<br>')}).join('');el.classList.add('rich-text')}
 function addMessage(text,role){const item=document.createElement('div');item.className=`message ${role}`;/* 流式期間先保持 pre-wrap 純文字，等收尾再 renderRich */if(role==='assistant'&&text)renderRich(item,text);else item.textContent=text;$('#messages').appendChild(item);$('#messages').scrollTop=$('#messages').scrollHeight;return item}
 function appendUsage(root,usage){if(!root||!usage)return;const el=document.createElement('div');el.className='usage-info';el.textContent=`✓ 完成 · 上下文 ${usage.prompt_chars||0} 字（≈${usage.prompt_tokens_est||0} tokens） · 輸出 ${usage.completion_chars||0} 字（≈${usage.completion_tokens_est||0} tokens） · 耗時 ${usage.elapsed||0}s`;root.appendChild(el)}
-function showView(name){$$('.view').forEach(view=>view.classList.toggle('active',view.id===`view-${name}`));$$('.nav-item[data-view]').forEach(item=>item.classList.toggle('active',item.dataset.view===name));const label={chat:'对话',thoughts:'GAN 思考',skills:'Skill 输出',status:'系统状态',settings:'设置'}[name];$('#page-title').textContent=label;$('#view-label').textContent=label;$('#sidebar').classList.remove('open')}
-async function loadSettings(){const response=await fetch('/api/settings');state.settings=await response.json();for(const [key,value] of Object.entries(state.settings)){const field=$(`#settings-form [name="${key}"]`);if(!field)continue;if(field.type==='checkbox')field.checked=Boolean(value);else field.value=value}const pwField=$('#settings-form [name="web_auth_password"]');if(pwField)pwField.placeholder=state.settings.web_auth_enabled?'已设置密码（留空不修改）':'未设置密码';$('#model-name').textContent=state.settings.model_name||'未设置';applyUiPrefs()}
+function showView(name){$$('.view').forEach(view=>view.classList.toggle('active',view.id===`view-${name}`));$$('.nav-item[data-view]').forEach(item=>item.classList.toggle('active',item.dataset.view===name));const labels={chat:['对话','Chat'],thoughts:['GAN 思考','GAN Thoughts'],skills:['Skill 输出','Skill Output'],status:['系统状态','System Status'],settings:['设置','Settings']}[name];const label=labels?(currentLang()==='en'?labels[1]:labels[0]):name;$('#page-title').textContent=label;$('#view-label').textContent=label;$('#sidebar').classList.remove('open')}
+async function loadSettings(){const response=await fetch('/api/settings');state.settings=await response.json();for(const [key,value] of Object.entries(state.settings)){const field=$(`#settings-form [name="${key}"]`);if(!field)continue;if(field.type==='checkbox')field.checked=Boolean(value);else field.value=value}const pwField=$('#settings-form [name="web_auth_password"]');if(pwField)pwField.placeholder=state.settings.web_auth_enabled?_t('已设置密码（留空不修改）'):_t('未设置密码');$('#model-name').textContent=state.settings.model_name||_t('未设置');applyUiPrefs();applyUiLanguage()}
 /* ====================== 右下角 Live2D 形象 + 動畫速度 ====================== */
 const live2dWidget={
   el:null,frame:null,enabled:false,
@@ -93,7 +181,7 @@ function applyUiPrefs(){
     box.style.left=box.style.top=box.style.right=box.style.bottom='';
   });
 })();
-async function checkHealth(){try{const response=await fetch('/health');if(!response.ok)throw Error();$('#status').textContent='在线';$('#api-health').textContent='在线'}catch(error){$('#status').textContent='离线';$('#api-health').textContent='离线'}}
+async function checkHealth(){try{const response=await fetch('/health');if(!response.ok)throw Error();$('#status').textContent=_t('在线');$('#api-health').textContent=_t('在线')}catch(error){$('#status').textContent=_t('离线');$('#api-health').textContent=_t('离线')}}
 /* 刷新頁面後重建聊天：優先使用結構化時間線（思考行/命令區塊/正文分離，
    與實時流式渲染一致），時間線不可用時降級為 memory.json 純文本歷史 */
 const THOUGHT_LABELS={gan_decision:'GAN 決策',gan_topic:'議題',gan_argument:'正方論點',gan_counter_argument:'反方論點',gan_synthesis:'綜合結論',solve_mode:'Solve 模式',skill:'Skill',gan:'思考'};
@@ -152,7 +240,7 @@ async function loadChatHistory(){
     }
   }catch(e){/* 時間線不可用（舊版後端），降級為記憶庫歷史 */}
   try{const data=await (await fetch('/api/chat/history')).json();const list=data.messages||[];if(!list.length)return;for(const m of list){const item=document.createElement('div');item.className=`message ${m.role==='user'?'user':'assistant'}`;if(m.role==='user'){item.textContent=m.content}else{/* 記憶庫原文含 THOUGHT: 標籤時，重建思考框與正文，避免刷新後露出一大段標籤 */if(m.thought){const tl=document.createElement('div');tl.className='thought-log';const line=document.createElement('div');line.className='thought-line';line.dataset.label='思考';line.textContent=m.thought;tl.appendChild(line);item.appendChild(tl)}const so=document.createElement('div');so.className='skill-output';const n=document.createElement('div');n.className='reply-text';renderRich(n,m.content);so.appendChild(n);item.appendChild(so)}box.appendChild(item)}box.scrollTop=box.scrollHeight;state.messages=list.length;$('#message-count').textContent=list.length}catch(e){/* 歷史加載失敗不影響聊天 */}}
-async function refreshStatus(){try{const data=await (await fetch('/api/status')).json();$('#message-count').textContent=data.messages.length;$('#model-name').textContent=data.model||'本地模型';const av=$('#app-version');if(av)av.textContent=data.version?('v'+data.version):'—'}catch(error){/* 輪詢失敗保持安靜，健康檢查會更新離線狀態 */}}
+async function refreshStatus(){try{const data=await (await fetch('/api/status')).json();$('#message-count').textContent=data.messages.length;$('#model-name').textContent=data.model||_t('本地模型');const av=$('#app-version');if(av)av.textContent=data.version?('v'+data.version):'—'}catch(error){/* 輪詢失敗保持安靜，健康檢查會更新離線狀態 */}}
 $('#collapse-sidebar').onclick=()=>$('#sidebar').classList.toggle('collapsed');$('#open-sidebar').onclick=()=>$('#sidebar').classList.add('open');$$('.nav-item[data-view]').forEach(item=>item.onclick=()=>showView(item.dataset.view));$$('.settings-tab').forEach(tab=>tab.onclick=()=>{$$('.settings-tab').forEach(item=>item.classList.remove('active'));$$('.settings-section').forEach(item=>item.classList.remove('active'));tab.classList.add('active');$(`[data-section-view="${tab.dataset.section}"]`).classList.add('active')});
 /* 中斷判斷：Aize 還在輸出時主人又發了新消息 → 先讓後端子 Agent 判定要不要打斷 */
 const chatGate={busy:false,judging:false,abort:null,queue:[]};
@@ -177,8 +265,8 @@ const decoder=new TextDecoder();let buffer='';let sawContent=false;let replyText
 if(!sawContent){reply.textContent='錯誤：AI 沒有產生任何有效內容';voice.cancel();document.body.classList.remove('aize-speaking');}else{/* 收尾：去掉每個文本塊首部空行；把「思考下一步」狀態行標記為完成，避免看起來永久卡死 */streamRoot.querySelectorAll('.reply-text').forEach(n=>{renderRich(n,n.textContent.replace(/^\n+/,''))});streamRoot.querySelectorAll('.skill-cmd-start').forEach(el=>{if(/thinking about the next step/.test(el.textContent))el.textContent=el.textContent.replace('⚙','✓')});live2dWidget.onReply(replyText);appendUsage(streamRoot,usage);voice.flush();/* 沒開 TTS：語音不會啟動，直接顯回 Skill 框 */if(!voice.speakActive())setTimeout(()=>document.body.classList.remove('aize-speaking'),120);}
 state.messages++;$('#message-count').textContent=state.messages}catch(error){if(error&&error.name==='AbortError'){/* 被新消息打斷：保留已輸出片段並補上排版，不再提示錯誤 */streamRoot.querySelectorAll('.reply-text').forEach(n=>{if(n.textContent.trim()&&n.textContent!=='思考中...')renderRich(n,n.textContent)});reply.classList.add('interrupted')}else{voice.cancel();if(error.status===409){reply.textContent=error.message;reply.classList.add('busy-notice');$('#prompt').value=text}else{reply.textContent=`请求失败：${error.message}`}}}finally{chatGate.busy=false;chatGate.abort=null;const po=opts||{};/* 判定器要求答完新问题后回到原话题：把原问题作为续接请求排到隊列 */if(po.postAction==='resume_prev'&&po.prevQuestion){chatGate.queue.unshift({text:po.prevQuestion,atts:[],postAction:'resume_prev',prevQuestion:po.prevQuestion,shown:false})}flushPending()}};
 $('#chat-form').onsubmit=async event=>{event.preventDefault();const text=$('#prompt').value.trim();const atts=uploadUI.payload();if(!text&&!atts.length)return;if(uploadUI.files.some(f=>f.uploading)){window.alert('文件還在上傳中，請稍候再發送');return;}if(!chatGate.busy){runChatTurn(text,atts);return;}if(chatGate.judging)return;/* 當前回覆尚未結束：子 Agent 判定是否打斷 */chatGate.judging=true;const oldPh=$('#prompt').placeholder;$('#prompt').placeholder='判斷要不要打斷…';let verdict=null;try{verdict=await judgeInterrupt(text)}finally{chatGate.judging=false;$('#prompt').placeholder=oldPh}if(verdict&&verdict.interrupt){if(verdict.reason)console.info('中斷判斷:',verdict.reason);try{chatGate.abort&&chatGate.abort.abort()}catch(e){}const t0=Date.now();while(chatGate.busy&&Date.now()-t0<6000){await new Promise(r=>setTimeout(r,80))}if(verdict.merge&&verdict.prev_question){/* 補充說明：把原問題和新消息合併成一個請求，氣泡仍只顯示主人剛打的字 */runChatTurn(text,atts,{mergeWith:verdict.prev_question,postAction:'drop_prev',prevQuestion:''})}else{runChatTurn(text,atts,{postAction:verdict.post_action,prevQuestion:verdict.prev_question})}}else if(verdict&&verdict.post_action==='decline_switch'){/* 暫不換話題：不寫死台詞，讓正在回答的 Aize 本人先拒絕、再繼續 */try{chatGate.abort&&chatGate.abort.abort()}catch(e){}const t0=Date.now();while(chatGate.busy&&Date.now()-t0<6000){await new Promise(r=>setTimeout(r,80))}const hint=`你剛才正在回答主人的問題：「${(verdict.prev_question||'').slice(0,200)}」，已經說出：「${(verdict.partial||'').slice(-400)}」。\n主人剛剛插話：「${text}」，想換到新話題。\n你現在不想換話題。請分兩步回覆：先像真人一樣自然地拒絕主人（可以撒嬌、可以說先把手上這件事弄完，不要用固定台詞，也不要提「系統」「判定」），然後接著把剛才的回答說完，不要重複已經說過的內容，也不要回答插話裡的新問題。`;runChatTurn(text,atts,{hideUser:true,systemHint:hint})}else{/* 不中斷也不拒答：先把主人這句按時間顯示出來，排隊等 Aize 回覆 */addMessage(atts.length?((text?text+'\n':'')+atts.map(a=>`📎 ${a.name}`).join('\n')):text,'user');chatGate.queue.push({text,atts,shown:true});$('#prompt').value='';uploadUI.clear();flushPending()}};
-$('#settings-form').onsubmit=async event=>{event.preventDefault();const values={};for(const field of $('#settings-form').elements){if(!field.name)continue;values[field.name]=field.type==='checkbox'?field.checked:field.value}try{const response=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(values)});const data=await response.json();if(!response.ok)throw Error(data.error?.message||'保存失败');Object.assign(state.settings,values);applyUiPrefs();$('#settings-notice').textContent=data.message||'已保存';setTimeout(()=>$('#settings-notice').textContent='',1800)}catch(error){$('#settings-notice').textContent=`保存失败：${error.message}`}};
-$('#prompt').onkeydown=event=>{if(event.key==='Enter'&&event.ctrlKey)$('#chat-form').requestSubmit()};loadSettings().catch(error=>$('#settings-notice').textContent=`读取失败：${error.message}`);checkHealth();refreshStatus();setInterval(refreshStatus,3000);loadChatHistory();
+$('#settings-form').onsubmit=async event=>{event.preventDefault();const values={};for(const field of $('#settings-form').elements){if(!field.name)continue;values[field.name]=field.type==='checkbox'?field.checked:field.value}try{const response=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(values)});const data=await response.json();if(!response.ok)throw Error(data.error?.message||'保存失败');Object.assign(state.settings,values);applyUiPrefs();applyUiLanguage();$('#settings-notice').textContent=_t(data.message||'已保存');setTimeout(()=>$('#settings-notice').textContent='',1800)}catch(error){$('#settings-notice').textContent=`保存失败：${error.message}`}};
+$('#prompt').onkeydown=event=>{if(event.key==='Enter'&&event.ctrlKey)$('#chat-form').requestSubmit()};loadSettings().catch(error=>{$('#settings-notice').textContent=`${_t('读取失败')}：${error.message}`});checkHealth();refreshStatus();setInterval(refreshStatus,3000);loadChatHistory();
 
 /* ====================== 語音對話（STT + 流式 TTS） ====================== */
 const voice={

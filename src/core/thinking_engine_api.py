@@ -136,6 +136,77 @@ def _causal_rules_block(user_text: str) -> str:
         return ""
 
 
+# ---------------------------------------------------------------------------
+# 回復語言：跟隨 ui_settings.json 的 language 設置（"中文" / "English"），
+# 並支持主人在聊天裡口頭換語言（當條消息立即生效，同時持久化到設置）。
+# ---------------------------------------------------------------------------
+def _reply_language() -> str:
+    """返回主人設定的回復語言："zh" / "en"（讀不到設置時默認 zh）。"""
+    try:
+        with open(get_settings_path(), "r", encoding="utf-8") as f:
+            lang = str(json.load(f).get("language") or "").strip()
+    except Exception:
+        lang = ""
+    return "en" if lang.lower().startswith("eng") else "zh"
+
+
+def _language_instruction_block() -> str:
+    """按設定生成回復語言指令塊（放因果規則之後，壓過舊的「固定中文」傾向）。"""
+    if _reply_language() == "en":
+        return ("【Reply language】The owner has set the reply language to English. "
+                "Always reply in English (write the whole RESPONSE in English). "
+                "If the owner explicitly asks to switch language, follow immediately.")
+    return ("【回復語言】主人把回復語言設定為中文，用中文回復；"
+            "主人主動換語言時立刻跟著換。")
+
+
+_SWITCH_TO_EN_RE = re.compile(
+    r"(?:用|說|说|講|讲|換|换|切換|切换|改|來|来)(?:成|為|为|到)?\s*(?:點|点)?\s*(?:英語|英语|英文)"
+    r"|switch\s*(?:to\s*)?english|speak\s*english|use\s*english|reply\s*in\s*english",
+    re.IGNORECASE)
+_SWITCH_TO_ZH_RE = re.compile(
+    r"(?:用|說|说|講|讲|換|换|切換|切换|改|來|来)(?:成|為|为|到)?\s*(?:點|点)?\s*(?:中文|漢語|汉语|國語|国语|華語|华语)"
+    r"|switch\s*(?:to\s*)?chinese|speak\s*chinese|use\s*chinese|reply\s*in\s*chinese",
+    re.IGNORECASE)
+
+
+def _detect_language_switch(text: str):
+    """主人這句話是否在要求換語言；返回 "English" / "中文" / None。"""
+    t = str(text or "").strip()
+    if not t or len(t) > 60:
+        return None
+    if _SWITCH_TO_EN_RE.search(t):
+        return "English"
+    if _SWITCH_TO_ZH_RE.search(t):
+        return "中文"
+    return None
+
+
+def _apply_language_switch(new_lang: str, thinking_engine=None) -> None:
+    """把主人的換語言決定寫進 ui_settings.json 並即時生效。"""
+    try:
+        path = get_settings_path()
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                settings = json.load(f)
+            if not isinstance(settings, dict):
+                settings = {}
+        except (OSError, ValueError):
+            settings = {}
+        settings["language"] = new_lang
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(settings, f, ensure_ascii=False, indent=2)
+        logger.info(f"[Language] switch persisted: {new_lang}")
+    except Exception as e:
+        logger.warning(f"[Language] persist failed: {e}")
+    try:
+        if thinking_engine is not None:
+            thinking_engine.set_language("en" if new_lang.startswith("Eng") else "zh")
+    except Exception:
+        pass
+
+
 # 運行時技能管理器實例（進程級緩存，與 Agent 內部使用同一個 skills 目錄）
 _SKILLS_MANAGER_CACHE = {"mgr": None}
 
@@ -406,48 +477,26 @@ def _get_llm_functions():
 
 
 def _fallback_generate(prompt, emotion_monitor=None):
-    """回退方案：直接调用llama-server"""
-    import requests
+    """回退方案：改走云端 API（llm.chat）。禁止调用本地 llama-server。"""
     try:
-        response = requests.post(
-            "http://127.0.0.1:8080/completion",
-            json={"prompt": prompt, "n_predict": 512, "temperature": 0.7, "top_p": 0.9, "ignore_eos": False},
-            timeout=300
-        )
-        response.raise_for_status()
-        data = response.json()
-        text = data.get("content", "") if isinstance(data, dict) else str(data)
-        return text.strip(), None
+        try:
+            from llm.llm import chat
+        except ImportError:
+            from core.llm.llm import chat
+        return chat(prompt), None
     except Exception as e:
         logger.error(f"Fallback generate error: {e}")
         return f"[error] {e}", None
 
 
 def _fallback_generate_stream(prompt, emotion_monitor=None):
-    """回退方案：直接流式调用llama-server"""
-    import requests
+    """回退方案：改走云端 API（llm.chat_stream）。禁止调用本地 llama-server。"""
     try:
-        response = requests.post(
-            "http://127.0.0.1:8080/completion",
-            json={"prompt": prompt, "n_predict": 512, "temperature": 0.7, "top_p": 0.9, "ignore_eos": False, "stream": True},
-            timeout=300,
-            stream=True
-        )
-        response.raise_for_status()
-        for line in response.iter_lines(chunk_size=1024):
-            if not line:
-                continue
-            line_str = line.decode('utf-8', errors='ignore').strip()
-            if line_str.startswith('data:'):
-                data_str = line_str[5:].strip()
-                if data_str:
-                    try:
-                        data = json.loads(data_str)
-                        token = data.get("content", "")
-                        if token:
-                            yield token
-                    except json.JSONDecodeError:
-                        continue
+        try:
+            from llm.llm import chat_stream
+        except ImportError:
+            from core.llm.llm import chat_stream
+        yield from chat_stream(prompt)
     except Exception as e:
         logger.error(f"Fallback stream error: {e}")
         yield f"[error] {e}"
@@ -906,7 +955,7 @@ _THOUGHT_BLOCK_RE = re.compile(
 _RESPONSE_BLOCK_RE = re.compile(
     r"(?:^|\n)\s*RESPONSE\s*[:：]\s*(.*)\Z", re.S | re.I)
 _MOTION_TAG_RE = re.compile(
-    r"\[\s*motion\s*:\s*[A-Za-z]+\s*(?::\s*\d+\s*)?\]", re.I)
+    r"\[\s*motion\s*[:：]\s*[A-Za-z][\w\-]*\s*(?:[:：\s]+\s*\d+\s*)?\]", re.I)
 
 
 def _split_thought_response(content):
@@ -1571,6 +1620,9 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             _causal_text = _causal_rules_block(text)
             if _causal_text:
                 system_block_parts.append(_causal_text)
+            _lang_text = _language_instruction_block()
+            if _lang_text:
+                system_block_parts.append(_lang_text)
 
             messages = [{"role": "user", "content": text}]
             full_prompt = build_prompt_from_messages(messages, "\n\n".join(system_block_parts))
@@ -2356,10 +2408,6 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                 updates["web_auth_password_hash"] = ""
             elif new_password:
                 updates["web_auth_password_hash"] = self._hash_web_password(new_password)
-            model_path_changed = (
-                "model_path" in updates
-                and str(updates.get("model_path", "")).strip() != str(settings.get("model_path", "")).strip()
-            )
             settings.update(updates)
             os.makedirs(os.path.dirname(self._settings_path()), exist_ok=True)
             with open(self._settings_path(), "w", encoding="utf-8") as settings_file:
@@ -2376,28 +2424,9 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                     pass
 
             response = {"status": "ok", "settings": self._load_settings()}
-            if model_path_changed and str(updates.get("model_path", "")).strip():
-                # 模型路徑在 llama-server 啟動時消費，需重啟後端進程才能切換
-                self._schedule_model_server_restart()
-                response["restart_required"] = True
-                response["message"] = "模型路徑已保存，正在重啟 LLM 服務…"
             self._send_json(response)
         except (OSError, ValueError, json.JSONDecodeError) as error:
             self._send_error(f"Invalid settings: {error}")
-
-    def _schedule_model_server_restart(self):
-        """後台強制重啟本地 llama-server，使新模型路徑生效。"""
-        def _restart():
-            try:
-                try:
-                    from main import _check_and_start_server
-                except ImportError:
-                    from core.main import _check_and_start_server
-                _check_and_start_server(force_restart=True)
-            except Exception as error:  # noqa: BLE001 - 後台線程需兜底
-                logger.error(f"Failed to restart LLM server after model path change: {error}")
-
-        threading.Thread(target=_restart, daemon=True).start()
 
     def _handle_voice_capabilities(self):
         """告知網頁端語音能力：TTS 引擎是否可用及默認音色。
@@ -3064,6 +3093,14 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         # 時間線只存主人真正打的字（附件上下文/視覺描述不進聊天氣泡）
         display_user_text = (user_text or "").strip()
 
+        # 主人口頭換語言：立即持久化並生效（當條消息就用新語言回復）
+        try:
+            _new_lang = _detect_language_switch(display_user_text)
+            if _new_lang:
+                _apply_language_switch(_new_lang, thinking_engine)
+        except Exception as e:
+            logger.warning(f"[Language] switch detect failed: {e}")
+
         # 先感知主人这句话的情绪，并更新 Aize 自己的心情（build_context_from_memory 会读出来）
         try:
             from tools.affect import observe_user_message
@@ -3158,6 +3195,10 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
         _causal_text = _causal_rules_block(display_user_text)
         if _causal_text:
             system_block_parts.append(_causal_text)
+        # 回復語言：跟隨主人設定（放在因果規則之後，壓過舊的「固定中文」傾向）
+        _lang_text = _language_instruction_block()
+        if _lang_text:
+            system_block_parts.append(_lang_text)
         if _autopilot_hint:
             system_block_parts.append(_autopilot_hint)
         full_prompt = build_prompt_from_messages(messages, "\n\n".join(system_block_parts))
@@ -3651,6 +3692,20 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                 
                 if chunk["type"] == "chunk":
                     content = chunk["content"]
+                    # 流式出口也剝離 [motion:...] 標籤：避免用戶在打字過程中看到標籤，
+                    # 並把模型指定的動作推給 Live2D hub（兜底動作已在開頭推過）。
+                    if "[motion" in content.lower():
+                        try:
+                            _engine = state.get_thinking_engine() if state is not None else None
+                            if _engine is not None:
+                                cleaned, _motions = _engine._extract_motion_tags(content)
+                                if _motions:
+                                    _engine._push_live2d_motions(_motions)
+                                content = cleaned
+                            else:
+                                content = re.sub(r"[ \t]{2,}", " ", _MOTION_TAG_RE.sub("", content))
+                        except Exception:
+                            content = re.sub(r"[ \t]{2,}", " ", _MOTION_TAG_RE.sub("", content))
                     full_reply += content
                     tl_items.append({"k": "text", "t": "", "c": content})
                     _timeline_update_pending(tl_items)

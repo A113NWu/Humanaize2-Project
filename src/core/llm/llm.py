@@ -310,39 +310,49 @@ def _openai_chat(prompt, provider, max_tokens, temperature, top_p, session, time
     request_session = session or create_session()
     own_session = session is None
     try:
-        response = request_session.post(
-            f"{provider['base_url']}/chat/completions",
-            headers={"Authorization": f"Bearer {provider['api_key']}", "Content-Type": "application/json"},
-            json=_cloud_payload(provider, _to_openai_messages(prompt, system),
-                                max_tokens, temperature, top_p),
-            timeout=timeout,
-        )
-        try:
-            response.raise_for_status()
-        except requests.exceptions.HTTPError as error:
-            status_code, response_body = _http_error_detail(error)
-            logger.error("OpenAI HTTP error %s, response body: %s", status_code, response_body or "<empty>")
-            raise RuntimeError(
-                f"HTTP error {status_code}: {response_body or 'provider returned an empty error response'}"
-            ) from error
-        data = response.json()
-        msg = data.get("choices", [{}])[0].get("message", {})
-        content = msg.get("content", "")
-        # content 可能是 str 或多模態 list（[{"type":"text","text":"..."}]）
-        if isinstance(content, list):
-            content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
-        # 思考模型把最終答案放 content，但 reasoning 字段也可能有內容，一併 strip
-        content = _strip_think_blocks(str(content or ""))
-        # reasoning 模型常因 max_tokens 不足返回空 content，此時丟出錯誤讓上層走本地 fallback
-        if not content:
-            reasoning = msg.get("reasoning", "")
-            finish = data.get("choices", [{}])[0].get("finish_reason", "")
+        budget = max_tokens
+        for attempt in range(2):
+            response = request_session.post(
+                f"{provider['base_url']}/chat/completions",
+                headers={"Authorization": f"Bearer {provider['api_key']}", "Content-Type": "application/json"},
+                json=_cloud_payload(provider, _to_openai_messages(prompt, system),
+                                    budget, temperature, top_p),
+                timeout=timeout,
+            )
+            try:
+                response.raise_for_status()
+            except requests.exceptions.HTTPError as error:
+                status_code, response_body = _http_error_detail(error)
+                logger.error("OpenAI HTTP error %s, response body: %s", status_code, response_body or "<empty>")
+                raise RuntimeError(
+                    f"HTTP error {status_code}: {response_body or 'provider returned an empty error response'}"
+                ) from error
+            data = response.json()
+            choice = (data.get("choices") or [{}])[0]
+            msg = choice.get("message", {})
+            content = msg.get("content", "")
+            # content 可能是 str 或多模態 list（[{"type":"text","text":"..."}]）
+            if isinstance(content, list):
+                content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
+            # 思考模型把最終答案放 content，但 reasoning 字段也可能有內容，一併 strip
+            content = _strip_think_blocks(str(content or ""))
+            if content:
+                return content
+            reasoning = msg.get("reasoning") or msg.get("reasoning_content") or ""
+            finish = choice.get("finish_reason", "")
+            # reasoning 模型常因 max_tokens 不足返回空 content：加大預算重試一次
+            if attempt == 0 and str(finish) == "length":
+                budget = max(int(budget) * 4, 2048)
+                logger.warning(
+                    "Empty completion (finish_reason='length', reasoning_chars=%d), retrying with max_tokens=%d",
+                    len(str(reasoning or "")), budget,
+                )
+                continue
             raise RuntimeError(
                 f"Empty completion from provider (finish_reason={finish!r}, "
                 f"reasoning_chars={len(str(reasoning or ''))}, model={provider.get('model')}). "
                 f"Thinking model may have exhausted max_tokens before producing content."
             )
-        return content
     finally:
         if own_session:
             request_session.close()
@@ -417,7 +427,7 @@ def _wait_rate_limit(stop_event=None):
 
 
 def chat(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top_p=TOP_P, session=None, stop_event=None, timeout=600, max_retries=3, system: str = None):
-    """發送HTTP請求到本機llama-server，取得回答。
+    """發送HTTP請求到云端 API，取得回答。
 
     system 非空時以獨立 system 角色發送（雲端 role=system；本地 system 輪），
     避免指令被模型當成用戶文本/提示詞注入。
@@ -444,136 +454,17 @@ def chat(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top_p=TOP_
                     _note_rate_limit(error)
                     if attempt < 2:
                         continue
-                logger.warning("Cloud provider failed, falling back to local llama-server: %s", error)
-                break
-            # 雲端失敗時繼續走下方本地鏈路，不 return error 字符串
-
-    try:
-        max_tokens = max(1, int(max_tokens))
-        temperature = min(2.0, max(0.0, float(temperature)))
-        top_p = min(1.0, max(0.0, float(top_p)))
-    except (TypeError, ValueError):
-        max_tokens, temperature, top_p = 512, 0.7, 0.9
-
-    max_tokens = _local_output_budget(max_tokens)
-    request_session = session or create_session()
-    own_session = session is None
-    retries = 0
-    delay = 5
-
-    local_server_url = _local_server_url()
-    prompt = _render_local_prompt(prompt, system)
-    prompt = _fit_local_prompt(prompt, max_tokens)
-    logger.debug(f"Sending LLM request with prompt length: {len(prompt)}, max_tokens: {max_tokens}, url: {local_server_url}")
-
-    while retries <= max_retries:
-        try:
-            # ========== 新增：打印完整的请求体 ==========
-            payload = {
-                "prompt": prompt,
-                "n_predict": max_tokens,
-                "temperature": temperature,
-                "top_p": top_p,
-                "ignore_eos": False
-            }
-            stops = chat_stop_sequences()
-            if stops:
-                payload["stop"] = stops
-            logger.info(
-                "Sending LLM request to %s (prompt_chars=%d, n_predict=%d, temperature=%.2f, top_p=%.2f)",
-                local_server_url, len(prompt), max_tokens, temperature, top_p,
-            )
-            # =========================================
-
-            response = request_session.post(
-                local_server_url,
-                json=payload,
-                timeout=timeout
-            )
-            try:
-                data = response.json()
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to decode LLM response as JSON: {e}")
-                try:
-                    text = response.text[:500]
-                    logger.debug(f"Raw response: {text}")
-                    return f"[llm error] Invalid response format: {text[:100]}..."
-                except:
-                    return "[llm error] Failed to parse response"
-
-            text = ""
-
-            if isinstance(data, dict):
-                text = data.get("content") or data.get("text") or data.get("result") or ""
-
-                if not text and "choices" in data and isinstance(data["choices"], list) and data["choices"]:
-                    first = data["choices"][0]
-                    if isinstance(first, dict):
-                        text = first.get("text") or first.get("message", {}).get("content") or ""
-                    else:
-                        text = str(first)
-
-            elif isinstance(data, list) and data:
-                first = data[0]
-                if isinstance(first, dict):
-                    text = first.get("content") or first.get("text") or first.get("result") or ""
-                else:
-                    text = str(first)
-            else:
-                text = str(data)
-
-            result = _strip_think_blocks(text)
-            logger.debug(f"LLM request successful, response length: {len(result)}")
-            return result
-
-        except requests.exceptions.ReadTimeout as e:
-            retries += 1
-            if retries <= max_retries:
-                wait_time = delay * (2 ** (retries - 1))
-                logger.warning(f"LLM timeout (attempt {retries}/{max_retries + 1}), retrying in {wait_time}s")
-                time.sleep(wait_time)
-                continue
-            logger.error(f"LLM request timed out after {retries} attempts: {e}")
-            return f"[llm error] Request timed out after {timeout * retries} seconds: {e}"
-
-        except requests.exceptions.ConnectionError as e:
-            retries += 1
-            if retries <= max_retries:
-                wait_time = delay * (2 ** (retries - 1))
-                logger.warning(f"LLM connection error (attempt {retries}/{max_retries + 1}), retrying in {wait_time}s")
-                time.sleep(wait_time)
-                continue
-            logger.error(f"LLM connection failed after {retries} attempts: {e}")
-            return f"[llm error] Connection failed: {e}"
-
-        except requests.exceptions.HTTPError as e:
-            # ========== 新增：打印完整的响应体 ==========
-            error_response = getattr(e, "response", None)
-            status_code = getattr(error_response, "status_code", "unknown")
-            try:
-                response_body = error_response.text[:2000] if error_response else "No response body"
-            except:
-                response_body = "Unable to read response body"
-            logger.error(f"LLM HTTP error {status_code}, response body: {response_body}")
-            # =============================================
-            detail = response_body if response_body else "llama-server rejected the request; check its console/log output"
-            return f"[llm error] HTTP error {status_code}: {detail}"
-
-        except Exception as e:
-            if stop_event is not None and stop_event.is_set():
-                logger.info("LLM request aborted by stop event")
-                return "[llm aborted]"
-            logger.error(f"LLM unexpected error: {type(e).__name__}: {e}")
-            return f"[llm error] {type(e).__name__}: {e}"
-
-        finally:
-            if own_session:
-                request_session.close()
+                # 用戶要求：禁止調用本地 llama-server，雲端失敗直接報錯，不回退
+                logger.error("Cloud provider failed (local fallback disabled): %s", error)
+                return f"[llm error] Cloud API failed: {error}"
+        return "[llm error] Cloud API failed after retries"
+    logger.error("Cloud API not configured; local llama-server fallback is disabled")
+    return "[llm error] Cloud API not configured (set API key in settings)"
 
 
 def chat_stream(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top_p=TOP_P, session=None, stop_event=None, system: str = None):
     """
-    流式发送HTTP請求到本機llama-server，逐token返回回答
+    流式发送HTTP請求到云端 API，逐token返回回答
     """
     if stop_event is not None and stop_event.is_set():
         logger.info("LLM stream request aborted by stop event")
@@ -607,128 +498,25 @@ def chat_stream(prompt: str, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, top
                         data = json.loads(text[5:].strip())
                     except json.JSONDecodeError:
                         continue
-                    delta = data.get("choices", [{}])[0].get("delta", {})
+                    choice = (data.get("choices") or [{}])[0]
+                    delta = choice.get("delta", {})
                     # 思考模型在 streaming 裡走 delta.reasoning，直接丟棄（UI 端會分流到思考區）
                     content = delta.get("content", "")
                     if content:
                         produced_any = True
                         yield content
-            if own_session:
-                request_session.close()
             if produced_any:
                 return
-            # 思考模型可能因 token 不足整段 stream 都沒 content，視為失敗走本地
-            logger.warning("Cloud streaming produced no content (thinking model exhausted tokens?), falling back to local")
+            # 思考模型可能因 token 不足整段 stream 都沒 content
+            logger.warning("Cloud streaming produced no content (thinking model exhausted tokens?)")
+            yield "[llm error] Cloud streaming produced no content"
         except Exception as error:
-            logger.warning("Cloud streaming failed, falling back to local llama-server: %s", error)
-        # 雲端失敗：繼續走下方本地鏈路
-
-    request_session = session or create_session()
-    own_session = session is None
-
-    try:
-        max_tokens = _local_output_budget(max_tokens)
-        prompt = _render_local_prompt(prompt, system)
-        prompt = _fit_local_prompt(prompt, max_tokens)
-        local_server_url = _local_server_url()
-        logger.debug(f"Sending streaming LLM request with prompt length: {len(prompt)}")
-
-        # ========== 新增：打印流式请求体 ==========
-        stream_payload = {
-            "prompt": prompt,
-            "n_predict": max_tokens,
-            "temperature": temperature,
-            "top_p": top_p,
-            "ignore_eos": False,
-            "stream": True
-        }
-        stops = chat_stop_sequences()
-        if stops:
-            stream_payload["stop"] = stops
-        logger.info(
-            "Sending streaming LLM request to %s (prompt_chars=%d, n_predict=%d, temperature=%.2f, top_p=%.2f)",
-            local_server_url, len(prompt), max_tokens, temperature, top_p,
-        )
-        # =========================================
-
-        response = request_session.post(
-            local_server_url,
-            json=stream_payload,
-            # 慢機器 prompt 評估可能超過 5 分鐘（換頁嚴重時 ~150ms/token），
-            # 與 chat() 的 600s 保持一致，避免主回答流被中途掐斷
-            timeout=600,
-            stream=True
-        )
-
-        response.raise_for_status()
-
-        full_text = ""
-        received_data = False
-        line_count = 0
-        
-        for line in response.iter_lines(chunk_size=1024):
-            if stop_event is not None and stop_event.is_set():
-                logger.info("LLM stream request aborted by stop event during iteration")
-                break
-            
-            if not line:
-                continue
-                
-            line_count += 1
-            line_str = line.decode('utf-8', errors='ignore').strip()
-            
-            if line_str.startswith('data:'):
-                received_data = True
-                data_str = line_str[5:].strip()
-                if data_str:
-                    try:
-                        data = json.loads(data_str)
-                        if isinstance(data, dict):
-                            content = data.get('content', '') or data.get('text', '')
-                            if content:
-                                full_text += content
-                                yield content
-                    except json.JSONDecodeError as e:
-                        logger.debug(f"Failed to parse streaming line {line_count}: {e}")
-                        continue
-        
-        if not received_data:
-            logger.warning("LLM stream request completed but no data received")
-            yield "[llm error] No streaming data received"
-        else:
-            logger.debug(f"LLM stream request successful, total response length: {len(full_text)}")
-                    
-    except requests.exceptions.ReadTimeout as e:
-        logger.error(f"LLM stream request timed out: {e}")
-        yield f"[llm error] Request timed out: {e}"
-
-    except requests.exceptions.ConnectionError as e:
-        logger.error(f"LLM stream connection failed: {e}")
-        yield f"[llm error] Connection failed: {e}"
-
-    except requests.exceptions.HTTPError as e:
-        # ========== 新增：打印流式错误响应体 ==========
-        error_response = getattr(e, "response", None)
-        status_code = getattr(error_response, "status_code", "unknown")
-        try:
-            response_body = error_response.text[:2000] if error_response else "No response body"
-        except:
-            response_body = "Unable to read response body"
-        logger.error(f"LLM stream HTTP error {status_code}, response body: {response_body}")
-        # =============================================
-        yield f"[llm error] HTTP error {status_code}: {response_body or 'llama-server rejected the request'}"
-
-    except Exception as e:
-        if stop_event is not None and stop_event.is_set():
-            logger.info("LLM stream request aborted by stop event")
-            yield "[llm aborted]"
-        else:
-            logger.error(f"LLM stream unexpected error: {type(e).__name__}: {e}")
-            yield f"[llm error] {type(e).__name__}: {e}"
-
-    finally:
-        if own_session:
-            request_session.close()
+            # 用戶要求：禁止調用本地 llama-server，雲端失敗直接報錯，不回退
+            logger.error("Cloud streaming failed (local fallback disabled): %s", error)
+            yield f"[llm error] Cloud API failed: {error}"
+        finally:
+            if own_session:
+                request_session.close()
 
 
 def is_server_ready(url: str = None) -> bool:

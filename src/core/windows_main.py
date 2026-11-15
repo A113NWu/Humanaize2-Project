@@ -212,14 +212,58 @@ def _launch_desktop_window(dashboard_url):
     """啟動 MyGo 桌面端窗口（與網頁端 Dashboard 同界面）。
 
     桌面端是獨立的 WebView2 窗口，直接加載本地 Dashboard URL。
+    若已有 MyGo 進程在運行則不重複啟動，避免彈出多個窗口。
     找不到桌面端 exe 時（例如開發態）回退到瀏覽器打開，避免功能中斷。
     """
     import subprocess
     exe_dir = os.path.dirname(os.path.abspath(sys.executable))
     desktop_exe = os.path.join(exe_dir, "Humanaize2-Desktop.exe")
+
+    # 避免重複啟動：已有 MyGo 桌面端進程時直接返回
+    try:
+        import ctypes
+        from ctypes import wintypes
+        TH32CS_SNAPPROCESS = 0x00000002
+        kernel32 = ctypes.windll.kernel32
+
+        class PROCESSENTRY32W(ctypes.Structure):
+            _fields_ = [
+                ("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD),
+                ("th32ProcessID", wintypes.DWORD),
+                ("th32DefaultHeapID", ctypes.POINTER(ctypes.c_ulong)),
+                ("th32ModuleID", wintypes.DWORD), ("cntThreads", wintypes.DWORD),
+                ("th32ParentProcessID", wintypes.DWORD),
+                ("pcPriClassBase", ctypes.c_long), ("dwFlags", wintypes.DWORD),
+                ("szExeFile", ctypes.c_wchar * 260),
+            ]
+
+        snap = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+        if snap:
+            entry = PROCESSENTRY32W()
+            entry.dwSize = ctypes.sizeof(PROCESSENTRY32W)
+            found = False
+            if kernel32.Process32FirstW(snap, ctypes.byref(entry)):
+                while True:
+                    if entry.szExeFile.lower() == "humanaize2-desktop.exe":
+                        found = True
+                        break
+                    if not kernel32.Process32NextW(snap, ctypes.byref(entry)):
+                        break
+            kernel32.CloseHandle(snap)
+            if found:
+                print("[INFO] Desktop window already running, skip launch.")
+                return
+    except Exception:
+        pass
+
     if os.path.exists(desktop_exe):
         try:
-            subprocess.Popen([desktop_exe, dashboard_url], cwd=exe_dir)
+            # 用 ShellExecuteW 啟動 MyGo 桌面端，完全脫離 Python 進程樹，
+            # 關閉 MyGo 窗口不會影響後端服務的存活。
+            import ctypes
+            ctypes.windll.shell32.ShellExecuteW(
+                None, "open", desktop_exe, dashboard_url, exe_dir, 1
+            )
             print(f"[INFO] Desktop window launched: {desktop_exe}")
             return
         except Exception as e:
@@ -294,9 +338,8 @@ def main():
     else:
         _setup_file_logging()
 
-    # 检查并启动 LLM 服务器
-    from core.main import _check_and_start_server
-    _check_and_start_server()
+    # 不再启动本地 llama-server：用户要求只用云端 API（小米 MiMo），
+    # 禁止调用本地 llm 模型（原先云端失败会回退 127.0.0.1:8080 造成大量超时请求）
     
     # 后台检查更新
     from main import _check_updates_background
@@ -445,11 +488,22 @@ def main():
         except Exception:
             pass
 
-    tray = TrayIcon(tooltip="Humanaize2", dashboard_url=dashboard_url, on_exit=_on_tray_exit)
+    tray = TrayIcon(tooltip="Humanaize2", dashboard_url=dashboard_url, on_exit=_on_tray_exit,
+                    on_open=lambda: _launch_desktop_window(dashboard_url))
     try:
         tray.run()
     except KeyboardInterrupt:
         server.stop()
+    except Exception as e:
+        # 托盤初始化失敗也不能讓後端退出：保持後端服務存活，
+        # 使用者仍可透過瀏覽器訪問 Dashboard。
+        print(f"[WARN] tray icon failed, keeping backend alive: {e}", file=sys.stderr)
+        try:
+            import time
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            server.stop()
 
 
 if __name__ == "__main__":
