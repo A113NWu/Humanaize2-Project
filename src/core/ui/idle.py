@@ -248,6 +248,17 @@ class IdleEngine:
                     save_memory(self.memory)
                 except Exception:
                     pass
+                # 閒時思考也進向量記憶庫（長度、機器消息等規則由 MemoryDB 自行把關），
+                # 讓以後的 memory-search 能回憶起她自己獨處時想過什麼。
+                try:
+                    if display:
+                        try:
+                            from tools.memory_db import get_memory_db
+                        except ImportError:
+                            from core.tools.memory_db import get_memory_db
+                        get_memory_db().add("assistant", display, kind="idle_thought")
+                except Exception:
+                    pass
         except Exception as e:
             if self.callback:
                 self.callback({"type": "error", "error": f"GAN thinking failed: {e}"})

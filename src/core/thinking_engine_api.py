@@ -342,12 +342,15 @@ def publish_engine_event(response):
                 "time": _now_display(),
             })
         elif rtype == "autonomous_message":
+            content = response.get("message", "") or ""
             _idle_event_bus.publish({
                 "type": "autonomous",
                 "thought_type": "social",
-                "content": response.get("message", "") or "",
+                "content": content,
                 "time": _now_display(),
             })
+            # 主動說給主人聽的話要留下來，刷新頁面後不能消失
+            _timeline_add_autonomous_turn(content)
     except Exception as e:
         logger.warning(f"[Events] publish failed: {e}")
 
@@ -940,6 +943,26 @@ def _timeline_add_turn(user_text, items, usage=None, display_user=None, attachme
 def _timeline_snapshot():
     with _CHAT_TIMELINE_LOCK:
         return list(_CHAT_TIMELINE)
+
+
+def _timeline_add_autonomous_turn(message):
+    """Aize 主動對主人說的話也寫進聊天時間線。
+
+    以前這類消息只推 SSE 即時顯示，刷新後就沒了；落盤後刷新仍能看到。
+    不調用 _timeline_add_turn，避免它默認清理正在生成中的 pending 輪次。
+    """
+    msg = str(message or "").strip()
+    if not msg:
+        return
+    turn = {
+        "user": "",
+        "display_user": "",
+        "items": [{"k": "text", "t": "", "c": msg}],
+        "ts": int(time.time()),
+    }
+    with _CHAT_TIMELINE_LOCK:
+        _CHAT_TIMELINE.append(turn)
+        _timeline_save()
 
 
 _timeline_load()

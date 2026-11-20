@@ -3,10 +3,13 @@
 import os
 import sys
 
+import pytest
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if os.path.join(ROOT, "src", "core") not in sys.path:
     sys.path.insert(0, os.path.join(ROOT, "src", "core"))
 
+import thinking_engine_api as api
 from thinking_engine_api import (
     publish_engine_event,
     classify_idle_thought_type,
@@ -15,6 +18,12 @@ from thinking_engine_api import (
     _SKILL_EXECUTE_WHITELIST,
     _idle_event_bus,
 )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_timeline(tmp_path, monkeypatch):
+    """主動消息會落盤聊天時間線；測試必須寫進臨時目錄，不能污染真實數據。"""
+    monkeypatch.setattr(api, "_CHAT_TIMELINE_FILE", str(tmp_path / "chat_timeline.json"))
 
 
 def test_classify_idle_thought_type():
@@ -49,6 +58,10 @@ def test_event_bus_pub_sub_and_history():
         assert events[0]["thought_type"] == "social"
         assert events[1]["type"] == "error" and events[1]["content"] == "boom"
         assert events[2]["type"] == "autonomous"
+        # 主動說給主人聽的話要落進聊天時間線（刷新頁面後不會消失）
+        last_turn = api._timeline_snapshot()[-1]
+        assert last_turn["items"][0]["c"] == "找主人"
+        assert not last_turn["user"]
         assert events[3]["thought_type"] == "gan_topic"
 
         # 歷史緩衝裡同樣保留這四條
