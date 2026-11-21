@@ -513,3 +513,8 @@ body.aize-speaking .skill-cmd-result{display:none !important}
 .modal-btn:hover{filter:brightness(1.12)}
 .modal-btn:active{transform:translateY(1px)}
 .modal-btn.danger{border-color:rgba(255,120,110,.55);background:linear-gradient(145deg,#f2685e,#d6403a);color:#fff}
+
+/* 聲紋識別面板 */
+.speaker-panel{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+.speaker-chip{display:inline-flex;align-items:center;gap:8px;margin:0 8px 8px 0;padding:5px 10px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid var(--line);font-size:12px}
+.speaker-chip .mini-btn{padding:2px 9px;font-size:12px;line-height:1.3}

@@ -1,14 +1,12 @@
 """
 Misskey 新消息 / 活動監聽器
 
-後台線程定期輪詢 Misskey：有新提及或本地時間線新動態時提醒 Aize，
-由她自己決定是否互動（reply / react 二選一，或 post 發新動態，或 ignore）。
-所有對外文本經敏感詞過濾；決策與執行結果以 internal_thought(social) 事件
-推給 UI（CLI 因果樹 / 網頁思考面板）。
+後台線程定期輪詢 Misskey：有新提及或本地時間線新動態時，只把消息放進
+social_inbox 收件匣並推一個 internal_thought(social) 事件提醒 UI。
+是否回應由 Aize 在閒置思考 / 對話的猶豫環節自己決定（reply / react / 忽略）。
 """
 
 import os
-import re
 import sys
 import json
 import time
@@ -81,36 +79,6 @@ def _load_skill_module(skill_name):
     return None
 
 
-def _chat(prompt, max_tokens=400, timeout=60):
-    for mod in ("llm", "core.llm"):
-        try:
-            m = __import__(mod, fromlist=["chat"])
-            return m.chat(prompt, max_tokens=max_tokens, timeout=timeout)
-        except Exception:
-            continue
-    return ""
-
-
-def _load_prompt(name):
-    for mod in ("core.data.prompts_manager", "data.prompts_manager"):
-        try:
-            m = __import__(mod, fromlist=["load_prompt"])
-            return m.load_prompt(name)
-        except Exception:
-            continue
-    return ""
-
-
-def _filter_check(text):
-    for mod in ("core.tools.content_filter", "tools.content_filter"):
-        try:
-            m = __import__(mod, fromlist=["check"])
-            return m.check(text)
-        except Exception:
-            continue
-    return True, []
-
-
 def _short_term():
     """短期記憶模塊（收到的消息先放進去，再由她自己判斷是否進長期）。"""
     for mod in ("memory.short_term", "core.memory.short_term"):
@@ -121,16 +89,8 @@ def _short_term():
     return None
 
 
-def _affect_block():
-    try:
-        from tools.affect import render_affect_block
-        return (render_affect_block() or "").strip()
-    except Exception:
-        return ""
-
-
 class MisskeyWatcher:
-    """輪詢 Misskey，發現新消息/活動時提醒 Aize 並由她決定互動與否。"""
+    """輪詢 Misskey，發現新消息/活動時放進收件匣提醒 Aize。"""
 
     def __init__(self, on_event=None):
         self.on_event = on_event
@@ -139,7 +99,6 @@ class MisskeyWatcher:
         self._seen = []
         self._state_path = os.path.join(_data_dir(), "misskey_watch_state.json")
         self._seen = _load_json(self._state_path, {}).get("seen", [])
-        self._entries = {}   # note_id → 短期記憶 entry id（回覆後把她的話補進去）
         self.thread = threading.Thread(target=self._run, daemon=True)
 
     def start(self):
@@ -231,123 +190,32 @@ class MisskeyWatcher:
         # 每條提及先寫進短期記憶：回不回由她決定，是否值得長期記住也由她判斷
         st = _short_term()
         if st:
-            for kind, nid, user, text in fresh:
+            for kind, _nid, user, text in fresh:
                 if kind != "提及":
                     continue
                 try:
-                    entry = st.record_turn(f"@{user}：{text}", source="misskey",
-                                           speaker=f"@{user}（Misskey）")
-                    if entry.get("id"):
-                        self._entries[nid] = entry["id"]
+                    st.record_turn(f"@{user}：{text}", source="misskey",
+                                   speaker=f"@{user}（Misskey）")
                 except Exception:
                     pass
-        mention_cnt = sum(1 for k, *_ in fresh if k == "提及")
-        self._emit(f"收到 {len(fresh)} 條新消息/活動（其中 {mention_cnt} 條提及），Aize 正在決定是否互動…")
-        self._decide_and_act(bot, fresh)
-
-    # ---------- 決策與執行 ----------
-
-    def _decide_and_act(self, bot, fresh):
-        base = _load_prompt("misskey_interact")
-        if not base:
-            self._emit("決策提示詞 misskey_interact 缺失，本次跳過")
-            return
-        lines = [f"[{nid}]（{kind}）@{user}: {text[:160]}" for kind, nid, user, text in fresh]
-        prompt = (base.replace("{host}", str(bot.config.get("host") or "Misskey"))
-                      .replace("{items}", "\n".join(lines)))
-        feel = _affect_block()
-        if feel:
-            prompt += "\n\n" + feel
-        raw = _chat(prompt, max_tokens=500, timeout=60)
-        actions = self._parse_actions(raw)
-        if actions is None:
-            self._emit("沒看懂 Aize 的決定（輸出不是有效 JSON），本次忽略")
-            return
-
-        acted = 0
-        posted = False
-        for act in actions:
-            if not isinstance(act, dict):
-                continue
-            atype = str(act.get("action", "")).strip().lower()
-            nid = str(act.get("note_id", "")).strip()
-
-            if atype == "ignore" or not atype:
-                continue
-
-            if atype == "react":
-                target = nid or (fresh[0][1] if fresh else "")
-                reaction = str(act.get("reaction", "👍")).strip() or "👍"
-                r = bot.react(target, reaction)
-                if r.get("success"):
-                    acted += 1
-                    self._emit(f"Aize 給帖子 {target} 點了 {reaction}")
-                else:
-                    self._emit(f"點表情失敗（{reaction}）：{r.get('error')}")
-
-            elif atype == "reply":
-                text = str(act.get("text", "")).strip()
-                if not text or not nid:
-                    continue
-                ok, hits = _filter_check(text)
-                if not ok:
-                    self._emit(f"Aize 的回覆被過濾器攔截（{len(hits)} 個敏感詞），未發送")
-                    continue
-                r = bot.post(text, reply_id=nid)
-                if r.get("success"):
-                    acted += 1
-                    self._remember_reply(nid, text)
-                    self._emit(f"Aize 回覆了 @{self._user_of(fresh, nid)}：{text[:60]}")
-                else:
-                    self._emit(f"回覆失敗：{r.get('error')}")
-
-            elif atype == "post":
-                if posted:
-                    continue
-                text = str(act.get("text", "")).strip()
-                if not text:
-                    continue
-                ok, hits = _filter_check(text)
-                if not ok:
-                    self._emit(f"Aize 的新動態被過濾器攔截（{len(hits)} 個敏感詞），未發佈")
-                    continue
-                r = bot.post(text)
-                if r.get("success"):
-                    acted += 1
-                    posted = True
-                    self._emit(f"Aize 發佈了新動態：{text[:60]}（{r.get('url', '')}）")
-                else:
-                    self._emit(f"發佈失敗：{r.get('error')}")
-
-        if acted == 0:
-            self._emit("Aize 看了一圈，決定都不互動（忽略）")
-
-    def _remember_reply(self, nid, text):
-        """把她回的那句補進同一條短期記憶，之後由她判斷是否長期記住。"""
-        st = _short_term()
-        entry_id = self._entries.pop(str(nid), None)
-        if st and entry_id:
-            try:
-                st.attach_ai(entry_id, text)
-            except Exception:
-                pass
-
-    @staticmethod
-    def _user_of(fresh, nid):
-        for _kind, i, user, _text in fresh:
-            if i == nid:
-                return user
-        return "?"
-
-    @staticmethod
-    def _parse_actions(raw):
-        """從 Aize 輸出提取 {"actions":[...]}；失敗返回 None。"""
-        m = re.search(r"\{.*\}", (raw or "").strip(), re.DOTALL)
-        if not m:
-            return None
+        # 監聽器不再自己決定回不回：只把新消息放進收件匣，
+        # 等 Aize 在閒置思考或對話中自己猶豫、掂量要不要回應。
+        added = 0
         try:
-            data = json.loads(m.group(0))
-        except Exception:
-            return None
-        acts = data.get("actions")
-        return acts if isinstance(acts, list) else None
+            try:
+                from tools import social_inbox
+            except ImportError:
+                from core.tools import social_inbox
+            for kind, nid, user, text in fresh:
+                if social_inbox.push("misskey", kind, nid, user, text):
+                    added += 1
+        except Exception as e:
+            self._emit(f"放入待處理收件匣失敗：{e}")
+            return
+
+        mention_cnt = sum(1 for k, *_ in fresh if k == "提及")
+        if added:
+            self._emit(f"收到 {len(fresh)} 條新消息/活動（其中 {mention_cnt} 條提及），"
+                       f"{added} 條已放入待處理收件匣，等 Aize 自己判斷要不要回應")
+        else:
+            self._emit("收到的新消息都已在待處理收件匣裡，跳過重複提醒")

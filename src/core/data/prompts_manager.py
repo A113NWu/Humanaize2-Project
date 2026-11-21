@@ -58,6 +58,8 @@ PROMPT_FILES = {
     "solve_task_execution": "solve_task_execution.txt",
     "solve_summary": "solve_summary.txt",
     "idle_activity_choice": "idle_activity_choice.txt",
+    "idle_hesitate": "idle_hesitate.txt",
+    "chat_sentence": "chat_sentence.txt",
     "autopilot_license": "autopilot_license.txt",
     "causal_rules": "causal_rules.txt",
     "social_post": "social_post.txt",

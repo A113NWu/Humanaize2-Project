@@ -351,6 +351,14 @@ def publish_engine_event(response):
             })
             # 主動說給主人聽的話要留下來，刷新頁面後不能消失
             _timeline_add_autonomous_turn(content)
+        elif rtype == "camera_request":
+            # 技能要看一眼 → 通知網頁用 getUserMedia 拍一幀回傳
+            _idle_event_bus.publish({
+                "type": "camera_request",
+                "id": str(response.get("id") or ""),
+                "prompt": str(response.get("prompt") or ""),
+                "time": _now_display(),
+            })
     except Exception as e:
         logger.warning(f"[Events] publish failed: {e}")
 
@@ -1282,6 +1290,8 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._handle_chat_timeline()
         elif parsed.path == '/api/voice/capabilities':
             self._handle_voice_capabilities()
+        elif parsed.path == '/api/speaker/status':
+            self._handle_speaker_status()
         elif parsed.path == '/api/events':
             self._handle_event_stream()
         elif parsed.path == '/api/web_search':
@@ -1444,6 +1454,14 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             self._route_skill_api_post(parsed.path)
         elif parsed.path == '/api/upload':
             self._handle_upload()
+        elif parsed.path == '/api/speaker/enroll':
+            self._handle_speaker_enroll()
+        elif parsed.path == '/api/speaker/remove':
+            self._handle_speaker_remove()
+        elif parsed.path in ('/api/speaker/start', '/api/speaker/stop'):
+            self._handle_speaker_listener(parsed.path.endswith('start'))
+        elif parsed.path == '/api/camera/frame':
+            self._handle_camera_frame()
         elif parsed.path == '/api/live2d/command':
             self._handle_live2d_command()
         elif parsed.path == '/api/live2d/chat':
@@ -2478,6 +2496,195 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
             "stt": "webspeech",
         })
 
+    # ---------- 聲紋識別（誰在說話） ----------
+
+    @staticmethod
+    def _speaker_module():
+        try:
+            import voice.speaker_id as mod
+        except ImportError:
+            import core.voice.speaker_id as mod
+        return mod
+
+    def _speaker(self):
+        return self._speaker_module().get_speaker_id()
+
+    @staticmethod
+    def _on_speaker_change(name):
+        """聲紋監聽回調：把「現在是誰在說話」推給網頁思考流。"""
+        text = f"[聲紋] 現在說話的是 {name}" if name else "[聲紋] 聽不到有人說話"
+        try:
+            publish_engine_event({"type": "internal_thought", "thought": text,
+                                  "thought_type": "skill"})
+        except Exception:
+            pass
+
+    def _speaker_flag(self, value=None):
+        """即時識別開關持久化在 ui_settings.json，避免重啟後又擅自開麥克風。"""
+        path = self._settings_path()
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                settings = json.load(f)
+        except Exception:
+            settings = {}
+        if value is None:
+            return bool(settings.get("speaker_enabled"))
+        settings["speaker_enabled"] = bool(value)
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(settings, f, ensure_ascii=False, indent=2)
+        except OSError as e:
+            logger.warning(f"[Speaker] save enabled flag failed: {e}")
+        return bool(value)
+
+    def _ensure_speaker_listener(self):
+        """已登記且開啟聲紋識別時確保監聽在跑；失敗保持安靜（不影響聊天）。"""
+        try:
+            if not self._speaker_flag():
+                return False
+            sp = self._speaker()
+            if sp.listener_running():
+                return True
+            if not sp.list_speakers():
+                return False
+            ok, _err = sp.is_available()
+            if not ok:
+                return False
+            result = sp.start_listener(self._on_speaker_change)
+            return bool(result.get("ok"))
+        except Exception as e:
+            logger.warning(f"[Speaker] ensure listener failed: {e}")
+            return False
+
+    def _handle_speaker_status(self):
+        try:
+            sp = self._speaker()
+            ok, info = sp.is_available()
+            self._send_json({
+                "available": bool(ok),
+                "error": "" if ok else str(info),
+                "running": sp.listener_running(),
+                "speakers": sp.list_speakers(),
+                "current": self._speaker_module().get_current_speaker(),
+            })
+        except Exception as e:
+            logger.error(f"[Speaker] status failed: {e}")
+            self._send_json({"available": False, "error": str(e), "running": False,
+                             "speakers": [], "current": None})
+
+    def _handle_speaker_enroll(self):
+        try:
+            body = self._read_json_body()
+        except Exception as e:
+            self._send_error(f"Invalid JSON body: {e}")
+            return
+        name = str(body.get("name") or "").strip()
+        try:
+            seconds = int(body.get("seconds") or 6)
+        except (TypeError, ValueError):
+            seconds = 6
+        try:
+            result = self._speaker().enroll(name, seconds)
+        except Exception as e:
+            logger.error(f"[Speaker] enroll failed: {e}")
+            self._send_json({"ok": False, "error": str(e)})
+            return
+        if result.get("ok"):
+            self._speaker_flag(True)
+            self._ensure_speaker_listener()
+            publish_engine_event({"type": "internal_thought",
+                                  "thought": f"[聲紋] 已記住 {result.get('name')} 的聲音",
+                                  "thought_type": "skill"})
+        self._send_json(result)
+
+    def _handle_speaker_remove(self):
+        try:
+            body = self._read_json_body()
+        except Exception as e:
+            self._send_error(f"Invalid JSON body: {e}")
+            return
+        name = str(body.get("name") or "").strip()
+        sp = self._speaker()
+        removed = sp.remove(name)
+        if not sp.list_speakers():
+            sp.stop_listener()
+        self._send_json({"ok": bool(removed), "speakers": sp.list_speakers()})
+
+    def _handle_speaker_listener(self, start: bool):
+        sp = self._speaker()
+        self._speaker_flag(bool(start))
+        if not start:
+            self._send_json(sp.stop_listener())
+            return
+        ok, err = sp.is_available()
+        if not ok:
+            self._send_json({"ok": False, "error": err})
+            return
+        if not sp.list_speakers():
+            self._send_json({"ok": False, "error": "尚未登記任何說話人，請先登記聲紋"})
+            return
+        self._send_json(sp.start_listener(self._on_speaker_change))
+
+    # ---------- 攝像頭回傳 ----------
+
+    def _handle_camera_frame(self):
+        """網頁拍到的攝像頭幀（data URL）→ 落盤 uploads → 交給等待中的技能。"""
+        try:
+            body = self._read_json_body()
+        except Exception as e:
+            self._send_error(f"Invalid JSON body: {e}")
+            return
+        request_id = str(body.get("id") or "").strip()
+        if not request_id:
+            self._send_error("id is required", 400)
+            return
+        try:
+            from tools.camera_bridge import submit_frame
+        except ImportError:
+            from core.tools.camera_bridge import submit_frame
+
+        error = str(body.get("error") or "").strip()
+        if error:
+            submit_frame(request_id, error=f"攝像頭不可用：{error}")
+            self._send_json({"ok": True})
+            return
+
+        data_url = str(body.get("image") or "")
+        match = re.match(r"^data:image/(png|jpe?g|webp);base64,(.+)$", data_url, re.S | re.I)
+        if not match:
+            self._send_error("image must be a data:image/...;base64 URL", 400)
+            return
+        try:
+            import base64 as _base64
+            raw = _base64.b64decode(match.group(2), validate=False)
+        except Exception as e:
+            self._send_error(f"image decode failed: {e}", 400)
+            return
+        if not raw:
+            self._send_error("empty image", 400)
+            return
+        if len(raw) > 12 * 1024 * 1024:
+            self._send_error("image too large (max 12MB)", 413)
+            return
+
+        ext = match.group(1).lower()
+        ext = "jpg" if ext in ("jpeg", "jpg") else ext
+        stored_name = f"camera_{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.{ext}"
+        stored_path = os.path.join(self._uploads_dir(), stored_name)
+        try:
+            with open(stored_path, "wb") as out:
+                out.write(raw)
+        except OSError as e:
+            self._send_error(f"save camera frame failed: {e}", 500)
+            return
+        logger.info(f"[Camera] frame saved {stored_name} ({len(raw)} bytes)")
+        publish_engine_event({"type": "internal_thought",
+                              "thought": "[攝像頭] 畫面已收到，Aize 正在看…",
+                              "thought_type": "skill"})
+        submit_frame(request_id, path=stored_path)
+        self._send_json({"ok": True, "path": stored_path})
+
     def _handle_web_search(self, parsed):
         """聯網模塊搜索端點：復用 tools.web_search.WebSearch（DuckDuckGo + 代理配置）。
 
@@ -3198,6 +3405,30 @@ class ThinkingEngineAPIHandler(BaseHTTPRequestHandler):
                 system_block_parts.append(_recent_ctx)
         except Exception as e:
             logger.warning(f"[Chat] recent context build failed: {e}")
+        # 聲紋：已登記說話人時自動恢復即時識別，並把「現在是誰在說話」告訴她
+        try:
+            self._ensure_speaker_listener()
+            _spk = self._speaker_module().get_current_speaker()
+            if _spk and _spk.get("name"):
+                _score = float(_spk.get("score") or 0.0)
+                _hint = f"【現在說話的人】聲紋識別判斷是「{_spk['name']}」"
+                if _score:
+                    _hint += f"（相似度 {_score:.2f}）"
+                _hint += "。用名字自然稱呼對方；如果不確定，不要硬猜。"
+                system_block_parts.append(_hint)
+        except Exception as e:
+            logger.warning(f"[Chat] speaker context failed: {e}")
+        # 社交平台新消息：監聽器只放進收件匣，這裡交給 Aize 在對話中自己掂量回不回
+        try:
+            try:
+                from tools import social_inbox
+            except ImportError:
+                from core.tools import social_inbox
+            _social_block = social_inbox.format_block(social_inbox.drain())
+            if _social_block:
+                system_block_parts.append(_social_block)
+        except Exception as e:
+            logger.warning(f"[Chat] social inbox failed: {e}")
         if system_hint:
             system_block_parts.append(system_hint[:2000])
         # 系統資訊：每次調用技能前先讓她知道 OS / shell 差異，避免拿 Linux 寫法在 Windows 上跑

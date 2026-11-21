@@ -1,4 +1,4 @@
-import threading, time, re, json
+import threading, time, json
 import os
 import sys
 
@@ -37,9 +37,6 @@ _idle_engine_instance = None
 
 _AESTHETIC_DB_NAME = "aesthetic_db.json"
 
-# 閒置時她直接輸出技能調用（[EXEC] 名稱 {參數 JSON}），不再有「小腦」分類器
-_SKILL_CALL_RE = re.compile(r"\[EXEC\]\s*([A-Za-z0-9_\-]+)\s*(\{[\s\S]*?\})?\s*$")
-
 _skill_manager = None
 
 
@@ -51,35 +48,13 @@ def _get_skills_manager():
     return _skill_manager
 
 
-def _parse_skill_calls(text):
-    """從獨白裡取出她要執行的技能調用，返回 [(名稱, 參數)]。"""
-    calls = []
-    if not isinstance(text, str):
-        return calls
-    for line in text.splitlines():
-        match = _SKILL_CALL_RE.search(line.strip())
-        if not match:
-            continue
-        name = match.group(1).strip()
-        raw = match.group(2)
-        params = {}
-        if raw:
-            try:
-                parsed = json.loads(raw)
-                if isinstance(parsed, dict):
-                    params = parsed
-            except Exception:
-                params = {}
-        calls.append((name, params))
-    return calls
-
-
-def _strip_skill_calls(text):
-    """思考日誌裡不顯示 [EXEC] 調用行，只留她自己的想法。"""
-    if not isinstance(text, str):
-        return ""
-    lines = [line for line in text.splitlines() if not _SKILL_CALL_RE.search(line.strip())]
-    return "\n".join(lines).strip()
+def _social_inbox():
+    """社交通知收件匣（Misskey 監聽器 push，閒置/對話取出來由她猶豫）。"""
+    try:
+        from tools import social_inbox
+    except ImportError:
+        from core.tools import social_inbox
+    return social_inbox
 
 
 def _affect_block():
@@ -205,14 +180,13 @@ class IdleEngine:
 
     def _perform_gan_thinking(self):
         """
-        Perform GAN internal thinking.
-        
+        Perform idle internal thinking.
+
         Process:
-        1. Aize chooses an activity from activity list
-        2. If "自己思考", Aize determines a specific thinking topic
-        3. GAN debates around the chosen topic
-        4. Output conclusion with "让我们开始工作吧"
-        
+        1. 自由独白（不规定格式）
+        2. 犹豫：掂量要不要为这份念头真的做点什么（可参考待处理的社交消息）
+        3. 决定动手就直接调对应技能，决定只是想想就写进思考日志
+
         Note: this is an internal thought process only and does not generate a user-facing reply.
         The result is sent to the UI as a thought entry.
         """
@@ -229,34 +203,32 @@ class IdleEngine:
             except Exception:
                 pass
         try:
-            # Step 1（大腦）：她完全自由地想；想找主人说话就在独白里直接调用技能
+            # Step 1（大腦）：自由独白，不规定格式，也不要求她顺手写技能调用
             thought = self._idle_think()
-            display = _strip_skill_calls(thought)
-            if display and self.callback:
+            if thought and self.callback:
                 self.callback({
                     "type": "internal_thought",
-                    "thought": f"[獨白] {display}"
+                    "thought": f"[獨白] {thought}"
                 })
 
-            # Step 2：她自己决定要做什么——写了 [EXEC] 就执行对应技能，没有就只是想想
-            for name, params in _parse_skill_calls(thought):
-                self._execute_idle_skill(name, params)
+            # Step 2（猶豫）：掂量要不要真的動手；決定動手就直接調用技能
+            # （speak-to-user / misskey-bot 等），不再有小腦分類器或 [EXEC] 解析。
+            self._idle_hesitate(thought)
 
             if thought and self.memory is not None:
                 try:
-                    add_thought(self.memory, display or thought, thought_type="idle")
+                    add_thought(self.memory, thought, thought_type="idle")
                     save_memory(self.memory)
                 except Exception:
                     pass
                 # 閒時思考也進向量記憶庫（長度、機器消息等規則由 MemoryDB 自行把關），
                 # 讓以後的 memory-search 能回憶起她自己獨處時想過什麼。
                 try:
-                    if display:
-                        try:
-                            from tools.memory_db import get_memory_db
-                        except ImportError:
-                            from core.tools.memory_db import get_memory_db
-                        get_memory_db().add("assistant", display, kind="idle_thought")
+                    try:
+                        from tools.memory_db import get_memory_db
+                    except ImportError:
+                        from core.tools.memory_db import get_memory_db
+                    get_memory_db().add("assistant", thought, kind="idle_thought")
                 except Exception:
                     pass
         except Exception as e:
@@ -399,11 +371,116 @@ class IdleEngine:
         _memory_block = self._idle_memory_block()
         if _memory_block:
             prompt = prompt + "\n\n" + _memory_block
+        # 有新的社交平台消息时，独白里也让她看到（犹豫环节会再完整交给她的）
+        _social_block = self._pending_social_block()
+        if _social_block:
+            prompt = prompt + "\n\n" + _social_block
 
         try:
             return chat(prompt).strip()
         except Exception:
             return ""
+
+    def _pending_social_block(self):
+        """待处理的社交通知渲染成提示词段落（没有则返回空串）。"""
+        try:
+            return _social_inbox().format_block(_social_inbox().peek())
+        except Exception:
+            return ""
+
+    def _idle_hesitate(self, thought):
+        """猶豫環節：掂量要不要为刚才的念头真的做点什么。
+
+        只让模型输出一个 JSON 决定；决定 act=true 就直接调用对应技能
+        （speak-to-user / misskey-bot 等），act=false 就只记录想法。
+        这一环取代了旧的「小脑」判定与独白内 [EXEC] 解析。
+        """
+        from llm import chat
+        from core.data.prompts_manager import load_prompt
+
+        def _thought(msg):
+            if self.callback:
+                try:
+                    self.callback({"type": "internal_thought", "thought": msg})
+                except Exception:
+                    pass
+
+        social_items = []
+        try:
+            social_items = _social_inbox().peek()
+        except Exception:
+            pass
+        if not (thought or "").strip() and not social_items:
+            return
+
+        base = load_prompt("idle_hesitate")
+        if not base:
+            _thought("[猶豫] 提示詞 idle_hesitate 缺失，這次只想想，不行动")
+            return
+
+        try:
+            skills_text = (_get_skills_manager().get_skills_prompt("zh-TW") or "").strip()
+        except Exception:
+            skills_text = ""
+
+        social_block = ""
+        if social_items:
+            try:
+                social_block = _social_inbox().format_block(social_items)
+            except Exception:
+                social_block = ""
+        prompt = (base
+                  .replace("{thought}", (thought or "").strip() or "（刚才脑子里空空的）")
+                  .replace("{social}", social_block or "（没有新的社交消息）")
+                  .replace("{memory}", self._idle_memory_block() or "（没有额外的记忆）")
+                  .replace("{skills}", skills_text or "（当前没有可用的技能）"))
+        try:
+            _persona_text = persona_block("idle", self.memory)
+            if _persona_text:
+                prompt = prompt + "\n\n" + _persona_text
+        except Exception:
+            pass
+        _feel = _affect_block()
+        if _feel:
+            prompt = prompt + "\n\n" + _feel
+
+        try:
+            raw = (chat(prompt, max_tokens=400, timeout=90) or "").strip()
+        except Exception as e:
+            _thought(f"[猶豫] 掂量失败：{e}")
+            return
+
+        import json as _json
+        import re as _re
+        match = _re.search(r"\{.*\}", raw, _re.DOTALL)
+        if not match:
+            _thought("[猶豫] 没看懂自己的决定（输出不是 JSON），这次不动手")
+            return
+        try:
+            data = _json.loads(match.group(0))
+        except Exception:
+            _thought("[猶豫] 决定 JSON 解析失败，这次不动手")
+            return
+
+        # 已经在犹豫里完整掂量过这些消息，无论回不回都从收件匣移除
+        if social_items:
+            try:
+                _social_inbox().clear(social_items)
+            except Exception:
+                pass
+
+        reason = str(data.get("reason") or "").strip()
+        if not data.get("act"):
+            _thought("[猶豫] 掂量之后，这次只是想想，不动手" + (f"：{reason}" if reason else ""))
+            return
+
+        name = str(data.get("skill") or "").strip()
+        params = data.get("input")
+        if not name or not isinstance(params, dict):
+            _thought("[猶豫] 决定行动，但没给出可执行的技能调用，跳过")
+            return
+        _thought(f"[猶豫] 决定动手：{name}" + (f"（{reason}）" if reason else ""))
+        self._execute_idle_skill(name, params)
 
     def _idle_memory_block(self):
         """閒置思考要帶著記憶：最近的短期記憶 + 長期記憶（對話與階段摘要）。"""
@@ -432,7 +509,7 @@ class IdleEngine:
         return "\n\n".join(parts)
 
     def _execute_idle_skill(self, name, params):
-        """執行她在獨白裡寫下的技能調用，例如 [EXEC] Speak-To-User {...}。"""
+        """執行她在猶豫環節決定要調用的技能（speak-to-user / misskey-bot 等）。"""
         def _thought(msg):
             if self.callback:
                 try:

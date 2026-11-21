@@ -69,6 +69,7 @@ from tools.web_search import WebSearch
 from tools.self_optimizer import get_optimizer
 from Prompt.chat_prompt import get_break_silence_prompt
 from data.prompts_manager import (
+    load_prompt,
     load_should_answer_user_prompt,
     load_should_use_gan_prompt,
     load_should_use_solve_prompt,
@@ -991,6 +992,198 @@ class ThinkingEngine:
             self._handle_chat_stream_task(prompt, memory, emotion_monitor, exec_instr, user_text, target_info)
 
     def _handle_chat_stream_task(self, prompt, memory, emotion_monitor, exec_instr, user_text, target_info=None):
+        """逐句回覆入口：每輪只讓模型說一句，已說內容注入提示詞再生成下一句。"""
+        user_text = user_text or self._extract_user_text_from_prompt(prompt)
+        prompt = self._preprocess_stream_prompt(prompt, user_text)
+        if self._sentence_block([], ""):
+            self._handle_sentence_reply_task(prompt, memory, emotion_monitor,
+                                             exec_instr, user_text, target_info)
+        else:
+            # 逐句提示詞缺失時回退到整段流式生成，避免聊天鏈路整體失效
+            self._handle_chat_stream_task_full(prompt, memory, emotion_monitor,
+                                               exec_instr, user_text, target_info)
+
+    def _preprocess_stream_prompt(self, prompt, user_text):
+        """流式回覆前的通用預處理：蒸餾提示 + 自動聯網搜索。"""
+        try:
+            distilled_prompt = self.optimizer.conversation_learner.prompt_distiller.generate_training_prompt(user_text)
+        except Exception:
+            distilled_prompt = ""
+        if distilled_prompt:
+            prompt = distilled_prompt + "\n\n" + prompt
+        if self.search_enabled and user_text and self.web_search.needs_search(user_text):
+            search_results = self.web_search.search(user_text)
+            if search_results:
+                search_summary = self.web_search.summarize_results(user_text, search_results)
+                if self.on_response:
+                    self.on_response({"type": "internal_thought",
+                                      "thought": f"[Web Search] Found information about: {user_text}",
+                                      "thought_type": "web_search"})
+                search_prefix = load_web_search_prefix_prompt(search_summary)
+                prompt = search_prefix + "\n\n" + prompt
+        return prompt
+
+    @staticmethod
+    def _sentence_block(spoken, skill_result):
+        """逐句回覆時追加在提示詞前的「這一輪怎麼說話」規則塊。"""
+        try:
+            base = (load_prompt("chat_sentence") or "").strip()
+        except Exception:
+            base = ""
+        if not base:
+            return ""
+        said = "\n".join(f"- {s}" for s in spoken) if spoken else "（还没开口）"
+        result = (skill_result or "").strip() or "（没有；这一轮不用管技能结果）"
+        return base.replace("{spoken}", said).replace("{skill_result}", result)
+
+    @staticmethod
+    def _prepend_system_turn(model_prompt, block):
+        """把規則塊併進提示詞的 system 部分（ChatML 併進第一個 system，普通文本放最前）。"""
+        if not block:
+            return model_prompt
+        model_prompt = str(model_prompt or "")
+        if model_prompt.lstrip().startswith("<|im_start|>"):
+            marker = "<|im_start|>system\n"
+            if model_prompt.startswith(marker):
+                return marker + block + "\n\n" + model_prompt[len(marker):]
+            return f"<|im_start|>system\n{block}<|im_end|>\n{model_prompt}"
+        return block + "\n\n" + model_prompt
+
+    def _handle_sentence_reply_task(self, prompt, memory, emotion_monitor, exec_instr, user_text, target_info=None):
+        """逐句回覆：調用一次模型只生成一句，把已說過的句子和技能結果注入
+        提示詞後再生成下一句，直到她輸出 [END]、被取消，或轉去執行技能/做別的事。
+        """
+        logger.info("[Chat] sentence-by-sentence reply mode")
+        if self._chat_cancelled():
+            logger.info("[Chat] cancelled before sentence generation (refused)")
+            return
+
+        if str(prompt or "").lstrip().startswith("<|im_start|>"):
+            model_prompt = prompt
+        else:
+            model_prompt = self._build_response_prompt(exec_instr, prompt, memory, user_text)
+
+        spoken = []
+        skill_result = ""
+        seen_calls = set()
+        max_rounds = 8
+
+        for round_no in range(max_rounds):
+            if self._chat_cancelled():
+                logger.info("[Chat] sentence loop cancelled (refused)")
+                return
+
+            block = self._sentence_block(spoken, skill_result)
+            round_prompt = self._prepend_system_turn(model_prompt, block)
+            try:
+                raw, _adapt = generate_with_emotion_feedback(round_prompt, emotion_monitor, max_tokens=800)
+            except Exception as e:
+                logger.error(f"[Chat] sentence generation failed: {e}")
+                if self.on_response:
+                    self.on_response({"type": "error", "error": str(e)})
+                return
+            if self._chat_cancelled():
+                logger.info("[Chat] sentence loop cancelled after generation (refused)")
+                return
+
+            _open = chr(60) + "think" + chr(62)
+            _close = chr(60) + "/think" + chr(62)
+            raw = re.sub(_open + r"[\s\S]*?" + _close, "", raw or "",
+                         flags=re.IGNORECASE).strip()
+            if not raw:
+                logger.info("[Chat] sentence loop: empty output, stop")
+                break
+
+            # legacy 提示詞可能帶 THOUGHT:/RESPONSE: 段，思考不進聊天區
+            _raw_thought, _raw_reply = self._extract_thought_and_response(raw)
+            if _raw_thought:
+                if self.on_response:
+                    self.on_response({"type": "internal_thought",
+                                      "thought": _raw_thought, "thought_type": "internal"})
+                raw = (_raw_reply or "").strip()
+                if not raw:
+                    break
+
+            visible, calls = self._extract_skill_calls(raw)
+            visible = self._strip_skill_json(visible)
+            end_signal = bool(re.search(r"\[END\]", visible, re.IGNORECASE))
+            if end_signal:
+                visible = re.sub(r"\[END\]", "", visible, flags=re.IGNORECASE).strip()
+
+            if "[motion" in visible.lower():
+                visible, motions = self._extract_motion_tags(visible)
+                if motions:
+                    self._push_live2d_motions(motions)
+
+            # 保護 3.5 / v2.4.0 這類小數與版本號，避免被句號切斷半句
+            _dot_hold = chr(0xFF0E)
+            _visible_for_split = re.sub(r"(?<=\d)\.(?=\d)", _dot_hold, visible)
+            sentences = [s.replace(_dot_hold, ".").strip()
+                         for s in self._split_sentences(_visible_for_split) if s.strip()]
+            said_this_round = ""
+            if sentences:
+                # 只說第一句；模型多說的內容這輪不發，避免一次堆給主人
+                said_this_round = self._clean_and_humanize_reply(sentences[0])
+                if said_this_round:
+                    said_this_round = self._hallucination_check(said_this_round, user_text)
+                if said_this_round and said_this_round in spoken:
+                    logger.info("[Chat] sentence loop: repeated sentence, stop")
+                    break
+                if said_this_round:
+                    spoken.append(said_this_round)
+                    logger.info(f"[Chat] sentence {round_no + 1}: {said_this_round[:60]}")
+                    if self.on_response:
+                        self.on_response({"type": "chat_response", "reply": said_this_round})
+                    self._notify_stream_callbacks(said_this_round, target_info, memory)
+
+            if not calls:
+                if end_signal or not sentences:
+                    break
+                continue
+
+            # 她決定調技能 → 執行並把結果餵回下一輪（也是「去幹別的事」的入口）
+            signatures = tuple(
+                f"{name}:{json.dumps(inp, sort_keys=True, ensure_ascii=False)}"
+                for name, inp in calls
+            )
+            if signatures in seen_calls:
+                logger.info("[Chat] sentence loop: repeated skill calls, stop")
+                break
+            seen_calls.add(signatures)
+
+            for skill_name, _ in calls:
+                if self.on_response:
+                    self.on_response({"type": "internal_thought",
+                                      "thought": f"[Skill] 調用技能 {skill_name}",
+                                      "thought_type": "skill"})
+            if self.on_response:
+                _names = list(dict.fromkeys(n for n, _ in calls))
+                self.on_response({"type": "command_start",
+                                  "message": "正在執行 " + "、".join(_names) + " Skill…\n"})
+            try:
+                agent = Agent('!')
+                agent.set_language(self.language)
+                out = agent.agent('!', raw)
+            except Exception as e:
+                out = f"技能執行失敗：{e}"
+            logger.info(f"[Chat] sentence skill output: {(out or '')[:200]}")
+            if self.on_response:
+                self.on_response({"type": "command_result", "output": out})
+            self._learn_from_command_result(raw, out, success=True)
+            skill_result = (out or "").strip()[:1200]
+            if end_signal:
+                break
+            if not skill_result:
+                # 技能沒有任何輸出：視為她已經轉去做別的事，停止繼續生成
+                logger.info("[Chat] sentence loop: skill produced no output, stop")
+                break
+        else:
+            logger.warning(f"[Chat] sentence loop reached max rounds ({max_rounds})")
+
+        logger.info(f"[Chat] sentence loop done, {len(spoken)} sentence(s)")
+        self._record_and_learn(user_text, " ".join(spoken))
+
+    def _handle_chat_stream_task_full(self, prompt, memory, emotion_monitor, exec_instr, user_text, target_info=None):
         """Handle a streaming chat task - send sentences as they are generated."""
         logger.info(f"Handling streaming chat task, prompt length: {len(prompt) if prompt else 0}")
 
@@ -999,24 +1192,6 @@ class ThinkingEngine:
             return
 
         user_text = user_text or self._extract_user_text_from_prompt(prompt)
-        
-        # 不再在聊天裡走「經驗庫快速答案」短路：那條路徑會把舊答案直接念出來、
-        # 跳過技能調用（表現為她說「我來幫你下載」卻不動手），也是答非所問的來源。
-        # Solve 模式只在明確的求解流程中使用。
-        
-        distilled_prompt = self.optimizer.conversation_learner.prompt_distiller.generate_training_prompt(user_text)
-        if distilled_prompt:
-            prompt = distilled_prompt + "\n\n" + prompt
-        
-        if self.search_enabled and user_text and self.web_search.needs_search(user_text):
-            search_results = self.web_search.search(user_text)
-            if search_results:
-                search_summary = self.web_search.summarize_results(user_text, search_results)
-                if self.on_response:
-                    self.on_response({"type": "internal_thought", "thought": f"[Web Search] Found information about: {user_text}", "thought_type": "web_search"})
-                search_prefix = load_web_search_prefix_prompt(search_summary)
-                prompt = search_prefix + "\n\n" + prompt
-        
         logger.info("Calling generate_with_emotion_feedback_stream")
         
         full_reply = ""

@@ -594,6 +594,37 @@ const uploadUI={
 /* ====================== 发送聊天：附件 ====================== */
 // 聊天提交與中斷判斷在上方 runChatTurn / $('#chat-form').onsubmit 內，attachments 隨請求一起送出
 
+/* ====================== Aize 主动看摄像头：取景并回传 ====================== */
+const cameraLook={
+  busy:false,
+  async capture(req){
+    const id=(req&&req.id)||'';
+    const report=payload=>fetch('/api/camera/frame',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({id},payload))}).catch(()=>{});
+    if(this.busy){ await report({error:'攝像頭正被另一次取景佔用'}); return; }
+    this.busy=true;
+    try{
+      if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw Error('当前瀏覽器不支援攝像頭');
+      const stream=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:720}},audio:false});
+      try{
+        const video=document.createElement('video');
+        video.muted=true;video.playsInline=true;video.srcObject=stream;
+        await video.play();
+        await new Promise(r=>setTimeout(r,350)); // 等自動曝光穩定
+        const w=video.videoWidth||640,h=video.videoHeight||480;
+        const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
+        canvas.getContext('2d').drawImage(video,0,0,w,h);
+        await report({image:canvas.toDataURL('image/jpeg',0.85)});
+      }finally{
+        stream.getTracks().forEach(t=>{try{t.stop()}catch(_){}});
+      }
+    }catch(e){
+      await report({error:String((e&&e.message)||e)});
+    }finally{
+      this.busy=false;
+    }
+  }
+};
+
 /* ====================== GAN 面板：閒置思考實時事件流 ====================== */
 const thoughtFeed={
   labels:{gan_decision:'GAN 決策',gan_topic:'議題',gan_argument:'正方論點',gan_counter_argument:'反方論點',gan_synthesis:'綜合結論',solve_mode:'Solve 模式',skill:'Skill',gan:'閒置思考',social:'社交',internal:'思考',web_search:'聯網搜索',error:'錯誤'},
@@ -623,6 +654,9 @@ const thoughtFeed={
           this.append({thought_type:'social',content:d.content||'',time:d.time||''});
           // fix4：Aize 主動找用戶說話 → 直接 PO 到聊天區（assistant 氣泡）
           if(d.content){addMessage(d.content,'assistant');live2dWidget.onSpeakStart();live2dWidget.onReply(d.content);}
+        }else if(d.type==='camera_request'){
+          this.append({thought_type:'skill',content:'Aize 想看一眼攝像頭，正在取景…',time:d.time||''});
+          cameraLook.capture(d);
         }
       }catch(_){/* 忽略無法解析的幀（含 ping） */}
     };
@@ -950,7 +984,84 @@ const causalRulesAdmin={
     });
   }
 };
+/* ---------- 聲紋識別（誰在說話） ---------- */
+const speakerAdmin={
+  status:null,
+  async refresh(){
+    const box=$('#speaker-status');
+    if(!box)return;
+    try{
+      const data=await (await fetch('/api/speaker/status')).json();
+      this.status=data;
+      const parts=[];
+      parts.push(data.available?'引擎可用':'引擎不可用'+(data.error?`（${data.error}）`:''));
+      parts.push(data.running?'即時識別中':'未開啟');
+      if(data.current&&data.current.name)parts.push(`現在：${data.current.name}`);
+      box.textContent=parts.join(' · ');
+      const toggle=$('#speaker-toggle');
+      if(toggle){
+        toggle.textContent=data.running?'停止即時識別':'開啟即時識別';
+        toggle.disabled=!data.available||!(data.speakers||[]).length;
+      }
+      const list=$('#speaker-list');
+      if(list){
+        list.innerHTML='';
+        const names=data.speakers||[];
+        if(!names.length)list.textContent='尚未登記任何聲音';
+        names.forEach(name=>{
+          const chip=document.createElement('span');chip.className='speaker-chip';chip.textContent=name;
+          const del=document.createElement('button');del.type='button';del.className='mini-btn';del.textContent='×';
+          del.title='刪除這個聲紋';
+          del.onclick=async()=>{
+            try{await fetch('/api/speaker/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});}catch(e){}
+            this.refresh();
+          };
+          chip.appendChild(del);list.appendChild(chip);
+        });
+      }
+    }catch(e){
+      box.textContent='聲紋狀態讀取失敗：'+String((e&&e.message)||e);
+    }
+  },
+  async enroll(){
+    const name=($('#speaker-name').value||'').trim();
+    if(!name){window.alert('先填一個名字，例如「主人」');return;}
+    const seconds=parseInt($('#speaker-seconds').value||'6',10)||6;
+    const btn=$('#speaker-enroll'),old=btn.textContent;
+    btn.disabled=true;btn.textContent=`錄音中（${seconds}s），請說話…`;
+    try{
+      const resp=await fetch('/api/speaker/enroll',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,seconds})});
+      const data=await resp.json().catch(()=>({}));
+      if(!data.ok)window.alert('登記失敗：'+(data.error||`HTTP ${resp.status}`));
+    }catch(e){
+      window.alert('登記失敗：'+((e&&e.message)||e));
+    }finally{
+      btn.disabled=false;btn.textContent=old;
+      this.refresh();
+    }
+  },
+  async toggle(){
+    const running=!!(this.status&&this.status.running);
+    try{await fetch(running?'/api/speaker/stop':'/api/speaker/start',{method:'POST'});}catch(e){}
+    this.refresh();
+  },
+  init(){
+    const enroll=$('#speaker-enroll');
+    if(!enroll)return;
+    enroll.onclick=()=>this.enroll();
+    const toggle=$('#speaker-toggle');
+    if(toggle)toggle.onclick=()=>this.toggle();
+    this.refresh();
+    // 只在設置頁可見時輪詢，避免無謂請求
+    setInterval(()=>{
+      const box=$('#speaker-status');
+      if(box&&box.offsetParent!==null)this.refresh();
+    },8000);
+  }
+};
+
 promptAdmin.init();
 causalRulesAdmin.init();
 skillsAdmin.init();
+speakerAdmin.init();
 
